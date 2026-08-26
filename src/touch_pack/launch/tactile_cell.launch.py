@@ -362,7 +362,6 @@ def launch_setup(context, *args, **kwargs):
 
     world_file = os.path.join(pkg_touch, 'worlds', 'research_lab.world')
 
-    # Gazebo
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_gazebo, 'launch', 'gazebo.launch.py')),
@@ -484,7 +483,6 @@ def launch_setup(context, *args, **kwargs):
     return [gazebo, rsp, spawn_robot] + chain
 
 
-# generate_launch_description
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(

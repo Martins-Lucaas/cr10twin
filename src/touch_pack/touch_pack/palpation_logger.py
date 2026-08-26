@@ -348,7 +348,7 @@ class PalpationLogger(Node):
         except Exception:
             params = {}
         try:
-            setpoint = float(getattr(msg, 'force_n'))
+            setpoint = float(msg.force_n)
         except (AttributeError, TypeError, ValueError):
             setpoint = None
 

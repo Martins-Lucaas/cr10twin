@@ -149,7 +149,8 @@ class VtkRobotRenderer:
             self._rw.Render()
             self._read_pixels()
         except Exception as exc:  # pragma: no cover
-            raise VtkRendererError(f'render offscreen indisponível: {exc}')
+            raise VtkRendererError(
+                f'render offscreen indisponível: {exc}') from exc
 
     @property
     def triangle_count(self) -> int:

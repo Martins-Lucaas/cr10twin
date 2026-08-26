@@ -27,7 +27,7 @@ import numpy as np
 sys.path.insert(0, 'src/grasp_ml_pack')
 
 from grasp_ml_pack import poses
-from grasp_ml_pack.kinematics import forward_kinematics, fk_partial, T_HAND_ATTACH
+from grasp_ml_pack.kinematics import fk_partial
 from grasp_ml_pack.collision import (
     pose_is_safe, PICK_OBJ_BBOX, ROBOT_BASE_Z,
 )
@@ -47,7 +47,6 @@ def palm_z_world(q_rad: np.ndarray) -> float:
     """Z da origem do hand_base_link (palma) em world."""
     T_base = np.eye(4); T_base[2, 3] = ROBOT_BASE_Z
     T_w_link6 = T_base @ fk_partial(q_rad, 6)
-    T_w_hand = T_w_link6 @ T_HAND_ATTACH
     # hand_base_link origin ≈ T_w_link6 origin (T_HAND_ATTACH só translada
     # 115mm em z local = no plano dos fingertips). Usamos Link6 origin.
     return float(T_w_link6[2, 3])

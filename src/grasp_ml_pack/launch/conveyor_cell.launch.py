@@ -31,9 +31,8 @@ from hand_pack.urdf_helpers import (
     INTER_FINGER_COLLISION_LINKS,
 )
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, RegisterEventHandler,
-                             TimerAction)
-from launch.conditions import IfCondition, UnlessCondition
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.conditions import UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -306,7 +305,6 @@ def generate_launch_description():
     params_file = os.path.join(pkg_grasp, 'config', 'pipeline_params.yaml')
     world_file  = os.path.join(pkg_grasp, 'worlds', 'conveyor_cell.world')
 
-    # Gazebo
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_gazebo, 'launch', 'gazebo.launch.py')),

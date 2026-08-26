@@ -25,7 +25,7 @@ sys.path.insert(0, 'src/grasp_ml_pack')
 
 from grasp_ml_pack import poses
 from grasp_ml_pack.kinematics import (
-    forward_kinematics, fk_partial,
+    fk_partial,
     T_HAND_ATTACH,
     _thumb_tip_in_hand,
 )

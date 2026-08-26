@@ -90,7 +90,7 @@ arrives through the submodule. Nothing beyond step 1 needs to be cloned.
 | Dependency | Version |
 |---|---|
 | Ubuntu | 22.04 LTS |
-| ROS 2 | Humble Hawksbill |
+| ROS 2 | Humble Hawksbill — install **`ros-humble-desktop`**, which brings `rviz2` and `rqt_joint_trajectory_controller` (both declared by `hand_pack`) |
 | Gazebo | Classic 11 |
 | Python | 3.10+ |
 
@@ -111,6 +111,8 @@ sudo apt update && sudo apt install -y \
   ros-humble-kinematics-interface-kdl \
   ros-humble-force-torque-sensor-broadcaster \
   python3-tk \
+  python3-pil \
+  python3-pytest \
   python3-colcon-common-extensions \
   git
 ```
@@ -130,6 +132,11 @@ pip install covvi-eci==1.1.6
 # Optional — YOLOv8 detector (only grasp_ml_pack with use_yolo:=true)
 pip install ultralytics
 
+# Optional — train the GraspQualityNet (src/grasp_ml_pack/scripts/train_grasp_model.py).
+# scikit-learn drives the 'rf' backend, torch the 'nn' one. models/ ships empty,
+# so anyone who wants the model has to train it.
+pip install scikit-learn torch
+
 # Optional — regenerate the palpation TCP meshes/inertias from cad/step/*.step
 pip install cadquery-ocp
 ```
@@ -145,7 +152,7 @@ pip install cadquery-ocp
 | `cra_description` | extracted from [`Dobot-Arm/DOBOT_6Axis_ROS2_V4`](https://github.com/Dobot-Arm/DOBOT_6Axis_ROS2_V4) | **already versioned** under `src/cra_description` — nothing to clone |
 | `covvi_interfaces` + `covvi_hand_driver` (`src/eci_ros`) | **git submodule** | cloned automatically with `git clone --recursive` (see Installation) |
 
-> **Credits — COVVI hand driver:** `src/eci_ros` is authored by **COVVI Robotics** ([`COVVI-Robotics/eci_ros`](https://github.com/COVVI-Robotics/eci_ros)). It is included as a submodule pointing to a fork ([`Martins-Lucaas/eci_ros`](https://github.com/Martins-Lucaas/eci_ros)) that **fully preserves the original authorship** and only adds a downstream fix for ECI session shutdown/reconnection.
+> **Credits — COVVI hand driver:** `src/eci_ros` is authored by **COVVI Robotics** ([`COVVI-Robotics/eci_ros`](https://github.com/COVVI-Robotics/eci_ros)), released by them under Apache-2.0 and maintained upstream by Jordan Birdsall. It is included as a submodule pointing to a fork ([`Martins-Lucaas/eci_ros`](https://github.com/Martins-Lucaas/eci_ros)) that **fully preserves the original authorship, licence and maintainer**. The fork carries two downstream changes only: closing the ECI session on shutdown, and declaring the `rclpy` / `covvi_interfaces` runtime dependencies that the original `package.xml` omitted.
 
 > **Note:** even in simulation-only mode, `covvi_interfaces` must be built — several nodes lazily import those types to command the real hand when it is enabled.
 

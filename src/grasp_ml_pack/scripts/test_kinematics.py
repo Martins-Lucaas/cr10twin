@@ -29,13 +29,12 @@ def _sep(title: str = ''):
 
 def main(args=None):
     from grasp_ml_pack.kinematics import (
-        forward_kinematics, fk_partial, jacobian, manipulability,
+        forward_kinematics, jacobian, manipulability,
         inverse_kinematics, reach_margin, singularity_distances,
-        finger_fk, hand_ik, approach_to_Rtcp,
+        finger_fk, hand_ik,
         HAND_CONFIGS,
     )
 
-    # ── 1. FK na pose de home ──────────────────────────────────────────
     _sep('1. CINEMÁTICA DIRETA — pose de home')
     home = np.array([0.0, -math.pi/4, math.pi/2, -math.pi/4, -math.pi/2, 0.0])
     T_home = forward_kinematics(home)
@@ -45,7 +44,6 @@ def main(args=None):
     print(f'  Norma posição:   {np.linalg.norm(p_home):.4f} m')
     print(f'  TCP rotação (R3×3 linha 3): {T_home[:3, 2].round(4).tolist()}')
 
-    # ── 2. FK em postura de alcance máximo ────────────────────────────
     _sep('2. FK — alcance máximo (q = [0, 0, 0, 0, 0, 0])')
     q_full = np.zeros(6)
     T_full = forward_kinematics(q_full)
@@ -53,7 +51,6 @@ def main(args=None):
     print(f'  TCP posição (m): x={p_full[0]:.4f}  y={p_full[1]:.4f}  z={p_full[2]:.4f}')
     print(f'  Alcance: {np.linalg.norm(p_full[:2]):.4f} m (horizontal)')
 
-    # ── 3. Round-trip IK→FK ───────────────────────────────────────────
     _sep('3. IK → FK (round-trip)')
     test_points = [
         ('bancada centro',  np.array([0.55,  0.00, 0.82]), np.array([0.0, 0.0, -1.0])),
@@ -76,7 +73,6 @@ def main(args=None):
               f'{q_deg[3]:6.1f},{q_deg[4]:6.1f},{q_deg[5]:6.1f}]°')
     print(f'\n  Resultado geral: {"PASS ✓" if all_ok else "FAIL ✗"}')
 
-    # ── 4. Jacobiano e manipulabilidade ───────────────────────────────
     _sep('4. JACOBIANO e MANIPULABILIDADE')
     q_work = np.array([0.0, -0.5, 0.8, 0.0, -0.8, 0.0])
     J = jacobian(q_work)
@@ -91,7 +87,6 @@ def main(args=None):
     print(f'  Dist. singularidades:    ombro={sd[0]:.2f}  cotovelo={sd[1]:.2f}  '
           f'pulso={sd[2]:.2f}')
 
-    # ── 5. Mão COVVI — FK dos dedos ───────────────────────────────────
     _sep('5. MÃO COVVI — FK e IK por tipo de grasp')
     for gtype in ['open', 'pinch', 'cylindrical', 'spherical']:
         cfg = HAND_CONFIGS[gtype]
@@ -111,7 +106,7 @@ def main(args=None):
                                ('ball',   0.064, 'spherical')]:
         cfg = hand_ik(gtype, diam)
         print(f'  {obj} (d={diam*1000:.0f}mm, {gtype}):')
-        print(f'    ' + '  '.join(f'{k}={v:.3f}' for k, v in cfg.items()))
+        print('    ' + '  '.join(f'{k}={v:.3f}' for k, v in cfg.items()))
 
     _sep()
     print('  Teste concluído.\n')

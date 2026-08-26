@@ -41,11 +41,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-import numpy as np
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
 
 
 # Juntas primárias da mão (driver joints). Os 25 mimic seguem em ratio.

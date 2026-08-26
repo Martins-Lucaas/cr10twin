@@ -5,7 +5,6 @@ Morava em `force_receiver_node.py` (célula axial XIAO+HX711, removida em
 a cadeia a jusante (`/load_cell/force_net`) tem de ter a mesma dinâmica
 qualquer que seja a célula, senão os ganhos do explorer mudam de sentido.
 """
-import collections
 import math
 
 from rclpy.qos import (QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy,

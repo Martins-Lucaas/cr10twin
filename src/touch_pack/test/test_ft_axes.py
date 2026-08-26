@@ -5,7 +5,6 @@ não é conversão, é INTEGRIDADE: que os seis eixos cheguem à planilha na ord
 certa, que quadro inválido não envenene o estado, e que a taxa medida no host
 seja a cadência real (o sensor não numera nem carimba os quadros).
 """
-import math
 import os
 import threading
 
@@ -100,7 +99,6 @@ def test_quadro_com_nan_e_descartado_e_contado():
 def test_taxa_medida_usa_a_janela_inteira():
     """dt instantâneo de serial oscila demais; a taxa sai da janela."""
     g = _gui()
-    t = 1000.0
     import time as _t
     real = _t.time
     try:

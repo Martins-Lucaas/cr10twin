@@ -13,13 +13,10 @@ exclusivo da porta. A GUI pede e exibe.
 """
 from __future__ import annotations
 
-import json
 import math
-import os
 import time
 import tkinter as tk
 
-import numpy as np
 from std_msgs.msg import Bool, Empty, Float32, String
 from .constants import (
     FT_AXIS_LABELS, FT_NOMINAL_RATE_HZ, FT_MAX_RATE_HZ, FT_MIN_RATE_HZ,
@@ -27,8 +24,8 @@ from .constants import (
     FT_SERIAL_BAUD, ft_axis_rated,
 )
 from .ui_helpers import (
-    BG, PANEL, TEXT, TEXT_MUTED, TEXT_DIM,
-    PRIMARY, PRIMARY_HV, OK, WARN, DANGER, BORDER, BTN_NEUTRAL,
+    PANEL, TEXT, TEXT_MUTED, TEXT_DIM,
+    PRIMARY, PRIMARY_HV, OK, WARN, DANGER, BORDER,
     FONT_BIG, FONT_HEAD, FONT_LBL, FONT_SMALL, FONT_MONO, FONT_MONO_S,
     _shade,
 )
@@ -146,7 +143,7 @@ class FtAxesMixin:
                  width=5, anchor='w').pack(side='left')
         tk.Label(hdr, text='value', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
                  width=14, anchor='e').pack(side='left', padx=(0, 10))
-        tk.Label(hdr, text=f'0 centred  ·  ends = ±full scale',
+        tk.Label(hdr, text='0 centred  ·  ends = ±full scale',
                  font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
                  anchor='w').pack(side='left')
 

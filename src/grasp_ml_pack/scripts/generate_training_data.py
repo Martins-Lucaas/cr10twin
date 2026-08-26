@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import time
 
 import numpy as np
 import rclpy
@@ -28,11 +27,9 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from ament_index_python.packages import get_package_share_directory
 
-from grasp_ml_pack.grasp_quality_net import (
-    build_feature_vector_with_ik, N_FEATURES)
+from grasp_ml_pack.grasp_quality_net import build_feature_vector_with_ik
 from grasp_ml_pack.kinematics import (
-    inverse_kinematics, manipulability, reach_margin,
-    singularity_distances, HAND_CONFIGS)
+    inverse_kinematics, singularity_distances)
 
 # Espaço de amostragem
 _OBJ_GRASP = {
@@ -97,7 +94,6 @@ class DataCollectorNode(Node):
         obj       = random.choice(list(_OBJ_GRASP.keys()))
         gtype     = random.choice(_OBJ_GRASP[obj])
         aperture  = random.uniform(*_APERTURE_RANGE)
-        diam      = _OBJ_DIAMETERS[obj]
 
         # Posição do objeto na bancada
         obj_pos = np.array([

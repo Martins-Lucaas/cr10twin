@@ -29,7 +29,6 @@ from __future__ import annotations
 import collections
 import csv
 import json
-import queue as _queue
 import logging
 import math
 import os
@@ -62,7 +61,7 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
 from touch_pack_msgs.msg import (
-    PalpationStart, PalpationStatus, LoadCellSample, TouchFrame)
+    PalpationStart, PalpationStatus, TouchFrame)
 
 # QoS para comando crítico (/palpation/start): RELIABLE + TRANSIENT_LOCAL
 # faz com que o último start fique persistido — se o explorer subir
@@ -109,7 +108,7 @@ from .constants import (
     TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
     MATRIX_SAFE_Z_MM_DEFAULT, MATRIX_SAFE_Z_MM_MIN, MATRIX_SAFE_Z_MM_MAX,
     MATRIX_TRANSIT_MMS_DEFAULT, MATRIX_TRANSIT_MMS_MIN,
-    MATRIX_TRANSIT_MMS_MAX, MATRIX_SPAN_MAX_MM,
+    MATRIX_TRANSIT_MMS_MAX,
     PROBE_ALIGN_POINTS_DEFAULT, PROBE_ALIGN_POINTS_MIN,
     PROBE_ALIGN_POINTS_MAX, PROBE_ALIGN_RADIUS_MM_DEFAULT,
     PROBE_ALIGN_RADIUS_MM_MIN, PROBE_ALIGN_RADIUS_MM_MAX,
@@ -3556,7 +3555,6 @@ class PalpationGUI(FtAxesMixin, MatrixMixin, Node):
         right = tk.Frame(root, bg=BG)
         right.pack(side='left', fill='both', expand=True, padx=(6, 12), pady=12)
 
-        # LEFT: Poses
         tk.Label(left, text='Poses', bg=BG, fg=TEXT, font=FONT_HEAD).pack(anchor='w')
         tk.Frame(left, bg=BORDER, height=1).pack(fill='x', pady=(4, 8))
 

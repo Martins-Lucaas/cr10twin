@@ -1,6 +1,8 @@
 # Fork de https://github.com/COVVI-Robotics/eci_ros (driver original da COVVI
-# Robotics). O fork preserva a autoria da COVVI e adiciona apenas um ajuste
-# downstream de shutdown/reconexão. Crédito integral aos autores originais.
+# Robotics, Apache-2.0). O fork preserva integralmente a autoria, a licença e o
+# maintainer da COVVI, e carrega apenas dois ajustes downstream: shutdown/reconexão
+# da sessão ECI e a declaração das dependências de runtime (rclpy, covvi_interfaces)
+# ausentes no package.xml original. Crédito integral aos autores originais.
 [submodule "src/eci_ros"]
 	path = src/eci_ros
 	url = https://github.com/Martins-Lucaas/eci_ros.git

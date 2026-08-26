@@ -1496,7 +1496,6 @@ class ManualControlNode(Node):
                                   self._smart_close(v, project_label=l, label=l))
             b.pack(fill='x', pady=2)
 
-        # APPROACH + PRE-SHAPE por objeto
         tk.Label(pad, text='APPROACH + PRE-SHAPE (por objeto)',
                  font=FONT_SMALL, bg=PANEL, fg=TEXT_MUTED
                  ).pack(anchor='w', pady=(14, 4))
@@ -1638,7 +1637,6 @@ class ManualControlNode(Node):
                   bg=PANEL, padx=10, pady=6, font=FONT_BODY
                   ).pack(side='left', padx=2, fill='x', expand=True)
 
-        # Cartão 2: ciclo de pick + entrega
         card_r, r_body = _card(parent, 'Ciclo completo de pick e entrega')
         card_r.grid(row=0, column=1, sticky='nsew', padx=(8, 0), pady=(0, 8))
 
@@ -2199,7 +2197,7 @@ class ManualControlNode(Node):
         """Ciclo de pick em 6 fases (SDD §6):
           F1 pre-approach (articular, mão aberta)
           F2 approach     (Cartesiano curto, mão aberta)
-          F3 preshape     (fechamento parcial para o pré-shape)
+          F3 mão aberta   (sem pré-shape: o fechamento só ocorre em F5)
           F4 descend/advance (Cartesiano final ao TCP de grasp)
           F5 close        (smart_close incremental com detecção de toque)
           F6 lift         (Cartesiano de volta à pre-approach)
@@ -2244,7 +2242,6 @@ class ManualControlNode(Node):
         descent_extra_mm = descent_extra_mm or 0.0
         grasp_pose    = self._adjusted_pick_pose(obj_class, descent_extra_mm,
                                                   base_pose=dyn_pick)
-        preshape      = HAND_PRESHAPE[grip_key]
         grip_target   = HAND_GRIPS[grip_key]
 
         # Timings entre fases. O comando de braço usa `time_sl` como duração
@@ -2526,7 +2523,7 @@ class ManualControlNode(Node):
 
         def _phase_retreat():
             self._set_status(
-                f"[F4'] Retornando à pré-entrega…", _CLR=WARN)
+                "[F4'] Retornando à pré-entrega…", _CLR=WARN)
             self._apply_arm(DELIVERY_POSES_DEG[obj])
             self._pick_cycle_after = self.root.after(
                 move_ms, _phase_done)

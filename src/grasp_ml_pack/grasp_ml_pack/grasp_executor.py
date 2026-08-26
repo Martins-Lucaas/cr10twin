@@ -55,7 +55,7 @@ except ImportError:
 
 from .kinematics import (
     inverse_kinematics,
-    forward_kinematics, fk_partial,
+    forward_kinematics,
     HAND_CONFIGS, HAND_LIMITS, HAND_LOWER, hand_ik,
 )
 from .perfect_grasp import PerfectGrasp
@@ -130,7 +130,6 @@ _APPROACH_BOX_SEED_Q = np.array([0.0, -0.4, -1.5, -1.3, 0.0, 0.0])
 # altitude).
 _VIA_BOX_SEED_Q = np.array([0.5, -0.5, -0.8, -1.5, 0.5, 0.0])
 _APPROACH_CLEAR = 0.15    # m — altura de pré-abordagem (acima da parede das caixas: 0.705m)
-_LIFT_HEIGHT    = 0.22    # m — altura de levantamento pós-grasp
 _CLOSE_EXTRA    = 0.05    # fração extra de fechamento sobre o cfg nominal
 _MAX_JOINT_VEL  = 1.40    # rad/s — agressivo para fluidez
 _N_TRAJ_STEPS   = 8       # waypoints por segmento de trajetória
@@ -703,8 +702,6 @@ class GraspExecutorNode(Node):
 
         try:
             # Calcular todas as poses IK em robot frame
-            approach_pick = p_pick + np.array([0.0, 0.0, _APPROACH_CLEAR])
-            lift_pos      = p_pick + np.array([0.0, 0.0, _LIFT_HEIGHT])
             # via_box: altura fixa _TRANSIT_Z (1.15m world) sobre a caixa.
             via_pos       = np.array([p_box[0],  p_box[1],  _TRANSIT_Z])
             approach_box  = p_box + np.array([0.0, 0.0, _APPROACH_CLEAR])
@@ -742,7 +739,6 @@ class GraspExecutorNode(Node):
                 self.get_logger().warn(
                     f'[CICLO] {obj_class} sem posição mundial — usando '
                     f'poses cacheadas (posição canônica).')
-            ok2 = ok1 = ok_lift = True
 
             # Lado da caixa: approach_box com seed compacto; via_box com
             # seed _VIA_BOX_SEED_Q que converge para ramo compacto (q2≈-0.5,

@@ -196,7 +196,7 @@ def main() -> int:
         mass, com, tensor = _combine(by_link[link])
         print(f'  <link name="{link}_link">   <!-- z_link = '
               f'{z_link[link]:.1f} mm do flange -->')
-        print(f'    <inertial>')
+        print('    <inertial>')
         print(f'      <origin xyz="{com[0]:.5f} {com[1]:.5f} {com[2]:.5f}" '
               f'rpy="0 0 0"/>')
         print(f'      <mass value="{mass:.4f}"/>')
@@ -204,7 +204,7 @@ def main() -> int:
               f'ixy="{tensor[0][1]:.3e}" ixz="{tensor[0][2]:.3e}"')
         print(f'               iyy="{tensor[1][1]:.3e}" '
               f'iyz="{tensor[1][2]:.3e}" izz="{tensor[2][2]:.3e}"/>')
-        print(f'    </inertial>')
+        print('    </inertial>')
 
     parts = [(m, (c[0], c[1], c[2] + z_link[lk] * 1e-3), t)
              for lk in z_link for (m, c, t) in by_link[lk]]

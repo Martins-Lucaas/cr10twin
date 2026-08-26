@@ -40,7 +40,7 @@ def main(args=None):
 
     data = np.load(parsed.data)
     X, y = data['X'].astype(float), data['y'].astype(float)
-    print(f'\n=== DADOS CARREGADOS ===')
+    print('\n=== DADOS CARREGADOS ===')
     print(f'  Arquivo : {parsed.data}')
     print(f'  Amostras: {X.shape[0]} × {X.shape[1]} features')
     print(f'  Sucessos: {int(y.sum())} ({100*y.mean():.1f}%)')
@@ -59,7 +59,7 @@ def main(args=None):
             sys.exit(1)
 
     # ── 2. Estatísticas das features cinemáticas ───────────────────────
-    print(f'\n=== FEATURES CINEMÁTICAS (amostras com IK convergido) ===')
+    print('\n=== FEATURES CINEMÁTICAS (amostras com IK convergido) ===')
     ik_mask = X[:, 25] > 0.5
     print(f'  IK convergido: {ik_mask.sum()}/{len(ik_mask)} '
           f'({100*ik_mask.mean():.1f}%)')
@@ -72,7 +72,7 @@ def main(args=None):
               f'σ={reach_vals.std():.3f}')
 
     # ── 3. Treinar ─────────────────────────────────────────────────────
-    print(f'\n=== TREINAMENTO ===')
+    print('\n=== TREINAMENTO ===')
     from grasp_ml_pack.grasp_quality_net import GraspQualityNet
     net = GraspQualityNet.train(X, y, save_path=parsed.out)
 
@@ -82,20 +82,20 @@ def main(args=None):
     probs = net.predict_batch(X)
     preds = (probs > 0.5).astype(int)
 
-    print(f'\n=== AVALIAÇÃO (conjunto de treino) ===')
+    print('\n=== AVALIAÇÃO (conjunto de treino) ===')
     print(classification_report(y.astype(int), preds,
                                 target_names=['falha', 'sucesso']))
     print(f'  AUC-ROC (treino): {roc_auc_score(y, probs):.3f}')
 
     # ── 5. Importância de features (apenas RandomForest) ───────────────
     if net._backend == 'rf' and net._model is not None:
-        print(f'\n=== IMPORTÂNCIA: cinemáticas vs. originais ===')
+        print('\n=== IMPORTÂNCIA: cinemáticas vs. originais ===')
         imp = net._model.feature_importances_
         original_imp  = imp[:16].sum()
         kinematic_imp = imp[16:].sum()
         print(f'  Features originais  [0:16]: {100*original_imp:.1f}%')
         print(f'  Features cinemáticas [16:]: {100*kinematic_imp:.1f}%')
-        print(f'\n  Importância por feature:')
+        print('\n  Importância por feature:')
         for i, (name, val) in enumerate(zip(_FEATURE_NAMES, imp)):
             bar = '█' * int(val * 200)
             print(f'  [{i:2d}] {name:22s} {val:.4f}  {bar}')
