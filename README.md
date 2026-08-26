@@ -85,6 +85,16 @@ arrives through the submodule. Nothing beyond step 1 needs to be cloned.
 
 ## Full dependency list
 
+> **Known limitation — install from this list, not from `rosdep`.** The `apt` + `pip` blocks below are
+> the supported path and cover everything. `rosdep install --from-paths src` will **under-install**:
+> several `package.xml` files omit runtime dependencies the code actually imports — `covvi_interfaces`
+> (lazily imported by all three packages), `xacro`, `launch`/`launch_ros`, `ament_index_python`,
+> `python3-numpy`, `python3-opencv`, `python3-serial`, `python3-matplotlib` — and `hand_pack` also
+> omits `rclpy`, `sensor_msgs` and `trajectory_msgs`. Nothing is broken at build or run time; only the
+> rosdep metadata is incomplete. If you ever complete it, note that `hand_pack` **cannot** be declared as
+> a dependency of `touch_pack`/`grasp_ml_pack` (their launch files import `hand_pack.urdf_helpers`, but
+> `hand_pack` already depends on both) — colcon would reject the cycle.
+
 ### Operating system
 
 | Dependency | Version |
