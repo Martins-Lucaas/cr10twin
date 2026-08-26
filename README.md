@@ -45,7 +45,7 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 | Arm | **Dobot CR10** | 6-DOF, 1375 mm reach, 10 kg payload, TCP/IP V4 protocol |
 | Hand | **COVVI Hand** | 5 fingers + 31 joints (6 primary + 25 mimic), ECI Ethernet interface |
 | Camera | Gazebo RGB | 848×480, 70° FoV, mounted behind the conveyor |
-| Load cell | 100 kg S-type cell + HX711 on a **XIAO ESP32S3** (or **XIAO RP2040**) | **USB CDC only** at 115200 baud, one line per sample: `F,<seq>,<t_us>,<v_sensor>`. The WiFi/UDP path was removed on 27/07/2026 (packet loss + jitter in the HX711 front end) |
+| Load cell | 100 kg S-type cell + HX711 on a **XIAO ESP32S3** | **USB CDC only** at 115200 baud, one line per sample: `F,<seq>,<t_us>,<v_sensor>`. The WiFi/UDP path was removed on 27/07/2026 (packet loss + jitter in the HX711 front end) |
 | Touch sensor | STM32 + taxel array — **4×4 or 5×5**, selected with `sensor:=4\|5` | USB-CDC at 115200 baud; Izhikevich neuromorphic model (RA/SA spikes + `I_final`). Optional UDP relay: **8081** (scalar) · **8082** (raw frame) |
 
 <p align="center">
@@ -205,8 +205,6 @@ cr10twin/
 │   └── SENSOR TÁTIL 5X5/ CAD of the 5×5 tactile sensor
 ├── sensors/
 │   ├── ForceDriver/      Load-cell firmware — PlatformIO/Arduino, XIAO ESP32S3 + HX711
-│   ├── rp2040/           Same firmware ported 1:1 to CircuitPython (XIAO RP2040), identical
-│   │                     USB protocol — the host side does not change
 │   ├── Touch_sensor/     Standalone STM32 plotters (4×4 and 5×5, Linux and Windows) with the
 │   │                     UDP relay to the ROS PC, plus the force-intensity classifier
 │   └── Data/             Palpation runs — created at runtime by `palpation_logger`,
@@ -223,7 +221,7 @@ cr10twin/
 
 - **COVVI hand:** from the GUI (`touch_pack`/`grasp_ml_pack`), enter the IP and click **Connect** → **ECI ON** → **PWR ON**. Internally this starts `ros2 run covvi_hand_driver server <IP>`.
 - **CR10:** set `robot_ip` and use `control_mode:=mirror` (mirrors the real arm in sim) or `real_from_sim`. For *drag teach*, put the controller in **REMOTE mode** on the teach pendant.
-- **Load cell (XIAO + HX711):** firmware under `sensors/ForceDriver/` (ESP32S3, PlatformIO) or `sensors/rp2040/code.py` (RP2040, CircuitPython — same USB protocol). **The board must be on the USB cable: there is no network fallback.** `force_receiver` is the sole owner of the port and auto-detects it by USB VID; everything else consumes `/load_cell/voltage`. Calibrate in the GUI's **Load Cell** tab.
+- **Load cell (XIAO + HX711):** firmware under `sensors/ForceDriver/` (ESP32S3, PlatformIO). **The board must be on the USB cable: there is no network fallback.** `force_receiver` is the sole owner of the port and auto-detects it by USB VID; everything else consumes `/load_cell/voltage`. Calibrate in the GUI's **Load Cell** tab.
 - **Touch sensor (STM32):** connects over USB (115200 baud) — the GUI reads the serial port directly in the **Sensors** tab. Pick the array with `sensor:=4` (4×4, sends `I_final`) or `sensor:=5` (5×5, no TOTAL line). Without a local serial port, run a plotter from `sensors/Touch_sensor/` and relay over UDP: port **8081** for the scalar (`touch_receiver`) and **8082** for the raw frame.
 
 <p align="center">
