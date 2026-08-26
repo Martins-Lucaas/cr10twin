@@ -57,6 +57,32 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 
 ---
 
+## Installation
+
+```bash
+# 1. Clone the repository WITH the eci_ros submodule (COVVI hand driver)
+git clone --recursive https://github.com/Martins-Lucaas/cr10twin.git ~/cr10twin
+cd ~/cr10twin
+
+#    Already cloned without --recursive? Pull the submodule:
+#    git submodule update --init --recursive
+
+# 2. Install the dependencies (apt + Python — full list in the next section)
+
+# 3. Build the whole workspace and source it
+colcon build --symlink-install
+source install/setup.bash
+```
+
+`cra_description` (the CR10 URDF) is already versioned in the repository; `eci_ros`
+arrives through the submodule. Nothing beyond step 1 needs to be cloned.
+
+> **Updating the submodule later:** `git submodule update --remote src/eci_ros`
+> **`symbolic link ... Is a directory` error during the build:** `rm -rf build install && colcon build --symlink-install`
+> **Always run `source install/setup.bash`** in every new terminal before any `ros2 launch`/`ros2 run`.
+
+---
+
 ## Full dependency list
 
 ### Operating system
@@ -125,32 +151,6 @@ pip install cadquery-ocp
 
 ---
 
-## Installation
-
-```bash
-# 1. Clone the repository WITH the eci_ros submodule (COVVI hand driver)
-git clone --recursive https://github.com/Martins-Lucaas/cr10twin.git ~/cr10twin
-cd ~/cr10twin
-
-#    Already cloned without --recursive? Pull the submodule:
-#    git submodule update --init --recursive
-
-# 2. Install the dependencies (apt + Python — see "Full dependency list")
-
-# 3. Build the whole workspace and source it
-colcon build --symlink-install
-source install/setup.bash
-```
-
-`cra_description` (the CR10 URDF) is already versioned in the repository; `eci_ros`
-arrives through the submodule. Nothing beyond step 1 needs to be cloned.
-
-> **Updating the submodule later:** `git submodule update --remote src/eci_ros`
-> **`symbolic link ... Is a directory` error during the build:** `rm -rf build install && colcon build --symlink-install`
-> **Always run `source install/setup.bash`** in every new terminal before any `ros2 launch`/`ros2 run`.
-
----
-
 ## Package guide
 
 Each package documents how to run it in its own README.
@@ -202,14 +202,12 @@ cr10twin/
 │   │                     USB protocol — the host side does not change
 │   ├── Touch_sensor/     Standalone STM32 plotters (4×4 and 5×5, Linux and Windows) with the
 │   │                     UDP relay to the ROS PC, plus the force-intensity classifier
-│   └── Data/             Palpation runs, one folder per mode and one per run:
-│                         `<MODE>/<run_id>/` with `samples.csv`, `sensors.csv`,
-│                         `matrix.csv`, `adc.csv`, `spikes.csv`, `cuneiformes.csv`,
-│                         `params.json`, `summary.json` and `plot.png` together —
-│                         MODE is SLIDE|TOUCH|MANUAL|MATRIX_MAP (RECORDING for the
-│                         GUI's standalone Record button). Plus `latency/` with the
-│                         Sim-to-Real / Real-to-Sim captures of `latency_probe`
-└── images/               Photos, Gazebo/GUI screenshots, diagrams and videos
+│   └── Data/             Palpation runs — created at runtime by `palpation_logger`,
+│                         not versioned. Layout and file formats in touch_pack/README.md
+├── images/               Photos, Gazebo/GUI screenshots, diagrams and videos
+├── Docs/                 Vendor manuals (Dobot, COVVI, FA7155) — local only, not versioned
+├── modbus.txt            Dobot Appendix A — Modbus register map (robot as Modbus slave)
+└── serial_demo.lua       RS485 example for the controller — raw serial via 127.0.0.1:60000
 ```
 
 ---
