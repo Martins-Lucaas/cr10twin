@@ -49,9 +49,9 @@ from .constants import (
 # Intervalo entre tentativas de achar/abrir a porta (hot-plug).
 _RETRY_S = 2.0
 
-# Teto do buffer de recepção antes de descartar por sujeira. A 250 Hz o link
-# entrega 7 kB/s; 8 kB é mais de um segundo de dados — se encheu sem um quadro
-# válido sair, o que está na linha não é este protocolo.
+# Teto do buffer de recepção antes de descartar por sujeira. A 1 kHz o link
+# entrega 28 kB/s; 8 kB são ~285 quadros — se encheu sem um quadro válido
+# sair, o que está na linha não é este protocolo.
 _MAX_BUF = 8192
 
 _PAYLOAD = struct.Struct('<6f')
@@ -61,7 +61,7 @@ def crc16_modbus(data: bytes) -> int:
     """CRC-16/MODBUS (init 0xFFFF, polinômio refletido 0xA001).
 
     O manual traz a versão por tabela de 256 entradas; esta é a mesma conta
-    bit a bit. 26 bytes x 8 iterações x 250 Hz ~ 52 k operações/s — irrelevante
+    bit a bit. 26 bytes x 8 iterações x 1 kHz ~ 208 k operações/s — irrelevante
     perto do custo de uma leitura na serial, e cabe em cinco linhas.
     """
     crc = 0xFFFF

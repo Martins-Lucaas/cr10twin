@@ -23,7 +23,7 @@ from .constants import FT_NOMINAL_RATE_HZ
 # termo adaptativo degenera num passa-baixa fixo.
 #
 # ATENÇÃO: a sintonia abaixo foi medida no HX711 a 82 Hz. A FA7155 entrega
-# 250 Hz com ruído diferente — RE-MEDIR antes de confiar nos números. O
+# 1 kHz com ruído diferente — RE-MEDIR antes de confiar nos números. O
 # cutoff é adaptativo e o dt vem do carimbo do sensor, então nada quebra com
 # a taxa nova; o que muda é se 0,3/0,5 continua sendo o ótimo.
 #

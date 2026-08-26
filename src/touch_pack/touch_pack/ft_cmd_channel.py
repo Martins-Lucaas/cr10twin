@@ -44,7 +44,7 @@ class LineTapMixin:
                 return
             self._tap_buf += data
             # Teto de segurança: uma sessão esquecida aberta não pode crescer
-            # sem limite a 250 quadros/s.
+            # sem limite a 1000 quadros/s.
             if len(self._tap_buf) > 65536:
                 del self._tap_buf[:len(self._tap_buf) - 8192]
 

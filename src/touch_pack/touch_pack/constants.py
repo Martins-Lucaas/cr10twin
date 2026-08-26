@@ -75,15 +75,25 @@ def hold_tol_n(target_f: float) -> float:
 # Substitui a célula axial de 1 eixo. Não há placa nossa no caminho: o sensor
 # fala RS485 direto com o PC por um conversor USB (ZK-U485/CH340), e o driver
 # é o ft_receiver. Ver ft_serial.py para o formato do quadro.
-FT_SERIAL_BAUD  = 115200      # default de fábrica ao energizar (manual §4.3)
+#
+# BAUD E TAXA SÃO DO EXEMPLAR, NÃO DO CASO GERAL DO MANUAL. Confirmado em
+# 26/08/2026 na bancada: a unidade montada no flange fala 1 Mbps e entrega
+# 1 kHz — e não os 115200/250 Hz que o manual dá como default do caso geral.
+# Estes dois números são a FONTE DE VERDADE do repo: ft_serial, ft_tcp,
+# ft_receiver e a aba "Load cell" da GUI leem daqui. Se a unidade for
+# reconfigurada pelo canal Modbus (Send_Baud_rate / Send_Frequency), é aqui
+# que o novo valor entra.
+FT_SERIAL_BAUD  = 1_000_000   # exemplar da bancada (manual §4.3 dá 115200 como
+                              # default do caso geral)
 FT_FRAME_HEADER = b'\x53\x54'
 FT_FRAME_LEN    = 28          # 2 (cabeçalho) + 6×float32 + 2 (CRC-16/MODBUS)
 # Ordem dos seis canais dentro do quadro — é ela que dá nome às colunas.
 FT_AXES = ('fx', 'fy', 'fz', 'mx', 'my', 'mz')
-# Taxa do modelo em uso (manual §3.1; a série aceita 500–1000 Hz sob encomenda).
-FT_NOMINAL_RATE_HZ = 250.0
-# Teto ABSOLUTO do link: 28 bytes × 10 bits / 115200 baud ≈ 2,43 ms por quadro.
-# Um sensor encomendado acima disto NÃO cabe em 115200 e vai chegar picotado.
+# Taxa do exemplar em uso (manual §3.1: a série aceita 500–1000 Hz sob
+# encomenda, e esta unidade veio no topo da faixa).
+FT_NOMINAL_RATE_HZ = 1000.0
+# Teto ABSOLUTO do link: 28 bytes × 10 bits / 1 Mbps ≈ 0,28 ms por quadro.
+# Um sensor acima disto NÃO cabe no baud em uso e vai chegar picotado.
 
 
 def ft_max_rate_hz(baud: float = FT_SERIAL_BAUD) -> float:
@@ -91,13 +101,14 @@ def ft_max_rate_hz(baud: float = FT_SERIAL_BAUD) -> float:
 
     É função e não só constante porque o baud é PARÂMETRO do nó (`ft_baud`):
     o aviso do ft_receiver imprimia o baud pedido ao lado de um teto sempre
-    calculado sobre os 115200 de fábrica, e com `ft_baud:=460800` o número
-    que ele mandava conferir estava errado por 4×.
+    calculado sobre o FT_SERIAL_BAUD do módulo, e com um `ft_baud` diferente
+    (`ft_baud:=115200`, por exemplo) o número que ele mandava conferir estava
+    errado na mesma proporção.
     """
     return float(baud) / (FT_FRAME_LEN * 10)
 
 
-FT_MAX_RATE_HZ = ft_max_rate_hz()   # ≈ 411 Hz no baud de fábrica
+FT_MAX_RATE_HZ = ft_max_rate_hz()   # ≈ 3571 Hz a 1 Mbps
 # Abaixo disto o receiver avisa: cabo ruim, baud errado ou taxa de fábrica
 # diferente da configurada.
 FT_MIN_RATE_HZ = 100.0
@@ -217,13 +228,14 @@ FT_MODBUS_MAP: dict = {
 # pré-preenchido; se você mudar com Send_ModBus_ID, mude aqui também.
 FT_MODBUS_SLAVE_ID = 1
 # Prazo de uma transação. Generoso de propósito: a resposta do comando chega
-# no MEIO do stream de 250 Hz e o cliente precisa peneirar os quadros "ST"
+# no MEIO do stream de 1 kHz e o cliente precisa peneirar os quadros "ST"
 # antes de achá-la (ver ft_modbus.find_response).
 FT_MODBUS_TIMEOUT_S = 0.5
 # Taxas de saída que o cliente de fábrica oferece no combo de frequência.
 FT_RATE_CHOICES_HZ = (10, 50, 100, 200, 250, 500, 1000)
 # Bauds oferecidos pelo mesmo cliente para a 485.
-FT_BAUD_CHOICES = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
+FT_BAUD_CHOICES = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
+                   1_000_000)
 
 # ── Perfil HKVL-56 (Suzhou Hangkai Microelectronics) ──────────────────
 # CONFIRMADO por manual, 26/08/2026 — §5.1 (Communication Specifications) e
@@ -234,10 +246,12 @@ FT_BAUD_CHOICES = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 #
 # ATENÇÃO — ESTE NÃO É O SENSOR DA BANCADA. Confirmado em 26/08/2026: a peça
 # no flange é o FA7155 da Fipos/FIBOS (Changzhou), plaqueta
-# "FA7155D-400N/20NM", 115200 baud, 250 Hz, stream com cabeçalho "ST". O
-# HKVL-56 é de OUTRO fabricante e o manual dele descreve 1 Mbps e Modbus
-# POLLED, sem stream. Este perfil fica aqui descrito e testado, e NÃO ativo,
-# por dois motivos que valem para o FA7155:
+# "FA7155D-400N/20NM", e o exemplar fala 1 Mbps a 1 kHz. O baud coincide com o
+# do HKVL-56 e por isso NÃO distingue os dois; o que distingue é o MODO: o
+# FA7155 empurra quadros de 28 B com cabeçalho "ST" sozinho, enquanto o
+# HKVL-56 é de OUTRO fabricante e o manual dele descreve Modbus POLLED, sem
+# stream. Este perfil fica aqui descrito e testado, e NÃO ativo, por dois
+# motivos que valem para o FA7155:
 #
 #   1. Os quadros publicados neste manual validaram o crc16_modbus() do repo
 #      contra um CRC de fabricante (fecham byte a byte) — antes disso a nossa
@@ -281,7 +295,7 @@ FT_PROFILE_HKVL56 = {
 # exibição e exportação, para o número da GUI bater com o do fabricante.
 FT_SG_WINDOW_DEFAULT = 11    # ímpar
 FT_SG_ORDER_DEFAULT  = 3     # < janela
-FT_STATS_WINDOW_DEFAULT = 250   # amostras de Mean_Num / MAX_Num (~1 s @250 Hz)
+FT_STATS_WINDOW_DEFAULT = 1000  # amostras de Mean_Num / MAX_Num (~1 s @1 kHz)
 
 # Touch sensor (STM32 → PC plotter → UDP). Porta DIFERENTE da célula, senão
 # os fluxos se misturam no mesmo receptor.

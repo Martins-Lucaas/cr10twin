@@ -84,7 +84,7 @@ def configure_tool_485(host: str = FT_TCP_HOST,
     §SetToolPower):
 
       SetToolMode(1)          pinos 1/2 do aviação em modo 485, não AI
-      SetTool485(baud,"N",1)  casa o baud com os 115200 do FA7155
+      SetTool485(baud,"N",1)  casa o baud com o do FA7155 (FT_SERIAL_BAUD)
       SetToolPower(0) → (1)   religa a ponta, para o sensor reinicializar
 
     O ciclo de energia é o que garante que o sensor comece do zero no baud de

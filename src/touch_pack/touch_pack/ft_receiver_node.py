@@ -149,7 +149,7 @@ class FtReceiverNode(Node):
         # Só o SINAL importa; qualquer ganho aqui reescalaria a força e o
         # setpoint da GUI passaria a significar outra coisa.
         self._sign = -1.0 if sign < 0 else 1.0
-        # Teto calculado sobre o baud EM USO, não sobre os 115200 de fábrica:
+        # Teto calculado sobre o baud EM USO, não sobre o FT_SERIAL_BAUD:
         # com `ft_baud` alterado, o aviso citava um teto que não era o do link
         # que ele mandava conferir.
         link_max_hz = ft_max_rate_hz(baud)
@@ -157,8 +157,8 @@ class FtReceiverNode(Node):
             self.get_logger().warn(
                 f'ft_rate_hz={rate:.0f} Hz não cabe em {baud} baud (teto '
                 f'{link_max_hz:.0f} Hz, {FT_FRAME_LEN} B por quadro). Os '
-                'quadros vão chegar picotados; peça o sensor a 250 Hz ou '
-                'suba o baud.')
+                'quadros vão chegar picotados; baixe a taxa de saída do '
+                'sensor ou suba o baud.')
 
         # ── Estado ────────────────────────────────────────────────────
         # Um filtro por canal — o wrench inteiro precisa ser utilizável, não
@@ -176,7 +176,9 @@ class FtReceiverNode(Node):
         self._tare_done = False
         self._link_ok = False
         # Janela dos SEIS eixos filtrados, para o tare e o auto-tare.
-        self._buf: collections.deque = collections.deque(maxlen=400)
+        # 1600 = 1,6 s a 1 kHz, o dobro de _CAPTURE_WIN_N (era 400/200 quando
+        # o exemplar era lido a 250 Hz — a proporção é que importa).
+        self._buf: collections.deque = collections.deque(maxlen=1600)
 
         self._rx_frames = 0
         self._rate_hz = 0.0
@@ -262,8 +264,9 @@ class FtReceiverNode(Node):
         self._phase = str(msg.phase or '')
 
     # ── TARE ──────────────────────────────────────────────────────────
-    # Janela do tare: ~0,8 s a 250 Hz.
-    _CAPTURE_WIN_N = 200
+    # Janela do tare: ~0,8 s a 1 kHz (eram 200 amostras quando o exemplar
+    # era lido a 250 Hz — a janela é definida em TEMPO, não em amostras).
+    _CAPTURE_WIN_N = 800
     # Estabilidade por DERIVA (mediana da 2ª metade vs a 1ª), não por
     # pico-a-pico — mesma escolha do force_receiver, pelo mesmo motivo: o ptp
     # cresce com a janela mesmo em sinal estacionário.
@@ -272,7 +275,8 @@ class FtReceiverNode(Node):
     # repouso E dentro da banda morta — as duas condições, senão ele zeraria o
     # próprio contato durante um HOLD.
     _AUTOZERO_BAND_N = 0.30
-    _AUTOZERO_RATE = 0.001      # passo/amostra (tau ~ 4 s a 250 Hz)
+    _AUTOZERO_RATE = 0.00025    # passo/amostra (tau ~ 4 s a 1 kHz; era
+                                # 0,001 quando a taxa era 250 Hz)
 
     @staticmethod
     def _window_drift(win: list[float]) -> float:

@@ -147,7 +147,7 @@ class FtAxesMixin:
         self._ft_csv_error = ''
 
     def _ft_feed_processing(self, now: float, vals: tuple) -> None:
-        """Uma amostra dos seis eixos, na taxa do sensor (~250 Hz).
+        """Uma amostra dos seis eixos, na taxa do sensor (~1 kHz).
 
         Roda na thread do executor ROS. Tudo aqui é O(1) por eixo — o SG é um
         produto interno de 11 termos e a estatística é um append em deque; a
@@ -661,7 +661,7 @@ class FtAxesMixin:
     def _refresh_ft_axes(self) -> None:
         """Repinta os seis eixos, a saúde do link e as estatísticas.
 
-        Roda a 10 Hz e NÃO a cada mensagem: o sensor entrega ~250 quadros/s e
+        Roda a 10 Hz e NÃO a cada mensagem: o sensor entrega ~1000 quadros/s e
         redesenhar canvas nessa taxa satura a thread do Tk — foi o que já
         travou a GUI inteira no heatmap do toque (ver _build_sensors_tab)."""
         if not getattr(self, '_ft_axis_widgets', None):

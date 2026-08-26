@@ -39,11 +39,21 @@ def test_variante_da_bancada_esta_configurada():
 
 
 def test_teto_do_link_bate_com_a_conta_do_baud():
-    """28 bytes × 10 bits por quadro: acima disto o quadro não cabe em
-    115200 e chega picotado."""
+    """28 bytes × 10 bits por quadro: acima disto o quadro não cabe no baud
+    em uso e chega picotado."""
     assert FT_MAX_RATE_HZ == pytest.approx(
         FT_SERIAL_BAUD / (FT_FRAME_LEN * 10))
-    assert 400 < FT_MAX_RATE_HZ < 420
+    assert 3500 < FT_MAX_RATE_HZ < 3650
+
+
+def test_baud_e_taxa_sao_os_do_exemplar_da_bancada():
+    """26/08/2026: a unidade montada no flange fala 1 Mbps e entrega 1 kHz,
+    e NÃO os 115200/250 Hz que o manual dá como default do caso geral. É fato
+    de bancada, como a plaqueta — fica fixado aqui."""
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ
+    assert FT_SERIAL_BAUD == 1_000_000
+    assert FT_NOMINAL_RATE_HZ == 1000.0
+    assert FT_NOMINAL_RATE_HZ < FT_MAX_RATE_HZ, '1 kHz tem de caber no link'
 
 
 # ── Callback do wrench ────────────────────────────────────────────────────

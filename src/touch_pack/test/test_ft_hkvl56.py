@@ -152,8 +152,9 @@ def test_o_estilo_padrao_nao_le_a_resposta_do_hkvl():
 # ── O perfil em si ────────────────────────────────────────────────────
 
 def test_perfil_registra_o_baud_de_fabrica_do_manual():
-    """"...the default baud rate when powering on ... is 1 Mbps" — e NÃO os
-    115200 que o resto do repo assume para o FA7155."""
+    """"...the default baud rate when powering on ... is 1 Mbps" — o mesmo
+    baud do exemplar de FA7155 da bancada, que por isso NÃO distingue os dois
+    sensores; quem distingue é o stream "ST" contra o Modbus polled."""
     assert P['baud_default'] == 1_000_000
 
 
