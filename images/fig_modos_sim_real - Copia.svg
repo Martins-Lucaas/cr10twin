@@ -1,0 +1,47 @@
+<svg width="100%" viewBox="0 0 720 440" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <title>Modos Sim-to-Real e Real-to-Sim: quem comanda quem</title>
+  <desc>Os dois sentidos de transferencia entre o gemeo digital e o conjunto fisico CR10+COVVI. Sim-to-Real: o simulador comanda e o fisico replica (ServoJ 33 Hz, MovJ com debounce de 80 ms, mao via ECI). Real-to-Sim: o fisico comanda e o gemeo replica (feedback de juntas a 125 Hz, habilita o drag teach). No braco os sentidos sao mutuamente exclusivos, um por vez.</desc>
+  <defs>
+    <marker id="ahb" markerWidth="10" markerHeight="10" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2E7CC4"/></marker>
+    <marker id="ahg" markerWidth="10" markerHeight="10" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3C9D54"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="720" height="440" fill="#FFFFFF"/>
+  <text x="360" y="34" text-anchor="middle" font-size="18" font-weight="700" fill="#1A1A1A">Ponte bidirecional CR10 + COVVI — quem comanda quem</text>
+
+  <!-- Gemeo Digital -->
+  <rect x="48" y="86" width="230" height="104" rx="10" fill="#E6F1FB" stroke="#2E7CC4" stroke-width="2"/>
+  <text x="163" y="126" text-anchor="middle" font-size="16" font-weight="700" fill="#0C447C">Gêmeo Digital</text>
+  <text x="163" y="149" text-anchor="middle" font-size="11.5" fill="#2E6BA8">Gazebo · GUI · RViz</text>
+  <text x="163" y="169" text-anchor="middle" font-size="11.5" fill="#2E6BA8">(máquina de estados, jog, teach)</text>
+
+  <!-- Fisico -->
+  <rect x="442" y="86" width="230" height="104" rx="10" fill="#E4F3E7" stroke="#3C9D54" stroke-width="2"/>
+  <text x="557" y="126" text-anchor="middle" font-size="16" font-weight="700" fill="#1E5B2E">CR10 + COVVI</text>
+  <text x="557" y="149" text-anchor="middle" font-size="11.5" fill="#2E7D45">braço 6 GDL + mão protética</text>
+  <text x="557" y="169" text-anchor="middle" font-size="11.5" fill="#2E7D45">(hardware real)</text>
+
+  <!-- Sim-to-Real: top arrow -->
+  <text x="360" y="112" text-anchor="middle" font-size="12" font-weight="700" fill="#2E7CC4">Sim-to-Real — comando</text>
+  <line x1="285" y1="124" x2="435" y2="124" stroke="#2E7CC4" stroke-width="5" marker-end="url(#ahb)"/>
+
+  <!-- Real-to-Sim: bottom arrow -->
+  <line x1="435" y1="158" x2="285" y2="158" stroke="#3C9D54" stroke-width="5" marker-end="url(#ahg)"/>
+  <text x="360" y="180" text-anchor="middle" font-size="12" font-weight="700" fill="#3C9D54">Real-to-Sim — feedback</text>
+
+  <!-- Captions -->
+  <rect x="48" y="214" width="624" height="70" rx="8" fill="#F4F9FE" stroke="#BFD9F0" stroke-width="1"/>
+  <text x="62" y="236" font-size="13" font-weight="700" fill="#0C447C">① Sim-to-Real — o simulador comanda; o físico replica.</text>
+  <text x="62" y="256" font-size="11.5" fill="#4A5568">O mesmo goal move, no mesmo instante, o modelo virtual e o equipamento real.</text>
+  <text x="62" y="274" font-size="11.5" fill="#4A5568">streaming ServoJ 33 Hz (contínuo) · MovJ com debounce 80 ms (jog) · mão COVVI via ECI</text>
+
+  <rect x="48" y="292" width="624" height="70" rx="8" fill="#F3FAF4" stroke="#C3E3C9" stroke-width="1"/>
+  <text x="62" y="314" font-size="13" font-weight="700" fill="#1E5B2E">② Real-to-Sim — o físico comanda; o gêmeo replica.</text>
+  <text x="62" y="334" font-size="11.5" fill="#4A5568">Feedback das juntas a 125 Hz republicado no tópico de estado das juntas.</text>
+  <text x="62" y="352" font-size="11.5" fill="#4A5568">Autoridade do hardware · habilita o drag teach (controlador em modo REMOTE)</text>
+
+  <!-- Footer note -->
+  <rect x="48" y="374" width="624" height="50" rx="8" fill="#FBF3E0" stroke="#E0A93B" stroke-width="1.2"/>
+  <text x="62" y="395" font-size="11.5" fill="#7A5B12">No braço, os dois sentidos são <tspan font-weight="700">mutuamente exclusivos</tspan> — um sentido por vez, selecionado por modo.</text>
+  <text x="62" y="414" font-size="11.5" fill="#7A5B12">O que define o gêmeo digital pleno é a <tspan font-weight="700">coexistência dos canais</tspan>, não a simultaneidade dos sentidos.</text>
+</svg>

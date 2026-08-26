@@ -1,0 +1,316 @@
+<?xml version="1.0"?>
+<!--
+  touch_tool_tcp.urdf
+  TCP de palpação do Touch Pack (Gazebo Classic) — pilha que o CR10 carrega no
+  flange (Link6), montada a partir de `cad/step/MONTAGEM_FA7155_stack.step`:
+
+      flange fixo FA7155 → célula de 6 eixos FA7155
+          → acoplador_celula_hotswap → ponteira F (retangular 15 × 17)
+
+  Substituiu (18/08/2026) a pilha da célula axial de 100 kg — acoplador_robo →
+  célula tipo S → acoplador_tool → touch_tool → ponteira D. A célula de 6 eixos
+  é MUITO mais curta que a viga S, e o TCP encurtou de 162,2 para 67,7 mm: todo
+  ensino de pose feito com a ferramenta antiga precisa ser refeito.
+
+  Os quatro sólidos vêm de UMA montagem, já posicionados entre si. O arquivo
+  herdou o Z do assembly em que foi modelado (a base cai em Z = +95 mm), e o
+  gerador de meshes normaliza pelo MENOR Z — a face inferior do flange fixo,
+  que é a que parafusa no punho do CR10 (manual FA7155 §2.1: quatro M6 + pino
+  Φ6, sem acoplador impresso no meio).
+
+  PILHA NO EIXO +Z DO FLANGE (mm, lida do CAD)
+  ══════════════════════════════════════════
+      0,0 …   6,0   flange fixo FA7155   (⌀75 × 6, comprado à parte)
+      0,4 …  36,9   célula FA7155        (⌀75 × 36,5 com o prensa-cabo saindo
+                                          em +X até 44 mm; o flange fixo entra
+                                          no recuo inferior dela)
+     37,2 …  59,2   acoplador_celula_hotswap (disco ⌀66 × 11 + haste ⌀15 × 11)
+     49,7 …  67,7   ponteira F           (luva sobre a haste + cabeça 16,6 ×
+                                          18,6, face de contato 15,4 × 17,4)
+
+    Z = 67,7 mm → tcp_link (face de contato da ponteira)
+
+  As sobreposições de faixa (flange fixo dentro do recuo da célula, haste do
+  acoplador dentro da luva da ponteira) são os próprios encaixes mecânicos —
+  cada link tem colisão só do que fica EXPOSTO, senão o ODE ganha geometria
+  duplicada dentro do mesmo corpo rígido.
+
+  SENSOR TÁTIL 5×5. O laminado é COLADO na face de contato da ponteira, como
+  já era na ponteira D. A face da ponteira F tem 15,4 × 17,4 mm e o laminado
+  17 × 19,47 mm, então ele sobra ~0,8 mm por lado em X e ~1,0 mm em Y: a
+  sobra é balanço livre, não apoiada pela cabeça da ponteira, e taxel de
+  borda responde com menos rigidez de fundo que taxel central. Nada disso
+  entra na cinemática — a colagem some na espessura e o tcp_link segue nos
+  67,7 mm da face — mas explica assimetria de borda no mapa de ativação.
+
+  A ponteira é a única peça hot-swap da pilha: trocá-la muda a altura do TCP
+  e obriga a refazer os três lugares listados no fim deste cabeçalho.
+
+  MASSAS E INÉRCIAS
+  ═════════════════
+  Calculadas da geometria real por `scripts/gen_tcp_meshes_from_step.py`,
+  que também gera os STL de `meshes/`. Densidades:
+    peças impressas (PLA 0,25 mm, 40% infill) ... 950 kg/m³
+    flange fixo (liga de alumínio) .............. 2700 kg/m³
+    célula FA7155 ............................... massa de CATÁLOGO, 0,300 kg
+        (manual §3.1: ≤ 0,3 kg. O STEP do fabricante é um envelope maciço e a
+        2700 kg/m³ daria 339 g para uma peça com cavidade interna e eletrônica.)
+  Total do conjunto: 0,3837 kg, CoM em Z = +19,5 mm do flange.
+
+  TCP em (0, 0, +67,7 mm) no frame do Link6, sem rotação — espelhado em
+  `touch_pack.kinematics.T_TOUCH_TOOL_ATTACH` e na compensação de gravidade de
+  `config/tactile_controllers.yaml`. Mexeu aqui, mexe nos três.
+
+  Uso standalone (Gazebo): mantenha o bloco world/Link6 abaixo.
+  Integração no CR10: o launch injeta os mesmos links/juntas usando o Link6
+  do robô — este arquivo é a referência legível e o alvo de `check_urdf`.
+-->
+<robot name="touch_tool_tcp">
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROOT (modo standalone): liga a ferramenta ao world para teste.
+       Na integração com o CR10 este bloco sai e o Link6 é o do robô.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="world"/>
+
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="Link6"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Placeholder do flange (substituído pelo Link6 do CR10 na integração). -->
+  <link name="Link6">
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="1e-9" ixy="0.0" ixz="0.0"
+               iyy="1e-9" iyz="0.0" izz="1e-9"/>
+    </inertial>
+  </link>
+
+  <!-- Azul do filamento: todas as peças impressas saíram na mesma cor. -->
+  <material name="printed_blue">
+    <color rgba="0.11 0.35 0.78 1.0"/>
+  </material>
+  <!-- Alumínio anodizado do FA7155 e do flange fixo. -->
+  <material name="anodized_alu">
+    <color rgba="0.55 0.58 0.62 1.0"/>
+  </material>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       FLANGE FIXO DO FA7155 — comprado à parte (o STEP do fabricante).
+       Disco ⌀75 × 6 mm, face inferior parafusada no flange do CR10. O topo
+       entra no recuo da célula, então só a lateral do disco fica exposta.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="ft_flange_link">
+    <inertial>
+      <origin xyz="0.00018 0.00010 0.00295" rpy="0 0 0"/>
+      <mass value="0.0518"/>
+      <inertia ixx="2.149e-05" ixy="-1.491e-07" ixz="-4.657e-10"
+               iyy="2.224e-05" iyz="-2.689e-10" izz="4.341e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://touch_pack/meshes/fa7155_flange_fixo.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="anodized_alu"/>
+    </visual>
+    <collision name="col_ft_flange">
+      <origin xyz="0 0 0.003" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0375" length="0.006"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="ft_flange_attach" type="fixed">
+    <parent link="Link6"/>
+    <child link="ft_flange_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       CÉLULA DE 6 EIXOS FA7155 — cad/step/FA7155D_20Nm.step
+       Corpo ⌀75 × 36,5 mm em liga de alumínio. O prensa-cabo sai em +X (até
+       X = 44 mm) e NÃO ganha colisão: nunca é ponto de contato, e um cilindro
+       simples é bem mais estável no ODE que o envelope com a saída de cabo.
+       Fx+/Fy+ no plano do flange e Fz+ SAINDO da face da ferramenta — é essa
+       orientação que justifica o ft_force_sign = −1 do ft_receiver.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="ft_sensor_link">
+    <inertial>
+      <origin xyz="0.00010 0.00008 0.01933" rpy="0 0 0"/>
+      <mass value="0.3000"/>
+      <inertia ixx="1.233e-04" ixy="2.380e-09" ixz="-2.932e-07"
+               iyy="1.258e-04" iyz="2.405e-07" izz="2.059e-04"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://touch_pack/meshes/fa7155_sensor.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="anodized_alu"/>
+    </visual>
+    <collision name="col_ft_sensor">
+      <origin xyz="0 0 0.01825" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0375" length="0.0365"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="ft_sensor_attach" type="fixed">
+    <parent link="ft_flange_link"/>
+    <child link="ft_sensor_link"/>
+    <origin xyz="0 0 0.0004" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ACOPLADOR HOT-SWAP — cad/step/acoplador_celula_hotswap.step
+       Disco ⌀66 × 11 mm parafusado na face da ferramenta da célula, seguido
+       da haste ⌀15 × 11 mm que recebe a luva da ponteira. Só o disco tem
+       colisão: a haste fica coberta pela ponteira a partir de +12,5 mm.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="coupler_tool_link">
+    <inertial>
+      <origin xyz="0.00000 -0.00000 0.00484" rpy="0 0 0"/>
+      <mass value="0.0275"/>
+      <inertia ixx="7.242e-06" ixy="0.0" ixz="0.0"
+               iyy="7.546e-06" iyz="0.0" izz="1.416e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://touch_pack/meshes/acoplador_celula_hotswap.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="printed_blue"/>
+    </visual>
+    <collision name="col_coupler_tool">
+      <origin xyz="0 0 0.0055" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.033" length="0.011"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="coupler_tool_attach" type="fixed">
+    <parent link="ft_sensor_link"/>
+    <child link="coupler_tool_link"/>
+    <origin xyz="0 0 0.0368" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       PONTEIRA F — cad/step/ponteira_F_retangular_15x17.step
+       Luva ⌀20 × 12 mm que desce sobre a haste do acoplador + cabeça
+       16,6 × 18,6 × 6 mm que afina para a face de contato de 15,4 × 17,4 mm.
+       É a peça hot-swap: trocar por outra ponteira muda a altura do TCP.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="tool_tip_link">
+    <inertial>
+      <origin xyz="0.00000 0.00000 0.00990" rpy="0 0 0"/>
+      <mass value="0.0043"/>
+      <inertia ixx="2.429e-07" ixy="1.706e-09" ixz="0.0"
+               iyy="2.328e-07" iyz="0.0" izz="2.484e-07"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://touch_pack/meshes/ponteira_F_retangular_15x17.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="printed_blue"/>
+    </visual>
+    <!-- Só o trecho da luva que sobra do acoplador (de +9,5 a +12 mm). -->
+    <collision name="col_tip_sleeve">
+      <origin xyz="0 0 0.01075" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.010" length="0.0025"/></geometry>
+    </collision>
+    <!-- Cabeça: é ESTA caixa que toca a peça. -->
+    <collision name="col_tip_head">
+      <origin xyz="0 0 0.015" rpy="0 0 0"/>
+      <geometry><box size="0.0166 0.0186 0.006"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="tool_tip_sleeve_attach" type="fixed">
+    <parent link="coupler_tool_link"/>
+    <child link="tool_tip_link"/>
+    <origin xyz="0 0 0.0125" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       tcp_link — face de contato da ponteira, Z = +67,7 mm do flange.
+       Soma da cadeia: 0 + 0,4 + 36,8 + 12,5 + 18,0 = 67,7 mm.
+  ══════════════════════════════════════════════════════════════════ -->
+  <link name="tcp_link"/>
+
+  <joint name="tcp_alias_joint" type="fixed">
+    <parent link="tool_tip_link"/>
+    <child link="tcp_link"/>
+    <origin xyz="0 0 0.018" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       PROPRIEDADES GAZEBO (ODE)
+       Em Gazebo Classic a cor declarada no material do link nem sempre
+       renderiza; o override ambient/diffuse/specular no bloco gazebo
+       reference abaixo é o que efetivamente colore a peça.
+
+       NB: nada de sintaxe de tag dentro de comentário aqui. O launch monta o
+       URDF mínimo do robot_state_publisher removendo visual/collision/
+       inertial por regex, e um nome de tag solto no meio de um comentário
+       faz a regex casar através dele e comer o fechamento do link.
+  ══════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="Link6">
+    <self_collide>0</self_collide>
+  </gazebo>
+
+  <gazebo reference="ft_flange_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>0.40</mu1><mu2>0.40</mu2><kp>1.0e5</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
+    <visual><material>
+      <ambient>0.35 0.37 0.40 1</ambient>
+      <diffuse>0.55 0.58 0.62 1</diffuse>
+      <specular>0.85 0.85 0.90 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <gazebo reference="ft_sensor_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>0.40</mu1><mu2>0.40</mu2><kp>1.0e5</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
+    <visual><material>
+      <ambient>0.35 0.37 0.40 1</ambient>
+      <diffuse>0.55 0.58 0.62 1</diffuse>
+      <specular>0.85 0.85 0.90 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <gazebo reference="coupler_tool_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>0.40</mu1><mu2>0.40</mu2><kp>1.0e5</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
+    <visual><material>
+      <ambient>0.06 0.20 0.45 1</ambient>
+      <diffuse>0.11 0.35 0.78 1</diffuse>
+      <specular>0.25 0.25 0.30 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <!-- Ponteira: atrito mais alto — é a superfície que desliza sobre a peça. -->
+  <gazebo reference="tool_tip_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>0.60</mu1><mu2>0.60</mu2><kp>1.0e5</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
+    <visual><material>
+      <ambient>0.06 0.20 0.45 1</ambient>
+      <diffuse>0.11 0.35 0.78 1</diffuse>
+      <specular>0.25 0.25 0.30 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <!-- Feedback de força/torque na junta onde a célula real está montada. -->
+  <gazebo reference="ft_sensor_attach">
+    <provideFeedback>true</provideFeedback>
+  </gazebo>
+
+</robot>

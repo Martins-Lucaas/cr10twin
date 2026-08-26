@@ -1,0 +1,50 @@
+<svg width="100%" viewBox="0 0 720 400" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <title>Método de medição de latência por correlação cruzada</title>
+  <desc>As trajetorias de junta do gemeo digital (topico de estado das juntas) e do braco fisico (feedback a 125 Hz) sao registradas sob um relogio comum. A latencia e o deslocamento de pico da correlacao cruzada entre as duas series.</desc>
+  <defs>
+    <marker id="ak" markerWidth="10" markerHeight="10" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker>
+    <marker id="add" markerWidth="8" markerHeight="8" refX="4" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#C0392B"/></marker>
+    <marker id="ads" markerWidth="8" markerHeight="8" refX="4" refY="3" orient="auto"><path d="M7,0 L0,3 L7,6 Z" fill="#C0392B"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="720" height="400" fill="#FFFFFF"/>
+  <text x="360" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#1A1A1A">Medição da latência por correlação cruzada</text>
+
+  <!-- Plot box -->
+  <rect x="60" y="70" width="400" height="170" rx="6" fill="#FCFCFD" stroke="#D0D5DA" stroke-width="1.2"/>
+  <line x1="60" y1="240" x2="460" y2="240" stroke="#9AA3AB" stroke-width="1.2"/>
+  <text x="260" y="262" text-anchor="middle" font-size="11" fill="#6B7280">tempo — relógio comum (time.monotonic)</text>
+  <text x="52" y="80" text-anchor="end" font-size="10.5" fill="#6B7280" transform="rotate(-90 52 155)">ângulo da junta</text>
+
+  <!-- SIM curve (blue) -->
+  <polyline points="70,215 165,215 205,110 260,98 450,98" fill="none" stroke="#2E7CC4" stroke-width="2.6"/>
+  <!-- REAL curve (green), shifted right by ~30 = lag -->
+  <polyline points="70,222 195,222 235,120 290,108 450,108" fill="none" stroke="#3C9D54" stroke-width="2.6" stroke-dasharray="1 0"/>
+
+  <!-- lag marker at mid-rise (~y=165) between x=185 (sim) and x=215 (real) -->
+  <line x1="185" y1="168" x2="215" y2="168" stroke="#C0392B" stroke-width="1.6" marker-start="url(#ads)" marker-end="url(#add)"/>
+  <text x="200" y="188" text-anchor="middle" font-size="12" font-weight="700" fill="#C0392B">Δt</text>
+
+  <!-- legend -->
+  <line x1="300" y1="150" x2="330" y2="150" stroke="#2E7CC4" stroke-width="2.6"/>
+  <text x="336" y="154" font-size="11" fill="#0C447C">gêmeo digital (sim)</text>
+  <line x1="300" y1="170" x2="330" y2="170" stroke="#3C9D54" stroke-width="2.6"/>
+  <text x="336" y="174" font-size="11" fill="#1E5B2E">braço físico (125 Hz)</text>
+
+  <!-- arrow to xcorr -->
+  <line x1="466" y1="155" x2="512" y2="155" stroke="#555" stroke-width="2.2" marker-end="url(#ak)"/>
+
+  <!-- xcorr box -->
+  <rect x="516" y="96" width="176" height="120" rx="10" fill="#F1ECFA" stroke="#7E57C2" stroke-width="1.8"/>
+  <text x="604" y="122" text-anchor="middle" font-size="13" font-weight="700" fill="#4A2C82">Correlação cruzada</text>
+  <text x="604" y="142" text-anchor="middle" font-size="10.5" fill="#5B3F8C">das duas séries reamostradas</text>
+  <!-- small correlation bump -->
+  <path d="M534,196 C560,196 574,150 604,150 C634,150 648,196 674,196" fill="none" stroke="#7E57C2" stroke-width="2"/>
+  <line x1="604" y1="150" x2="604" y2="196" stroke="#7E57C2" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="604" y="210" text-anchor="middle" font-size="10.5" fill="#5B3F8C">pico → Δt</text>
+
+  <!-- result -->
+  <rect x="140" y="300" width="440" height="60" rx="10" fill="#Fdecea" stroke="#C0392B" stroke-width="1.8"/>
+  <text x="360" y="325" text-anchor="middle" font-size="14" font-weight="700" fill="#992D22">Latência = deslocamento de pico (Δt)</text>
+  <text x="360" y="346" text-anchor="middle" font-size="11" fill="#B23A2B">o sinal do lag indica o sentido: sim adianta (Sim→Real) ou real adianta (Real→Sim)</text>
+</svg>

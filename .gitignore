@@ -1,0 +1,25 @@
+build/
+install/
+log/
+src/DOBOT_6Axis_ROS2_V4/
+src/eci_ros-main/
+
+# Python bytecode
+**/__pycache__/
+*.pyc
+*.pyo
+# Added by code-review-graph
+.code-review-graph/
+
+# Claude Code
+.claude/
+
+# Ambiente virtual local (Windows) — recriável via `python -m venv .venv`
+.venv/
+
+# Dados de execução da palpação — gerados em runtime pelo palpation_logger.
+# 1,2 GB, com arquivos de 48-85 MB que o GitHub rejeita acima de 100 MB.
+sensors/Data/
+
+# Manuais de terceiros (Dobot, COVVI, FA7155) — 32 MB, não referenciados no repo
+Docs/

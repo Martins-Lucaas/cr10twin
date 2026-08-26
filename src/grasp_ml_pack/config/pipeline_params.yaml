@@ -1,0 +1,82 @@
+# ============================================================
+# pipeline_params.yaml — Célula de Manufatura Biomédica
+# CR10 + COVVI Hand + Esteira
+#
+# Objetos:
+#   frasco — frasco de medicamento (âmbar, r=42mm, h=90mm) → Palm Grip → Box 1
+#   tubo   — tubo de ensaio        (azul,  r=12mm, h=120mm) → Claw Grip → Box 2
+#   ampola — ampola farmacêutica   (verde, r=5mm,  h=75mm)  → Fingertip Grip → Box 3
+# ============================================================
+
+# ── Detector de objetos ──────────────────────────────────────
+object_detector:
+  ros__parameters:
+    use_yolo: false              # true para robô físico com GPU
+    yolo_model: "yolov8n.pt"
+    confidence_threshold: 0.45
+    publish_debug: true
+
+# ── Controlador da esteira ────────────────────────────────────
+conveyor_controller:
+  ros__parameters:
+    sim_only: true
+    pick_x: 0.75
+    pick_y: 0.00
+    belt_surface_z: 0.806   # topo real da correia — o spawn é calculado
+                            # como belt_z + half_height + 5 mm (sem queda livre)
+    object_sequence: ['frasco', 'tubo', 'ampola']
+
+# ── Executor de grasp ─────────────────────────────────────────
+grasp_executor:
+  ros__parameters:
+    sim_only: true
+
+    # Posição XY da pick station (mesma para todos os objetos)
+    pick_x: 0.75
+    pick_y: 0.00
+
+    # CENTRO Z DO OBJETO (não o TCP!) na pose canônica em (0.75, 0).
+    # world frame; belt_top = 0.806 m. = belt_top + half_height.
+    #
+    # ATENÇÃO (semântica): este parâmetro é usado como `ref_obj.z` em
+    # grasp_executor._solve_grasp_poses_at — os deltas palma↔objeto são
+    # PICK_TCP_WORLD − ref_obj. Portanto DEVE casar com o centro do objeto
+    # usado para calibrar PICK_TCP_WORLD em poses.py (cz=0.851/0.866/0.844),
+    # senão todas as poses de grasp ficam deslocadas em Z (a ponta mergulha
+    # alguns mm a mais no objeto/correia). Antes este YAML guardava a altura
+    # do TCP (obj_top−30mm) — semântica obsoleta que reintroduzia esse erro.
+    #
+    # frasco (h=90mm):  belt 0.806 + half 0.045 = 0.851
+    pick_z_frasco: 0.851
+    # tubo   (h=120mm): belt 0.806 + half 0.060 = 0.866
+    pick_z_tubo:   0.866
+    # ampola (h=75mm):  belt 0.806 + half 0.0375 = 0.844
+    pick_z_ampola: 0.844
+
+    # ── Posições das caixas de destino (world frame) ─────────────────────
+    # box_z é a altura de referência do centro da caixa.
+    # O soltar ocorre em approach_box_z = box_z + APPROACH_CLEAR ≈ 0.75 m world,
+    # acima das paredes das caixas (~0.705 m world). O objeto cai livremente.
+    # Box 1 — frasco → palm_grip   (vermelho)
+    box1_x: -0.05
+    box1_y:  0.65
+    box1_z:  0.60
+
+    # Box 2 — tubo → claw_grip     (verde)
+    box2_x:  0.25
+    box2_y:  0.65
+    box2_z:  0.60
+
+    # Box 3 — ampola → fingertip   (azul)
+    box3_x:  0.55
+    box3_y:  0.65
+    box3_z:  0.60
+
+# ── Pipeline / orquestrador ───────────────────────────────────
+conveyor_pipeline:
+  ros__parameters:
+    autonomous: false
+    loop_rate_hz: 5.0
+    detect_timeout_s: 30.0
+    grasp_timeout_s: 300.0
+    total_cycles: 3

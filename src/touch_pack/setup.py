@@ -1,0 +1,48 @@
+from setuptools import setup
+import os
+from glob import glob
+
+package_name = 'touch_pack'
+
+setup(
+    name=package_name,
+    version='0.3.0',
+    packages=['touch_pack'],
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'),
+            glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'),
+            glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'worlds'),
+            glob('worlds/*.world')),
+        (os.path.join('share', package_name, 'urdf'),
+            glob('urdf/*.urdf') + glob('urdf/*.xacro')),
+        (os.path.join('share', package_name, 'meshes'),
+            glob('meshes/*.stl') + glob('meshes/*.STL')),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='Lucas Martins',
+    maintainer_email='lucaspmartins14@gmail.com',
+    description=('Plataforma de palpação tátil — CR10 + COVVI Index FT, '
+                 'reproduzindo o protocolo de Gupta et al. 2021.'),
+    license='MIT',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'palpation_gui     = touch_pack.palpation_gui:main',
+            'tactile_explorer  = touch_pack.tactile_explorer:main',
+            'palpation_logger  = touch_pack.palpation_logger:main',
+            'palpation_report  = touch_pack.palpation_report:main',
+            'real_pose_sync    = touch_pack.real_pose_sync:main',
+            'ft_receiver       = touch_pack.ft_receiver_node:main',
+            'touch_receiver    = touch_pack.touch_receiver_node:main',
+            'force_sync        = touch_pack.force_sync_node:main',
+            'mirror_node       = touch_pack.mirror_node:main',
+            'latency_probe     = touch_pack.latency_probe:main',
+        ],
+    },
+)

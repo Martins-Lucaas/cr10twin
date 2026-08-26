@@ -1,0 +1,39 @@
+<svg width="100%" viewBox="0 0 680 344" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <title>Ponte bidirecional Sim-to-Real e Real-to-Sim do CR10 + COVVI</title>
+  <desc>Diagrama de dois sentidos entre o gemeo digital e o robo fisico. Sim-to-Real: o gemeo digital comanda e o fisico replica (ServoJ 33 Hz, MovJ, mao via ECI). Real-to-Sim: o fisico comanda e o gemeo replica (feedback de juntas a 125 Hz, habilita o drag teach). No braco os sentidos sao mutuamente exclusivos; ao iniciar o gemeo sincroniza com a pose real em cerca de 3 segundos.</desc>
+  <defs>
+    <marker id="ahb" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2E7CC4"/></marker>
+    <marker id="ahg" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3C9D54"/></marker>
+  </defs>
+
+  <text x="340" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#1A1A1A">Ponte bidirecional CR10 + COVVI — quem comanda quem</text>
+
+  <!-- Gemeo Digital -->
+  <rect x="55" y="78" width="210" height="96" rx="10" fill="#E6F1FB" stroke="#2E7CC4" stroke-width="2"/>
+  <text x="160" y="120" text-anchor="middle" font-size="16" font-weight="700" fill="#0C447C">Gêmeo Digital</text>
+  <text x="160" y="142" text-anchor="middle" font-size="11" fill="#2E6BA8">Gazebo · GUI · RViz</text>
+
+  <!-- Fisico -->
+  <rect x="415" y="78" width="210" height="96" rx="10" fill="#E4F3E7" stroke="#3C9D54" stroke-width="2"/>
+  <text x="520" y="120" text-anchor="middle" font-size="16" font-weight="700" fill="#1E5B2E">CR10 + COVVI</text>
+  <text x="520" y="142" text-anchor="middle" font-size="11" fill="#2E7D45">braço + mão (real)</text>
+
+  <!-- Sim-to-Real: top arrow, blue, points right -->
+  <text x="340" y="100" text-anchor="middle" font-size="11" font-weight="700" fill="#2E7CC4">Sim-to-Real: comando</text>
+  <line x1="272" y1="110" x2="405" y2="110" stroke="#2E7CC4" stroke-width="5" marker-end="url(#ahb)"/>
+
+  <!-- Real-to-Sim: bottom arrow, green, points left -->
+  <line x1="408" y1="150" x2="275" y2="150" stroke="#3C9D54" stroke-width="5" marker-end="url(#ahg)"/>
+  <text x="340" y="168" text-anchor="middle" font-size="11" font-weight="700" fill="#3C9D54">Real-to-Sim: feedback</text>
+
+  <!-- Captions -->
+  <text x="42" y="205" font-size="12.5" font-weight="600" fill="#0C447C">① Sim-to-Real — o Gêmeo Digital comanda; o físico replica.</text>
+  <text x="58" y="223" font-size="10.5" fill="#6B7280">streaming ServoJ 33 Hz · MovJ no jog manual · mão COVVI via ECI</text>
+  <text x="42" y="249" font-size="12.5" font-weight="600" fill="#1E5B2E">② Real-to-Sim — o físico comanda; o Gêmeo Digital replica.</text>
+  <text x="58" y="267" font-size="10.5" fill="#6B7280">feedback de juntas a 125 Hz republicado · habilita o drag teach</text>
+
+  <!-- Footer note -->
+  <rect x="40" y="286" width="600" height="46" rx="8" fill="#FBF3E0" stroke="#E0A93B" stroke-width="1.2"/>
+  <text x="54" y="306" font-size="11" fill="#7A5B12">No braço, os dois sentidos são <tspan font-weight="700">mutuamente exclusivos</tspan> — um sentido por vez, selecionado por modo.</text>
+  <text x="54" y="323" font-size="11" fill="#7A5B12">Ao iniciar, o gêmeo digital <tspan font-weight="700">sincroniza-se com a pose real</tspan> do robô automaticamente (~3 s).</text>
+</svg>

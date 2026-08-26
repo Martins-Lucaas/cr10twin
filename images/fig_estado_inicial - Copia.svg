@@ -1,0 +1,49 @@
+<svg width="100%" viewBox="0 0 720 400" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <title>Estado inicial: o gêmeo digital nasce sincronizado com a pose real</title>
+  <desc>Ao iniciar o software, um procedimento le a pose corrente do braco fisico via TCP/IP e move o modelo do Gazebo ate ela em cerca de 3 segundos (inicializacao no sentido Real-to-Sim). Se o robo estiver desligado, o modelo mantem a pose padrao do URDF sem travar a subida do sistema.</desc>
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="10" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3C9D54"/></marker>
+    <marker id="aho" markerWidth="10" markerHeight="10" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#B08328"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="720" height="400" fill="#FFFFFF"/>
+  <text x="360" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#1A1A1A">Estado inicial — o gêmeo digital nasce sincronizado</text>
+  <text x="360" y="52" text-anchor="middle" font-size="12" font-style="italic" fill="#3C9D54">inicialização automática no sentido Real-to-Sim (~3 s)</text>
+
+  <!-- Step 1 -->
+  <rect x="40" y="80" width="180" height="88" rx="10" fill="#EFF3F6" stroke="#8AA0AE" stroke-width="1.6"/>
+  <text x="130" y="112" text-anchor="middle" font-size="13.5" font-weight="700" fill="#33414A">Início do sistema</text>
+  <text x="130" y="133" text-anchor="middle" font-size="11" fill="#5A6B75">launch da plataforma</text>
+  <text x="130" y="150" text-anchor="middle" font-size="11" fill="#5A6B75">(ROS 2 + Gazebo)</text>
+
+  <!-- Step 2 -->
+  <rect x="270" y="80" width="180" height="88" rx="10" fill="#E4F3E7" stroke="#3C9D54" stroke-width="1.8"/>
+  <text x="360" y="108" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1E5B2E">Lê a pose real</text>
+  <text x="360" y="129" text-anchor="middle" font-size="11" fill="#2E7D45">CR10 via TCP/IP</text>
+  <text x="360" y="146" text-anchor="middle" font-size="11" fill="#2E7D45">(leitura readonly)</text>
+
+  <!-- Step 3 -->
+  <rect x="500" y="80" width="180" height="88" rx="10" fill="#E4F3E7" stroke="#3C9D54" stroke-width="1.8"/>
+  <text x="590" y="104" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1E5B2E">Move o Gazebo</text>
+  <text x="590" y="124" text-anchor="middle" font-size="11" fill="#2E7D45">até a pose real</text>
+  <text x="590" y="141" text-anchor="middle" font-size="11" fill="#2E7D45">FollowJointTrajectory ~3 s</text>
+
+  <line x1="222" y1="124" x2="266" y2="124" stroke="#3C9D54" stroke-width="4" marker-end="url(#ah)"/>
+  <line x1="452" y1="124" x2="496" y2="124" stroke="#3C9D54" stroke-width="4" marker-end="url(#ah)"/>
+
+  <!-- Result -->
+  <line x1="590" y1="170" x2="590" y2="210" stroke="#3C9D54" stroke-width="4" marker-end="url(#ah)"/>
+  <rect x="360" y="214" width="320" height="60" rx="10" fill="#Dff0E4" stroke="#2E7D45" stroke-width="2"/>
+  <text x="520" y="240" text-anchor="middle" font-size="13.5" font-weight="700" fill="#155026">Gêmeo digital sincronizado</text>
+  <text x="520" y="260" text-anchor="middle" font-size="11" fill="#2E7D45">parte da postura real, não de uma pose arbitrária do URDF</text>
+
+  <!-- Fallback branch -->
+  <line x1="360" y1="124" x2="360" y2="310" stroke="#B08328" stroke-width="2" stroke-dasharray="5 4"/>
+  <line x1="360" y1="310" x2="356" y2="310" stroke="#B08328" stroke-width="2"/>
+  <rect x="40" y="300" width="300" height="66" rx="10" fill="#FBF3E0" stroke="#E0A93B" stroke-width="1.4"/>
+  <text x="56" y="322" font-size="12" font-weight="700" fill="#7A5B12">Robô desligado / inacessível</text>
+  <text x="56" y="341" font-size="11" fill="#7A5B12">mantém a pose padrão do URDF</text>
+  <text x="56" y="358" font-size="11" fill="#7A5B12">sem bloquear a subida do sistema</text>
+  <line x1="340" y1="333" x2="356" y2="333" stroke="#B08328" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#aho)"/>
+  <text x="372" y="300" font-size="10.5" font-style="italic" fill="#B08328">caso contrário</text>
+</svg>

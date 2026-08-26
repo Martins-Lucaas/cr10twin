@@ -1,0 +1,450 @@
+import argparse
+import sys
+import threading
+import time
+import csv
+import serial
+from serial.tools import list_ports
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from collections import deque
+import re
+import socket
+import struct
+
+# No Windows a porta varia (COMx), então o default fica None (autodetecção
+# via detect_serial_port); no Linux mantém /dev/ttyACM1.
+DEFAULT_PORT = None if sys.platform.startswith("win") else "/dev/ttyACM1"
+BAUD = 115200
+
+ROWS = 5
+COLS = 5
+
+NUM_TAXELS = ROWS * COLS
+
+VREF = 3.3
+
+RASTER_WINDOW = 5.0
+
+WINDOW_SIZE = 50
+
+
+# Destino UDP configurável por CLI — o default é o broadcast da rede do
+# laboratório; em outra rede rode com --udp-ip <broadcast da sua rede>.
+parser = argparse.ArgumentParser(
+    description="Visualizador STM32 + retransmissor UDP do touch sensor 5x5"
+)
+
+parser.add_argument(
+    "--udp-ip",
+    default="192.168.5.255",
+    help="destino dos pacotes UDP (broadcast da rede do PC do ROS)"
+)
+
+parser.add_argument(
+    "--udp-port",
+    type=int,
+    default=8081,
+    help="porta do touch_receiver_node (TOUCH_SENSOR_UDP_PORT)"
+)
+
+parser.add_argument(
+    "--port",
+    default=DEFAULT_PORT,
+    help="porta serial do STM32 (ex.: COM7 ou /dev/ttyACM0). "
+         "Se omitida, é detectada automaticamente (Windows e Linux)."
+)
+
+parser.add_argument(
+    "--record",
+    default=None,
+    metavar="PLANILHA.csv",
+    help="se informado, grava uma linha por frame (datada pelo relógio do "
+         "firmware) com as 25 tensões e a ativação média"
+)
+
+cli_args = parser.parse_args()
+
+UDP_IP = cli_args.udp_ip
+
+UDP_PORT = cli_args.udp_port
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+sock.setsockopt(
+    socket.SOL_SOCKET,
+    socket.SO_BROADCAST,
+    1
+)
+
+# Contador de amostras do pacote UDP — o touch_receiver usa o salto do
+# seq para detectar pacotes perdidos na rede.
+udp_seq = 0
+
+
+def detect_serial_port():
+    # No Windows o STM32 vira COMx; no Linux, /dev/ttyACMx ou /dev/ttyUSBx.
+    if sys.platform.startswith("win"):
+        candidates = [p.device for p in list_ports.comports()
+                      if p.device.upper().startswith("COM")]
+    else:
+        candidates = [p.device for p in list_ports.comports()
+                      if "ACM" in p.device or "USB" in p.device]
+    return candidates[0] if candidates else None
+
+
+PORT = cli_args.port or detect_serial_port()
+
+if PORT is None:
+    disponiveis = ", ".join(p.device for p in list_ports.comports()) or "nenhuma"
+    sys.exit(
+        "Nenhuma porta serial USB/ACM encontrada.\n"
+        f"Portas disponiveis: {disponiveis}\n"
+        "Conecte o STM32 ou informe a porta com --port (ex.: --port /dev/ttyACM0)."
+    )
+
+try:
+    ser = serial.Serial(
+        PORT,
+        BAUD,
+        timeout=0.1
+    )
+except serial.SerialException as e:
+    sys.exit(
+        f"Nao foi possivel abrir a porta serial '{PORT}': {e}\n"
+        "No Linux verifique se voce tem permissao (ex.: "
+        "'sudo usermod -aG dialout $USER' e relogar)."
+    )
+
+print(f"Serial conectada em {PORT} @ {BAUD} baud")
+
+
+rec_fh = None
+rec_writer = None
+if cli_args.record:
+    rec_fh = open(cli_args.record, "w", newline="")
+    rec_writer = csv.writer(rec_fh)
+    rec_writer.writerow(
+        ["t_stm_s", *[f"taxel_{i}" for i in range(NUM_TAXELS)], "ativacao_media"]
+    )
+    print(f"Gravando frames em {cli_args.record}")
+
+
+spike_times_RA = [[] for _ in range(NUM_TAXELS)]
+
+spike_times_SA = [[] for _ in range(NUM_TAXELS)]
+
+spike_times_POST = []
+
+voltage_matrix = np.zeros((ROWS, COLS))
+
+current_time = 0.0
+
+# Estado compartilhado entre a thread de leitura serial/UDP e o desenho do
+# matplotlib. Toda a estrutura acima é tocada por AMBAS as threads, então
+# leitura e escrita acontecem sob este lock.
+data_lock = threading.Lock()
+
+# Heartbeat: instante (time.time()) do último dado válido recebido da serial.
+# Começa em 0.0 = "nada recebido ainda". A janela avisa quando a serial fica
+# muda por mais de SERIAL_STALE_S.
+last_rx_time = 0.0
+SERIAL_STALE_S = 2.0
+
+# Flag de parada da thread de leitura — baixada ao fechar a janela.
+reader_running = True
+
+
+activation_data = deque(
+    [0]*WINDOW_SIZE,
+    maxlen=WINDOW_SIZE
+)
+
+
+fig, axs = plt.subplots(
+    2,
+    2,
+    figsize=(14, 10)
+)
+
+ax1 = axs[0,0]
+ax2 = axs[0,1]
+
+ax5 = axs[1,0]
+ax6 = axs[1,1]
+
+
+im_volt = ax1.imshow(
+    voltage_matrix,
+    cmap="jet",
+    interpolation="bicubic",
+    vmin=0,
+    vmax=VREF
+)
+
+plt.colorbar(im_volt, ax=ax1)
+
+ax1.set_title("Voltage (0-3.3V) — 5x5")
+
+ax1.set_xticks(range(COLS))
+ax1.set_yticks(range(ROWS))
+
+texts_volt = [[
+    ax1.text(
+        c,
+        r,
+        "0",
+        ha="center",
+        va="center",
+        fontsize=8,
+        color="white"
+    )
+    for c in range(COLS)
+] for r in range(ROWS)]
+
+
+ax2.set_title("Raster RA / SA")
+
+ax2.set_xlim(0, RASTER_WINDOW)
+
+ax2.set_ylim(-1, NUM_TAXELS * 2)
+
+scatter_RA = ax2.scatter(
+    [],
+    [],
+    s=10,
+    color="red",
+    label="RA"
+)
+
+scatter_SA = ax2.scatter(
+    [],
+    [],
+    s=10,
+    color="blue",
+    label="SA"
+)
+
+ax2.legend()
+
+
+x_fixed = np.arange(WINDOW_SIZE)
+
+line_activation, = ax5.plot(
+    x_fixed,
+    activation_data,
+    lw=2
+)
+
+ax5.set_title("Ativacao media (V)")
+
+ax5.set_xlim(0, WINDOW_SIZE)
+
+ax5.set_ylim(0, VREF)
+
+
+ax6.set_title("Neuronio Pos")
+
+ax6.set_xlim(0, RASTER_WINDOW)
+
+ax6.set_ylim(-1, 1)
+
+scatter_POST = ax6.scatter(
+    [],
+    [],
+    s=20,
+    color="black"
+)
+
+
+def note_time(t):
+    """Avança current_time e reancora tudo se o micros() do STM32 regredir
+    (reset ou wrap ~71 min) — senão a poda por (now_t - t) nunca descartaria
+    spikes antigos."""
+    global current_time
+    if t + RASTER_WINDOW < current_time:
+        for n in range(NUM_TAXELS):
+            spike_times_RA[n].clear()
+            spike_times_SA[n].clear()
+        spike_times_POST.clear()
+        current_time = t
+        return
+    if t > current_time:
+        current_time = t
+
+
+def process_line(line):
+    """Roda na thread de leitura, não no matplotlib, para a retransmissão UDP
+    não depender da janela estar respondendo. O firmware não emite um total
+    escalar; ele é sintetizado aqui por frame, quando chega o último taxel."""
+    global current_time, last_rx_time, udp_seq
+
+    line = line.strip()
+    if not line:
+        return
+
+    if line.startswith("DATA"):
+        m = re.search(r"idx=(\d+),adc=(\d+),t=(\d+)", line)
+        if m:
+            idx = int(m.group(1))
+            if not 0 <= idx < NUM_TAXELS:
+                return
+            adc = int(m.group(2))
+            tstamp = int(m.group(3)) / 1e6
+            row, col = divmod(idx, COLS)
+            with data_lock:
+                note_time(tstamp)
+                voltage_matrix[row, col] = adc * (VREF / 4095.0)
+                last_rx_time = time.time()
+                # Frame completo (último taxel) → ativação média do frame.
+                if idx == NUM_TAXELS - 1:
+                    activation = float(voltage_matrix.mean())
+                    activation_data.append(activation)
+                    if rec_writer is not None:
+                        rec_writer.writerow([
+                            f"{current_time:.6f}",
+                            *[f"{v:.4f}" for v in voltage_matrix.flatten()],
+                            f"{activation:.4f}",
+                        ])
+                else:
+                    activation = None
+
+            # Pacote UDP do touch sensor (touch_receiver_node), FORA do lock.
+            # Payload little-endian, 8 bytes: uint32 seq + float value.
+            if activation is not None:
+                packet = struct.pack('<If', udp_seq & 0xFFFFFFFF, activation)
+                udp_seq += 1
+                try:
+                    sock.sendto(packet, (UDP_IP, UDP_PORT))
+                except OSError as exc:
+                    print(f"[WARN] falha no envio UDP: {exc}")
+
+    elif line.startswith("RA"):
+        m = re.search(r"idx=(\d+),adc=\d+,t=(\d+)", line)
+        if m:
+            idx = int(m.group(1))
+            if not 0 <= idx < NUM_TAXELS:
+                return
+            tstamp = int(m.group(2)) / 1e6
+            with data_lock:
+                note_time(tstamp)
+                spike_times_RA[idx].append(tstamp)
+                last_rx_time = time.time()
+
+    elif line.startswith("SA"):
+        m = re.search(r"idx=(\d+),adc=\d+,t=(\d+)", line)
+        if m:
+            idx = int(m.group(1))
+            if not 0 <= idx < NUM_TAXELS:
+                return
+            tstamp = int(m.group(2)) / 1e6
+            with data_lock:
+                note_time(tstamp)
+                spike_times_SA[idx].append(tstamp)
+                last_rx_time = time.time()
+
+    elif line.startswith("POST"):
+        m = re.search(r"t=(\d+)", line)
+        if m:
+            tstamp = int(m.group(1)) / 1e6
+            with data_lock:
+                note_time(tstamp)
+                spike_times_POST.append(tstamp)
+                last_rx_time = time.time()
+
+
+def serial_reader_loop():
+    """Thread separada do matplotlib: o fluxo UDP p/ ROS não trava se o
+    desenho engasgar, e dá pra detectar serial muda mesmo com janela ociosa."""
+    buf = ""
+    while reader_running:
+        try:
+            chunk = ser.read(ser.in_waiting or 1)
+        except serial.SerialException as exc:
+            print(f"[ERRO] leitura serial falhou: {exc}")
+            break
+        if not chunk:
+            continue  # timeout (0.1 s) — volta a checar reader_running
+        buf += chunk.decode(errors='ignore')
+        parts = buf.split("\n")
+        buf = parts[-1]
+        for line in parts[:-1]:
+            process_line(line)
+
+
+def update(frame):
+    with data_lock:
+        now_t   = current_time
+        vm      = voltage_matrix.copy()
+        rx_age  = (time.time() - last_rx_time) if last_rx_time > 0.0 else None
+
+        # Poda as janelas de spikes e monta os offsets já sob o lock.
+        x_RA, y_RA = [], []
+        for n in range(NUM_TAXELS):
+            spike_times_RA[n] = [t for t in spike_times_RA[n]
+                                 if now_t - t <= RASTER_WINDOW]
+            for t in spike_times_RA[n]:
+                x_RA.append(t); y_RA.append(n)
+
+        x_SA, y_SA = [], []
+        for n in range(NUM_TAXELS):
+            spike_times_SA[n] = [t for t in spike_times_SA[n]
+                                 if now_t - t <= RASTER_WINDOW]
+            for t in spike_times_SA[n]:
+                x_SA.append(t); y_SA.append(n + NUM_TAXELS)
+
+        spike_times_POST[:] = [t for t in spike_times_POST
+                               if now_t - t <= RASTER_WINDOW]
+        x_POST = list(spike_times_POST)
+        activation_snapshot = list(activation_data)
+
+    # Número usa a MESMA matriz rotacionada (vr) que a imagem, senão diverge.
+    vr = np.rot90(vm, 2)
+    im_volt.set_data(vr)
+    for r in range(ROWS):
+        for c in range(COLS):
+            texts_volt[r][c].set_text(f"{vr[r, c]:.2f}")
+
+    scatter_RA.set_offsets(np.c_[x_RA, y_RA])
+    scatter_SA.set_offsets(np.c_[x_SA, y_SA])
+    ax2.set_xlim(max(0, now_t - RASTER_WINDOW), now_t)
+
+    scatter_POST.set_offsets(np.c_[x_POST, [0] * len(x_POST)])
+    ax6.set_xlim(max(0, now_t - RASTER_WINDOW), now_t)
+
+    line_activation.set_data(x_fixed, activation_snapshot)
+
+    # Avisa quando a serial fica muda.
+    if rx_age is None:
+        fig.suptitle("Aguardando dados da serial...",
+                     color="orange", fontsize=12)
+    elif rx_age > SERIAL_STALE_S:
+        fig.suptitle(f"SEM DADOS DA SERIAL há {rx_age:.1f} s",
+                     color="red", fontsize=12)
+    else:
+        fig.suptitle("")
+
+    return [im_volt, scatter_RA, scatter_SA, scatter_POST, line_activation]
+
+
+reader_thread = threading.Thread(
+    target=serial_reader_loop, name="serial-reader", daemon=True)
+reader_thread.start()
+
+ani = FuncAnimation(fig, update, interval=50)
+
+plt.tight_layout()
+
+try:
+    plt.show()
+finally:
+    # Fecha a janela → encerra a thread de leitura e a serial.
+    reader_running = False
+    reader_thread.join(timeout=1.0)
+    ser.close()
+    sock.close()
+    if rec_fh is not None:
+        rec_fh.flush()
+        rec_fh.close()
+        print(f"Gravação concluída: {cli_args.record}")

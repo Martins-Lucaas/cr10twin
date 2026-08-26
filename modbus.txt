@@ -1,0 +1,241 @@
+Appendix A Modbus Register Definition
+1 Modbus introduction
+Modbus is a serial communication protocol that allows robots to communicate with external devices. When controlling a robot via external devices (such as PLC), the external device serves as the Modbus master, while the robot serves as the Modbus slave.
+
+Modbus Solutions:
+
+Modbus-RTU: A compact representation of data using binary format. Uses a cyclic redundancy check (CRC) for error checking.
+
+Modbus-ASCII: A representation based on ASCII characters, providing a readable and redundant format. Uses longitudinal redundancy check (LRC) for error checking.
+
+Modbus-TCP: Connects via TCP/IP using the TCP protocol. This method does not require checksum calculation.
+
+Modbus-RTU-over-TCP: A data packet carrying RTU content transmitted over TCP.
+
+Currently, we offer solutions for Modbus-TCP and Modbus-RTU-over-TCP.
+
+Dobot six-axis collaborative robots support the following Modbus addresses, according to the Modbus protocol.
+
+00001 – 09999: Coil register, used to control the robot; value: 0 or 1; read/write.
+
+10001 – 19999: Contact register, used to get the robot status; value: 0 or 1; read only.
+
+30001 – 39999: Input register, used to obtain real-time feedback from the robot; value: up to 64-bit double-precision floating-point numbers; read only.
+
+40001 – 49999: Holding register, used for robot PLC interaction; value: up to 64-bit double-precision floating-point numbers; read/write.
+
+The Modbus function codes for different types of registers follow the standard Modbus protocol:
+
+Register type	Read register	Write single register	Write multiple registers
+Coil register	01	05	0F
+Contact (discrete input) register	02	-	-
+Input register	04	-	-
+Holding register	03	06	10
+The robot provides two tables for external device access. map1 can be accessed via port 502 (Modbus-TCP) and port 503 (RTU-over-TCP). map2 can be accessed via port 1502 (Modbus-TCP) and port 1503 (RTU-over-TCP). The resource details are as follows:
+
+Parameter/Slave	502	503	1502	1503
+Coil quantity	10000	10000	10000	10000
+Discrete input quantity	10000	10000	10000	10000
+Input register quantity	10000	10000	10000	10000
+Holding register quantity	10000	10000	10000	10000
+Located in map	map1	map1	map2	map2
+Bound port	502	503	1502	1503
+Modbus protocol type	TCP	RTU-over-TCP	TCP	RTU-over-TCP
+Max supported masters	20	20	20	20
+Slave ID	1	1	1	1
+Some addresses in map 1 are reserved by the robot system by default, as detailed in the register definition below. map 2 is currently empty and can be used by users as needed.
+
+2 Coil register (map1, control robot)
+PLC address	Script address (Get/SetCoils)	Register type	Function
+00001	0	Bit	Start
+00002	1	Bit	Stop
+00003	2	Bit	Pause
+00004	3	Bit	Enable
+00005	4	Bit	Disable
+00006	5	Bit	Clear alarm
+00007	6	Bit	Enter drag mode
+00008	7	Bit	Exit drag mode
+00009	8	Bit	Switch to Auto mode
+00010	9	Bit	Switch to Manual mode
+00011 – 01024	10 – 1023	Bit	Reserved
+01025 – 09999	1024 – 9998	Bit	User-defined
+3 Contact register (map1, robot status)
+PLC address	Script address (GetInBits)	Register type	Function
+10001	0	Bit	Running status
+10002	1	Bit	Stop status
+10003	2	Bit	Pause status
+10004	3	Bit	Safe home status
+10005	4	Bit	SafeSkin pause status
+10006	5	Bit	Idle status
+10007	6	Bit	Power-on status
+10008	7	Bit	Enabling status
+10009	8	Bit	Alarm status
+10010	9	Bit	Collision status
+10011	10	Bit	Drag status
+10012	11	Bit	Recovery mode status
+10013 – 19999	12 – 9998	Bit	Undefined
+4 Input register (map1, robot real-time feedback data)
+The PLC addresses 30001 – 39999 and 31722 – 39999 have undefined register functions (except for 32001 – 32067, which stores the U16-type controller SN, robot SN, and characters for the safety checksum). The byte order is in little-endian format.
+
+PLC address	Data type	Number of values	Size in bytes	Script address (GetInRegs)	Type	Function
+31000	unsigned short	1	2	999	U16	Data validity
+31001	unsigned short	1	2	1000	U16	Total message length in bytes
+31002 – 31004	-	-	-	1001 – 1003	-	Reserved
+31005 – 31008	uint64	1	8	1004 – 1007	U64	Digital input, see DI/DO description
+31009 – 31012	uint64	1	8	1008 – 1011	U64	Digital output, see DI/DO description
+31013 – 31016	uint64	1	8	1012 – 1015	U64	Robot mode, see RobotMode description
+31017 – 31020	uint64	1	8	1016 – 1019	U64	Unix timestamp (unit: ms)
+31021 – 31024	-	-	-	1020 – 1023	-	Reserved
+31025 – 31028	uint64	1	8	1024 – 1027	U64	Memory structure test standard value
+0x0123 4567 89AB CDEF
+31029 – 31032	-	-	-	1028 – 1031	-	Reserved
+31033 – 31036	double	1	8	1032 – 1035	F64	Speed ratio
+31037 – 3104	-	-	-	1036 – 1039	-	Reserved
+31041 – 31044	double	1	8	1040 – 1043	F64	Control board voltage
+31045 – 31048	double	1	8	1044 – 1047	F64	Robot voltage
+31049 – 31052	double	1	8	1048 – 1051	F64	Robot current
+31053 – 31096	-	-	-	1052 – 1095	-	Reserved
+31097 – 31120	double	6	48	1096 – 1119	F64	Target joint position
+31121 – 31144	double	6	48	1120 – 1143	F64	Target joint speed
+31145 – 31168	double	6	48	1144 – 1167	F64	Target joint acceleration
+31169 – 31192	double	6	48	1168 – 1191	F64	Target joint current
+31193 – 31216	double	6	48	1192 – 1215	F64	Target joint torque
+31217 – 31240	double	6	48	1216 – 1239	F64	Actual joint position
+31241 – 31264	double	6	48	1240 – 1263	F64	Actual joint speed
+31265 – 31288	double	6	48	1264 – 1287	F64	Actual joint current
+31289 – 31312	double	6	48	1288 – 1311	F64	TCP sensor force
+(calculate through six-axis force)
+31313 – 31336	double	6	48	1312 – 1335	F64	TCP actual Cartesian coordinates
+31337 – 31360	double	6	48	1336 – 1359	F64	TCP actual speed in Cartesian coordinate system
+31361 – 31384	double	6	48	1360 – 1383	F64	TCP force
+(calculate through joint current)
+31384 – 31408	double	6	48	1384 – 1407	F64	TCP target Cartesian coordinates
+31409 – 31432	double	6	48	1408 – 1431	F64	TCP target Cartesian speed
+31433 – 31456	double	6	48	1432 – 1455	F64	Joint temperature
+31456 – 31480	double	6	48	1456 – 1479	F64	Joint control mode.
+8: Position mode;
+10: Torque mode
+31481 – 31504	double	6	48	1480 – 1503	F64	Joint voltage
+31505 – 31506	-	-	-	1504 – 1505	-	Reserved
+31507	char	1	1	1506 low byte	I8	User coordinate system
+31507	char	1	1	1506 high byte	I8	Tool coordinate system
+31508	char	1	1	1507 low byte	I8	Algorithm queue running flag
+31508	char	1	1	1507 high byte	I8	Algorithm queue pause flag
+31509	char	1	1	1508 low byte	I8	Joint speed ratio
+31509	char	1	1	1508 high byte	I8	Joint acceleration ratio
+31510	char	1	1	1509 low byte	I8	Joint jerk ratio
+31510	char	1	1	1509 high byte	I8	Cartesian position speed ratio
+31511	char	1	1	1510 low byte	I8	Cartesian posture speed ratio
+31511	char	1	1	1510 high byte	I8	Cartesian position acceleration ratio
+31512	char	1	1	1511 low byte	I8	Cartesian posture acceleration ratio
+31512	char	1	1	1511 high byte	I8	Cartesian position jerk ratio
+31513	char	1	1	1512 low byte	I8	Cartesian posture jerk ratio
+31513	char	1	1	1512 high byte	I8	Brake status, see BrakeStatus description
+31514	char	1	1	1513 low byte	I8	Enabling status
+31514	char	1	1	1513 high byte	I8	Drag status
+31515	char	1	1	1514 low byte	I8	Running status
+31515	char	1	1	1514 high byte	I8	Alarm status
+31516	char	1	1	1515 low byte	I8	Jog status
+31516	char	1	1	1515 high byte	I8	Robot type, see RobotType description
+31517	char	1	1	1516 low byte	I8	Button board drag signal
+31517	char	1	1	1516 high byte	I8	Button board enabling signal
+31518	char	1	1	1517 low byte	I8	Button board record signal
+31518	char	1	1	1517 high byte	I8	Button board playback signal
+31519	char	1	1	1518 low byte	I8	Button board gripper control signal
+31519	char	1	1	1518 high byte	I8	Six-axis force online status
+31520	char	1	1	1519 low byte	I8	Collision status
+31520	char	1	1	1519 high byte	I8	(SafeSkin) forearm close to pause status
+31521	char	1	1	1520 low byte	I8	(SafeSkin) J4 close to pause status
+31521	char	1	1	1520 high byte	I8	(SafeSkin) J5 close to pause status
+31522	char	1	1	1521 low byte	I8	(SafeSkin) J6 close to pause status
+31522	char	1	1	1521 high byte	I8	Reserved
+31523 – 31552	-	-	-	1522 – 1551	-	Reserved
+31553 – 31556	double	1	8	1552 – 1555	F64	Reserved
+31557 – 31560	uint64	1	8	1556 – 1559	U64	Current algorithm queue ID
+31561 – 31584	double	6	48	1560 – 1583	F64	Actual torque
+31585 – 31588	double	1	8	1584 – 1587	F64	Payload (kg)
+31589 – 31592	double	1	8	1588 – 1591	F64	X-directional eccentric distance (mm)
+31593 – 31596	double	1	8	1592 – 1595	F64	Y-directional eccentric distance (mm)
+31597 – 31600	double	1	8	1596 – 1599	F64	Z-directional eccentric distance (mm)
+31601 – 31624	double	6	48	1600 – 1623	F64	User coordinates
+31625 – 31648	double	6	48	1624 – 1647	F64	Tool coordinates
+31649 – 31652	double	1	8	1648 – 1651	F64	Trajectory playback running index
+31653 – 31676	double	6	48	1652 – 1675	F64	Six-axis force original value
+31677 – 31692	double	4	32	1676 – 1691	F64	[qw,qx,qy,qz] Target quaternion
+31693 – 31708	double	4	32	1692 – 1707	F64	[qw,qx,qy,qz] Actual quaternion
+31709	unsigned short	1	2	1708	U16	Manual/Automatic status.
+1: Manual;
+2: Automatic;
+0: Mode switch is OFF
+31710 – 31721	double	1	24	1709 – 1720	F64	Reserved
+1440			Totally 1440 bytes
+
+
+PLC address	Script address (GetInRegs)	Type	Function
+32001 – 32032	2000 – 2031	U16	1st to 32nd characters of the controller SN
+32033 – 32065	2032 – 2064	U16	1st to 32nd characters of the robot SN
+32066	2065	U16	Lower 4 characters of "Safety Checksum" (2 bytes)
+32067	2066	U16	Upper 4 characters of "Safety Checksum" (2 bytes)
+Motion parameter feedback values
+
+If the motion parameters (speed, acceleration, etc.) are set individually in the project, the relevance feedback values are not updated immediately, but only when the robot executes the next motion command.
+
+DI/DO description
+
+DI/DO each occupies 8 bytes. Each byte has 8 bits (binary) and can represent the status of up to 64 ports each. Each byte from low to high indicates the status of one terminal. 1 indicates the corresponding terminal is ON, and 0 indicates the corresponding terminal is OFF or no corresponding terminal.
+
+For example, the first byte of DI is 0x01 (00000001 in binary). The bits from low to high represent the status of D1_1 – DI_8 respectively, that is, DI_1 is ON and the remaining 7 DIs are OFF.
+
+The second byte is 0x02 (00000010 in binary). The bits from low to high represent the status of D1_9 – DI_16 respectively, that is, DI_10 is ON and the remaining 7 DIs are OFF.
+
+Different controllers vary in the number of IO terminals. The binary bits exceeding the number of IO terminals will be filled with 0.
+
+RobotMode description
+
+Value	Definition	NOTE
+1	ROBOT_MODE_INIT	Initialized status
+2	ROBOT_MODE_BRAKE_OPEN	Brake switched on
+3	ROBOT_MODE_POWEROFF	Power-off status
+4	ROBOT_MODE_DISABLED	Disabled (no brake switched on)
+5	ROBOT_MODE_ENABLE	Enabled and idle
+6	ROBOT_MODE_BACKDRIVE	Drag mode
+7	ROBOT_MODE_RUNNING	Running status (project, TCP queue motion, etc.)
+8	ROBOT_MODE_SINGLE_MOVE	Single motion status (jog, RunTo, etc.)
+9	ROBOT_MODE_ERROR	There are uncleared alarms. This status has the highest priority. It returns 9 when there is an alarm, regardless of the status of the robot arm.
+10	ROBOT_MODE_PAUSE	Project pause status
+11	ROBOT_MODE_COLLISION	Collision detection triggered status
+BrakeStatus description
+
+This byte indicates the brake status of the each joints by bit. 1 means that the corresponding joint brake is switched on. The bits correspond to the joints in the following table:
+
+Bit	7	6	5	4	3	2	1	0
+Meaning	Reserved	Reserved	J1	J2	J3	J4	J5	J6
+Example:
+
+0x01 (00000001): J6 brake is switched on
+0x02 (00000010): J5 brake is switched on
+0x03 (00000011): J5 and J6 brakes are switched on
+0x04 (00000100): J4 brake is switched on
+RobotType description
+
+Value	Model
+3	CR3
+5	CR5
+7	CR7
+10	CR10
+12	CR12
+16	CR16
+101	Nova 2
+103	Nova 5
+113	CR3A
+115	CR5A
+117	CR7A
+120	CR10A
+122	CR12A
+126	CR16A
+130	CR20A
+150	Magician E6
+5 Holding register (map1, interaction between robot and PLC)
+PLC address	Script address (Get/SetHoldRegs)	Register type	Function
+40001 – 41024	0 – 1023	-	Reserved
+41025 – 49999	1024 – 9998	-	User-defined

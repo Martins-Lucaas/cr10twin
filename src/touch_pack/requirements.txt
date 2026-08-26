@@ -1,0 +1,9 @@
+# ROS 2 Humble e cv_bridge são compilados contra a ABI do NumPy 1.x.
+# NumPy 2.x quebra compatibilidade em tempo de execução → segfault.
+numpy<2
+
+# Só para scripts/gen_tcp_meshes_from_step.py, que regenera os meshes do TCP
+# a partir de cad/step/*.step. Não é dependência de runtime dos nós ROS —
+# os STL já vão versionados em meshes/.
+#   python3 -m pip install cadquery-ocp
+# cadquery-ocp

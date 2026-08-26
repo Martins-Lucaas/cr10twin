@@ -1,0 +1,131 @@
+# ============================================================================
+#  tactile_controllers.yaml — Configuração ros2_control para a célula de
+#  palpação tátil (CR10 + TCP de palpação com sensor tátil 5×5).
+#
+#  Controladores disponíveis:
+#    cr10_group_controller   JointTrajectoryController (ativo em runtime)
+#    admittance_controller   AdmittanceController (futuro — palpação com
+#                            FT sensor físico no flange ou no probe)
+#
+#  Observação: ft_sensor_broadcaster e hand_position_controller foram
+#  removidos — pertencem ao modo "hand" (cr10_covvi_controllers.yaml).
+#  O admittance_controller não é spawned pelo launch atual; está aqui
+#  como referência para ativação futura via controller_manager CLI.
+# ============================================================================
+
+controller_manager:
+  ros__parameters:
+    update_rate: 250   # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    cr10_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    admittance_controller:
+      type: admittance_controller/AdmittanceController
+
+
+# ────────────────────────────────────────────────────────────────────────────
+#  joint_trajectory_controller (movimentos rígidos — home, jog, recuo)
+# ────────────────────────────────────────────────────────────────────────────
+cr10_group_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+    command_interfaces:  [position]
+    state_interfaces:    [position, velocity]
+    state_publish_rate:  100.0
+    action_monitor_rate: 50.0
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 1.5
+
+
+# ────────────────────────────────────────────────────────────────────────────
+#  admittance_controller — controle de força com FT físico (uso futuro)
+#
+#  Modelo: M·ẍ + D·ẋ + K·x = F_ext
+#    M = matriz de inércia aparente (massa virtual)
+#    D = matriz de amortecimento viscoso
+#    K = rigidez (mola virtual) que puxa o TCP de volta para o setpoint
+#    F_ext = wrench do FT físico (hardware interface do controlador CR10
+#            ou sensor externo via ros2_control ForceTorqueSensor)
+#
+#  Eixo de aproximação (palpação vertical/horizontal):  Z ou X do tcp_link
+#    → selected_axes[2]=true habilita admitância em Z.
+#    → mass[2]=2.0 → sistema reativo à força externa.
+#    → stiffness[2]=40 N/m (mola fraca) → força externa governa profundidade.
+#    → damping_ratio[2]=1.6 (super-amortecido) → sem oscilação no contato.
+#
+#  Como ajustar:
+#    - Vibração no contato     → aumentar damping_ratio[2] para 2.0+
+#    - Força não atinge alvo   → diminuir stiffness[2] (e.g. 20)
+#    - Movimento muito mole    → aumentar stiffness em X/Y para 800+
+# ────────────────────────────────────────────────────────────────────────────
+admittance_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+
+    command_interfaces:  [position]
+    state_interfaces:    [position, velocity]
+    chainable_command_interfaces:
+      - position
+
+    kinematics:
+      plugin_name:    kinematics_interface_kdl/KinematicsInterfaceKDL
+      plugin_package: kinematics_interface_kdl
+      base:           base_link
+      tip:            tcp_link
+      alpha:          0.0005
+
+    ft_sensor:
+      name: ft_sensor
+      frame:
+        id: tcp_link       # frame do probe (existe tanto no touch_tool quanto na hand)
+        external: false
+      filter_coefficient: 0.05
+
+    control:
+      frame:
+        id: tcp_link
+
+    fixed_world_frame:
+      frame:
+        id: base_link
+
+    gravity_compensation:
+      frame:
+        id: tcp_link
+      CoG:
+        # Centroide do conjunto do TCP (flange fixo + célula FA7155 de 6 eixos
+        # + acoplador hot-swap + ponteira F), calculado da geometria real por
+        # scripts/gen_tcp_meshes_from_step.py: 0.3837 kg com CoM em
+        # Z = +19.5 mm do flange → −48.2 mm no frame do tcp_link (+67.7 mm).
+        pos:   [0.0, 0.0, -0.0482]
+        force: 3.76   # m * g = 0.3837 * 9.80665
+
+    admittance:
+      # Eixos cartesianos do `control.frame` (tcp_link):
+      #   [X,  Y,  Z,  rx, ry, rz]
+      #   Z = eixo de aproximação vertical (palpação de superfície horizontal)
+      selected_axes:  [false, false, true,  false, false, false]
+
+      mass:           [5.0,   5.0,   2.0,   0.10,  0.10,  0.10]
+      damping_ratio:  [1.0,   1.0,   1.6,   1.0,   1.0,   1.0]
+      stiffness:      [500.0, 500.0, 40.0,  8.0,   8.0,   8.0]
+
+      enable_parameter_update_without_reactivation: true
