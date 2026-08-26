@@ -41,6 +41,7 @@ from .constants import (
     FT_TCP_HOST,
     FT_TCP_PORT,
 )
+from .ft_cmd_channel import LineTapMixin
 from .ft_serial import FtFrameParser
 
 # Intervalo entre tentativas de reconexão (robô desligado, cabo de rede fora).
@@ -158,7 +159,7 @@ def configure_cabinet_485(host: str = FT_TCP_HOST,
     return out
 
 
-class FtTcpSource:
+class FtTcpSource(LineTapMixin):
     """Leitor do FA7155 pela 60000, em thread de fundo.
 
     API idêntica à do FtSerialSource (start/stop/connected/last_rx/error/port/
@@ -188,6 +189,7 @@ class FtTcpSource:
         self._running = False
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
+        self._tap_init()
 
     def start(self) -> bool:
         """Arma a thread. Sempre True: não há dependência opcional aqui (o
@@ -246,6 +248,19 @@ class FtTcpSource:
             if self._running:
                 time.sleep(_RETRY_S)
 
+    def _line_write(self, data: bytes) -> None:
+        """Manda bytes pela 60000, que o controlador repassa à 485 do
+        flange (canal de comando Modbus — ver ft_modbus).
+
+        O controlador é intermediário também na ida: o `SetToolMode(1)` do
+        `configure_tool_485` tem de ter rodado, senão os pinos 1/2 estão
+        em modo AI e o byte não chega a virar sinal na linha.
+        """
+        sock = self._sock
+        if sock is None:
+            raise RuntimeError('socket da 60000 não está aberto')
+        sock.sendall(data)
+
     def _read_loop(self, sock: socket.socket) -> None:
         while self._running:
             try:
@@ -256,6 +271,7 @@ class FtTcpSource:
                 # Peer fechou. Sai para o _worker reconectar.
                 self.error = 'controlador fechou a conexão da 60000'
                 return
+            self._tap_feed(data)
             frames = self.parser.feed(data)
             if not frames:
                 continue

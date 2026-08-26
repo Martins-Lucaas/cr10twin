@@ -37,6 +37,7 @@ except Exception:  # pragma: no cover - pyserial ausente
     list_ports = None
     _SERIAL_OK = False
 
+from .ft_cmd_channel import LineTapMixin
 from .constants import (
     FT_FRAME_HEADER,
     FT_FRAME_LEN,
@@ -150,7 +151,7 @@ class FtFrameParser:
         return out
 
 
-class FtSerialSource:
+class FtSerialSource(LineTapMixin):
     """Leitor do FA7155 em thread de fundo.
 
     Mesma API do LoadCellSerialSource (start/stop/connected/last_rx/error),
@@ -180,6 +181,7 @@ class FtSerialSource:
         self._running = False
         self._ser = None
         self._thread: Optional[threading.Thread] = None
+        self._tap_init()
 
     def start(self) -> bool:
         """Arma a thread. False só se pyserial não existe — a ausência do
@@ -244,6 +246,20 @@ class FtSerialSource:
             if self._running:
                 time.sleep(_RETRY_S)
 
+    def _line_write(self, data: bytes) -> None:
+        """Põe bytes na 485 (canal de comando Modbus — ver ft_modbus).
+
+        A 485 é half-duplex: escrever enquanto o sensor fala colide. Na
+        prática o conversor arbitra por si (o driver só habilita o TX
+        durante o write), e o sensor reenvia o quadro perdido no ciclo
+        seguinte — o parser já trata isso como resync.
+        """
+        ser = self._ser
+        if ser is None:
+            raise RuntimeError('porta serial do FA7155 não está aberta')
+        ser.write(data)
+        ser.flush()
+
     def _read_loop(self, ser) -> None:
         while self._running:
             # read(1) bloqueante + o que já estiver no buffer: entrega a menor
@@ -254,6 +270,7 @@ class FtSerialSource:
             waiting = getattr(ser, 'in_waiting', 0)
             if waiting:
                 data += ser.read(waiting)
+            self._tap_feed(data)
             frames = self.parser.feed(data)
             if not frames:
                 continue

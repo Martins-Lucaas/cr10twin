@@ -443,6 +443,10 @@ class PalpationGUI(FtAxesMixin, MatrixMixin, Node):
         # responsivo — e não existia operação sem GUI. Aqui só se PEDE o tare.
         self._lc_tare_req_pub = self.create_publisher(
             Empty, '/load_cell/tare', 10)
+        # Canal de comando do SENSOR (Modbus pela 485) — o tare acima é do
+        # host; este mexe no hardware. Ver ft_modbus.py.
+        self._ft_cmd_pub = self.create_publisher(
+            String, '/ft_sensor/command', 10)
         # Quando a GUI lê a serial do STM32 diretamente (mesmo PC), ela
         # REPUBLICA o I_final em /touch_sensor/value — assumindo o papel do
         # touch_sensor.py/touch_receiver para o explorer, o logger e o
@@ -588,6 +592,8 @@ class PalpationGUI(FtAxesMixin, MatrixMixin, Node):
             Bool, '/load_cell/tared', self._cb_lc_tared, 10)
         self.create_subscription(
             String, '/load_cell/tare_result', self._cb_lc_tare_result, 10)
+        self.create_subscription(
+            String, '/ft_sensor/command_result', self._cb_ft_cmd_result, 10)
         self.create_subscription(
             Float32, '/touch_sensor/value', self._cb_touch_value, QOS_SENSOR)
 
@@ -2965,6 +2971,10 @@ class PalpationGUI(FtAxesMixin, MatrixMixin, Node):
                 span = self._ft_arrivals[-1] - self._ft_arrivals[0]
                 self._ft_rate_hz = ((len(self._ft_arrivals) - 1) / span
                                     if span > 0 else None)
+        # Estatísticas, Savitzky-Golay e gravação CSV consomem TODA amostra —
+        # por isso aqui e não em _refresh_ft_axes, que roda a 10 Hz e veria
+        # 1 de cada 25 quadros.
+        self._ft_feed_processing(now, vals)
 
     def _publish_hand_from_sliders(self):
         if self._suppressing:

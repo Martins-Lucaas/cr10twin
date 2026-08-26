@@ -14,9 +14,12 @@ O que muda em relação ao force_receiver (XIAO + HX711):
   fábrica, então `slope`/`intercept` deixam de existir e `/load_cell/calibrated`
   passa a significar "há quadros válidos chegando". O que sobra do lado do
   host é o TARE — que aqui zera os SEIS eixos, não só um.
-* Não há comando de re-zero no sensor em modo ativo (ele só fala). O
-  `/load_cell/rezero`, que no HX711 mandava 'Z' para o firmware, aqui refaz o
-  tare — é a única coisa que se pode zerar deste lado.
+* Há DOIS zeros, e eles são coisas diferentes. O `/load_cell/rezero` refaz o
+  TARE do host (subtração no software, some ao reiniciar o nó). O zero do
+  SENSOR é o `Set_Zero` do canal Modbus — ver `ft_modbus.py` e o tópico
+  `/ft_sensor/command`. Até 26/08/2026 este arquivo afirmava que o sensor "só
+  fala"; a análise do cliente de fábrica da FIBOS mostrou que ele também é um
+  escravo Modbus RTU na mesma linha 485.
 
 Adaptação para a modulação de força EXISTENTE (tactile_explorer): um dos eixos
 faz o papel da antiga célula axial e é publicado em `/load_cell/force_net` com
@@ -37,6 +40,7 @@ como newtons nos runs feitos com esta célula.
 from __future__ import annotations
 
 import collections
+import json
 import threading
 import time
 
@@ -48,6 +52,8 @@ from touch_pack_msgs.msg import LoadCellSample, PalpationStatus
 
 from .constants import (
     FT_AXES,
+    FT_MODBUS_SLAVE_ID,
+    FT_MODBUS_TIMEOUT_S,
     FT_FORCE_AXIS_DEFAULT,
     FT_FORCE_SIGN_DEFAULT,
     FT_FRAME_LEN,
@@ -61,6 +67,9 @@ from .constants import (
     ft_max_rate_hz,
 )
 from .lc_filter import _LoadCellFilter, QOS_SENSOR
+from .ft_modbus import (
+    FtDevice, FtModbusClient, ModbusError, FtModbusMapUnconfirmed,
+)
 from .ft_serial import FtSerialSource, detect_ft_serial_port
 from .ft_tcp import FtTcpSource, configure_tool_485
 
@@ -99,6 +108,11 @@ class FtReceiverNode(Node):
         self._tared_pub = self.create_publisher(Bool, '/load_cell/tared', 10)
         self._tare_result_pub = self.create_publisher(
             String, '/load_cell/tare_result', 10)
+        # Canal de COMANDO do sensor (Modbus RTU pela mesma 485) — JSON nos
+        # dois sentidos porque os comandos têm argumentos de tipos diferentes,
+        # e um 'ok;a;b' posicional já não dá conta.
+        self._cmd_result_pub = self.create_publisher(
+            String, '/ft_sensor/command_result', 10)
 
         # ── Parâmetros ────────────────────────────────────────────────
         port = str(self.declare_parameter('ft_serial_port', '').value).strip()
@@ -175,9 +189,18 @@ class FtReceiverNode(Node):
                                  self._on_palpation_status, 10)
         self.create_subscription(Empty, '/load_cell/tare',
                                  self._on_tare_request, 10)
-        # Sem comando de zero no sensor: o rezero da GUI vira um tare.
+        # Tare do HOST (software). O zero do SENSOR é o cmd 'zero' abaixo.
         self.create_subscription(Empty, '/load_cell/rezero',
                                  self._on_rezero, 10)
+        self.create_subscription(String, '/ft_sensor/command',
+                                 self._on_command, 10)
+        self._modbus_slave = int(self.declare_parameter(
+            'ft_modbus_slave_id', FT_MODBUS_SLAVE_ID).value)
+        self._modbus_timeout = float(self.declare_parameter(
+            'ft_modbus_timeout_s', FT_MODBUS_TIMEOUT_S).value)
+        # Uma transação por vez: a derivação da linha (ft_cmd_channel) não
+        # aninha, e serializar aqui dá erro claro em vez de RuntimeError.
+        self._cmd_busy = threading.Lock()
 
         if transport not in ('serial', 'tcp'):
             self.get_logger().warn(
@@ -495,6 +518,114 @@ class FtReceiverNode(Node):
                 f'{self._absurd} quadros descartados por valor fora do fundo '
                 'de escala nos últimos 10 s.')
             self._absurd = 0
+
+    # ── Canal de comando Modbus (Set_Zero, taxa, node ID, baud) ───────
+    # Contrato de /ft_sensor/command: {"cmd": <nome>, "args": {...}}.
+    # A resposta sai em /ft_sensor/command_result como
+    # {"cmd":…, "ok":bool, "detail":str, "data":{...}} — sempre, inclusive na
+    # recusa, para a GUI nunca ficar esperando.
+    _COMMANDS = ('zero', 'rate', 'node_id', 'baud',
+                 'stream_start', 'stream_stop', 'probe')
+
+    def _reply(self, cmd: str, ok: bool, detail: str, data: dict | None = None):
+        self._cmd_result_pub.publish(String(data=json.dumps(
+            {'cmd': cmd, 'ok': bool(ok), 'detail': detail,
+             'data': data or {}}, ensure_ascii=False)))
+
+    def _on_command(self, msg: String) -> None:
+        try:
+            req = json.loads(str(msg.data))
+            cmd = str(req.get('cmd', '')).strip()
+            args = dict(req.get('args', {}) or {})
+        except Exception as exc:
+            self._reply('?', False, f'pedido malformado: {exc}')
+            return
+        if cmd not in self._COMMANDS:
+            self._reply(cmd, False,
+                        f'comando desconhecido (aceitos: '
+                        f'{", ".join(self._COMMANDS)})')
+            return
+        if not self._cmd_busy.acquire(blocking=False):
+            self._reply(cmd, False, 'outra transação em andamento')
+            return
+        # Fora da thread do executor: a transação espera até
+        # ft_modbus_timeout_s pela resposta no meio do stream, e segurar o
+        # callback por meio segundo atrasaria /ft_sensor/wrench junto.
+        threading.Thread(target=self._run_command, args=(cmd, args),
+                         daemon=True, name='ft-cmd').start()
+
+    def _run_command(self, cmd: str, args: dict) -> None:
+        try:
+            with self._serial.command_session() as (write_fn, read_fn):
+                client = FtModbusClient(write_fn, read_fn,
+                                        slave_id=self._modbus_slave,
+                                        timeout_s=self._modbus_timeout)
+                dev = FtDevice(client)
+                ok, detail, data = self._dispatch(dev, cmd, args)
+            self._reply(cmd, ok, detail, data)
+        except FtModbusMapUnconfirmed as exc:
+            # Caminho esperado enquanto o mapa não vier da bancada. Não é
+            # falha do link: é a trava fazendo o trabalho dela.
+            self._reply(cmd, False, str(exc), {'reason': 'map_unconfirmed'})
+        except ModbusError as exc:
+            self._reply(cmd, False, str(exc), {'reason': 'modbus'})
+        except Exception as exc:
+            self._reply(cmd, False, f'{type(exc).__name__}: {exc}',
+                        {'reason': 'transport'})
+        finally:
+            self._cmd_busy.release()
+
+    def _dispatch(self, dev, cmd: str, args: dict):
+        """Executa um comando já validado. Devolve (ok, detalhe, dados)."""
+        if cmd == 'zero':
+            dev.set_zero()
+            # O zero é no sensor, mas o tare do host guardava o offset ANTIGO:
+            # mantê-lo somaria as duas correções e o zero sairia errado.
+            with self._lock:
+                self._tare = [0.0] * len(FT_AXES)
+                self._tare_done = False
+            self._tared_pub.publish(Bool(data=False))
+            return True, 'zero aplicado no sensor; tare do host limpo', {}
+
+        if cmd == 'rate':
+            hz = int(args['hz'])
+            dev.set_output_rate_hz(hz)
+            return True, (f'taxa de saída = {hz} Hz. Só vale após RELIGAR o '
+                          'sensor; depois ajuste ft_rate_hz do nó.'), {'hz': hz}
+
+        if cmd == 'node_id':
+            nid = int(args['node_id'])
+            dev.set_node_id(nid)
+            return True, (f'node ID = {nid}. Só vale após RELIGAR o sensor; '
+                          'depois ajuste ft_modbus_slave_id do nó, senão o '
+                          'canal de comando fala com um escravo que não '
+                          'existe mais.'), {'node_id': nid}
+
+        if cmd == 'baud':
+            baud = int(args['baud'])
+            dev.set_baud(baud)
+            return True, (f'baud = {baud}. Só vale após RELIGAR o sensor; '
+                          'depois ajuste ft_baud do nó e reabra a porta.'),                 {'baud': baud}
+
+        if cmd == 'stream_start':
+            dev.start_stream()
+            return True, 'stream ligado', {}
+
+        if cmd == 'stream_stop':
+            dev.stop_stream()
+            return True, ('stream desligado — /ft_sensor/wrench vai parar '
+                          'até um stream_start.'), {}
+
+        if cmd == 'probe':
+            # Único que funciona sem o mapa confirmado: ler é inofensivo.
+            info = dev.probe()
+            if not info:
+                return False, ('nenhum registrador conhecido respondeu — '
+                               'confira o node ID e a fiação da 485, ou '
+                               'preencha FT_MODBUS_MAP.'), {}
+            return True, 'canal de comando vivo', info
+
+        raise AssertionError(f'comando sem tratamento: {cmd}')
 
     def destroy_node(self):
         try:

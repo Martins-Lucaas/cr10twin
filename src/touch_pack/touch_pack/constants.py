@@ -171,6 +171,118 @@ FT_TCP_PORT = 60000
 FT_FORCE_AXIS_DEFAULT = 'z'
 FT_FORCE_SIGN_DEFAULT = -1.0
 
+# ── Canal de COMANDO Modbus RTU do FA7155 ─────────────────────────────
+# Até 26/08/2026 este repo tratava a célula como talker passivo. A análise do
+# cliente de fábrica (Six_Axis_FT.exe, Qt5 — ver ft_modbus.py) mostrou que o
+# sensor é também um ESCRAVO Modbus RTU na mesma linha 485, e que os comandos
+# Set_Zero / Send_Frequency / Send_ModBus_ID / Send_Baud_rate / StartReading
+# existem. O que o binário NÃO entrega são os endereços: são constantes
+# numéricas no código, não strings.
+#
+# ┌─ COMO PREENCHER (uma sessão de bancada, ~30 min) ──────────────────┐
+# │ 1. Ligue o FA7155 no conversor USB-RS485.                          │
+# │ 2. Abra o cliente de fábrica e conecte na aba "Modbus".            │
+# │ 3. Capture a porta serial (Portmon, ou um 2º adaptador em escuta   │
+# │    na linha 485 — só RX, sem TX, para não colidir).                │
+# │ 4. Acione UM comando de cada vez e anote o quadro que sai:         │
+# │       <slave> <0x06|0x10> <addr_hi> <addr_lo> <valor…> <crc_lo>    │
+# │       <crc_hi>                                                     │
+# │ 5. addr = (addr_hi<<8)|addr_lo → é o número que entra aqui.        │
+# │ 6. Ponha FT_MODBUS_MAP_CONFIRMED = True.                           │
+# └────────────────────────────────────────────────────────────────────┘
+#
+# ENQUANTO ISTO FOR False, `FtDevice` RECUSA TODA ESCRITA. Não é excesso de
+# zelo: endereço errado troca o node ID (e você perde o escravo na linha) ou
+# muda o baud para um que o host não fala mais — e o sensor não tem botão de
+# reset de fábrica. Leitura continua liberada: no pior caso o escravo devolve
+# exceção 0x02 (endereço ilegal), que não altera nada nele.
+FT_MODBUS_MAP_CONFIRMED = False
+
+# None = endereço desconhecido. Os *_value/_on/_off são os payloads, que a
+# captura também revela (o cliente mostra "reset 0 success." / "start 1
+# success.", sugerindo canal 0/1 — confirme qual valor corresponde a quê).
+FT_MODBUS_MAP: dict = {
+    'zero':       None,   # Set_Zero        (0x06, escrita simples)
+    'zero_value': 1,
+    'rate':       None,   # Send_Frequency  (0x10, 2 regs = u32 Hz)
+    'node_id':    None,   # Send_ModBus_ID  (0x06)
+    'baud':       None,   # Send_Baud_rate  (0x10, 2 regs = u32 baud)
+    'stream':     None,   # StartReading / stopReading (0x06)
+    'stream_on':  1,
+    'stream_off': 0,
+    'device_id':  None,   # leitura do painel "Device ID"
+}
+
+# Node ID do escravo. 1 é o default Modbus e o que o cliente de fábrica traz
+# pré-preenchido; se você mudar com Send_ModBus_ID, mude aqui também.
+FT_MODBUS_SLAVE_ID = 1
+# Prazo de uma transação. Generoso de propósito: a resposta do comando chega
+# no MEIO do stream de 250 Hz e o cliente precisa peneirar os quadros "ST"
+# antes de achá-la (ver ft_modbus.find_response).
+FT_MODBUS_TIMEOUT_S = 0.5
+# Taxas de saída que o cliente de fábrica oferece no combo de frequência.
+FT_RATE_CHOICES_HZ = (10, 50, 100, 200, 250, 500, 1000)
+# Bauds oferecidos pelo mesmo cliente para a 485.
+FT_BAUD_CHOICES = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
+
+# ── Perfil HKVL-56 (Suzhou Hangkai Microelectronics) ──────────────────
+# CONFIRMADO por manual, 26/08/2026 — §5.1 (Communication Specifications) e
+# §4.2 (Data Format). Os dois quadros de exemplo do manual foram conferidos
+# byte a byte contra crc16_modbus() e FECHAM, e os floats de exemplo
+# decodificam para os valores impressos (00 00 48 41 -> 12,5 N). Ver
+# test_ft_hkvl56.py, que usa os quadros do manual como vetores dourados.
+#
+# ATENÇÃO — ESTE NÃO É O SENSOR DA BANCADA. Confirmado em 26/08/2026: a peça
+# no flange é o FA7155 da Fipos/FIBOS (Changzhou), plaqueta
+# "FA7155D-400N/20NM", 115200 baud, 250 Hz, stream com cabeçalho "ST". O
+# HKVL-56 é de OUTRO fabricante e o manual dele descreve 1 Mbps e Modbus
+# POLLED, sem stream. Este perfil fica aqui descrito e testado, e NÃO ativo,
+# por dois motivos que valem para o FA7155:
+#
+#   1. Os quadros publicados neste manual validaram o crc16_modbus() do repo
+#      contra um CRC de fabricante (fecham byte a byte) — antes disso a nossa
+#      conta nunca tinha sido conferida contra nada externo.
+#   2. Os dois desvios do padrão descritos abaixo são um vício comum nesta
+#      classe de sensor. Se a captura do FA7155 mostrar uma resposta de 30
+#      bytes em vez de 29, o STYLE_HKVL56 do ft_modbus já cobre o caso.
+#
+# Dois desvios do Modbus padrão, ambos afirmados pela nota do §4.2 e
+# coerentes com os CRCs:
+#   1. a resposta de 0x03 traz o ENDEREÇO INICIAL (2 bytes) no lugar do
+#      BYTECOUNT (1 byte) — 30 bytes de resposta, não 29;
+#   2. o campo "number of reads" conta BYTES, não registradores (0x0018 = 24
+#      bytes = 6 floats).
+FT_PROFILE_HKVL56 = {
+    'name':        'HKVL-56',
+    'vendor':      'Suzhou Hangkai Microelectronics Technology Co., Ltd.',
+    'style':       'hkvl56',
+    # "Unless otherwise specified by the customer, the default baud rate when
+    #  powering on ... is 1 Mbps" (§4.2, nota final).
+    'baud_default': 1_000_000,
+    # Exemplo 1: 01 03 00 03 00 18 B5 C0 — lê os seis eixos.
+    'data_addr':   0x0003,
+    'data_count':  0x0018,      # 24 BYTES (não registradores)
+    # Exemplo 2: 01 06 00 00 00 02 08 0B — grava ID = 2.
+    # "After modifying the ID, you must power on and restart the device."
+    'node_id':     0x0000,
+    # O manual só documenta 0x03 (ler) e 0x06 (escrever ID). Zero/tare, taxa
+    # de saída e baud NÃO aparecem nele — continuam por capturar.
+    'zero':        None,
+    'rate':        None,
+    'baud':        None,
+    'stream':      None,
+}
+
+# ── Pós-processamento à moda do cliente de fábrica ────────────────────
+# O Six_Axis_FT.exe traz um Savitzky-Golay (as mensagens "Window size must be
+# odd." e "Order must be less than window size." são a assinatura dele) além
+# de média e máximo por janela. Isto NÃO substitui o mediana+One-Euro do
+# lc_filter, que é o filtro da MALHA de controle: é um segundo caminho, só de
+# exibição e exportação, para o número da GUI bater com o do fabricante.
+FT_SG_WINDOW_DEFAULT = 11    # ímpar
+FT_SG_ORDER_DEFAULT  = 3     # < janela
+FT_STATS_WINDOW_DEFAULT = 250   # amostras de Mean_Num / MAX_Num (~1 s @250 Hz)
+
 # Touch sensor (STM32 → PC plotter → UDP). Porta DIFERENTE da célula, senão
 # os fluxos se misturam no mesmo receptor.
 TOUCH_SENSOR_UDP_PORT = 8081
