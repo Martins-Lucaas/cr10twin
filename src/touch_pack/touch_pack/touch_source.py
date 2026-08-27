@@ -618,10 +618,18 @@ class TouchFigure:
         # cada frame (xlim = agora-RASTER_WINDOW .. agora).
 
         # ── Heatmap ───────────────────────────────────────────────────
-        # interpolation="bicubic": mesmo visual suave do plotter standalone.
+        # interpolation="bilinear", não "bicubic": o resample do Agg roda por
+        # pixel de SAÍDA a cada frame e o kernel bicúbico custa o dobro do
+        # bilinear. Medido em 27/08/2026 sobre a figura no tamanho REAL da
+        # janela maximizada (1236×875 px, grade 5×5), o frame inteiro caiu de
+        # 25,9 ms p50 / 33,6 ms p99 para 20,2 / 26,0 só com esta troca — e a
+        # thread do Tk que desenha isto é a mesma que pinta a GUI inteira.
+        # A suavidade do plotter standalone continua: num heatmap de 5×5
+        # esticado ~100× os dois kernels dão a mesma imagem a olho nu. Voltar
+        # para "bicubic" custa ~5,5 ms POR FRAME.
         self.im_volt = ax1.imshow(
             np.zeros((self.rows, self.cols)), cmap="jet",
-            interpolation="bicubic", vmin=0, vmax=VREF)
+            interpolation="bilinear", vmin=0, vmax=VREF)
         self.fig.colorbar(self.im_volt, ax=ax1)
         ax1.set_title(f"Tensão (0–3.3 V) — {self.rows}×{self.cols}")
         ax1.set_xticks(range(self.cols))

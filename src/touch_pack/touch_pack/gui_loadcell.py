@@ -832,6 +832,15 @@ class FtAxesMixin:
         travou a GUI inteira no heatmap do toque (ver _build_sensors_tab)."""
         if not getattr(self, '_ft_axis_widgets', None):
             return
+        # Gate de visibilidade, como nas outras abas. Sem ele estes seis
+        # canvases de eixo, os dois gráficos e a seta 3D eram repintados a
+        # 10 Hz PARA NINGUÉM enquanto o usuário estava noutra aba: medido em
+        # 27/08/2026 com a aba Sensores à vista, 4,86 ms por chamada, 4,0% da
+        # thread que pinta a GUI inteira. Os HISTÓRICOS não passam por aqui
+        # (são alimentados na callback do ROS), então nada abre buraco.
+        if not self._tab_visible(getattr(self, '_lc_tab_frame', None)):
+            self.root.after(100, self._refresh_ft_axes)
+            return
         now = time.time()
         with self._lock:
             w = dict(self._ft_wrench)

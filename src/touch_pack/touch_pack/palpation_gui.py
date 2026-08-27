@@ -50,6 +50,7 @@ if tuple(int(x) for x in np.__version__.split(".")[:2]) >= (2, 0):
         "Confirme com: python3 -c \"import numpy; print(numpy.__version__)\""
     )
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
     QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy,
@@ -231,6 +232,13 @@ except Exception:  # pragma: no cover
     TOUCH_ROWS = TOUCH_COLS = 4
     TOUCH_TAXELS = 16
     _TOUCH_PLOT_OK = False
+
+# Ritmo da animação do touch sensor (aba Sensores) — ver _retune_touch_anim.
+# O período do desenho é custo_medido/_TOUCH_ANIM_DUTY, limitado a esta faixa:
+# nunca mais que 30 fps (piso de 33 ms) nem menos que 4 fps (teto de 250 ms).
+_TOUCH_ANIM_MIN_MS = 33
+_TOUCH_ANIM_MAX_MS = 250
+_TOUCH_ANIM_DUTY = 0.40
 
 # A GUI NÃO ABRE a serial da célula — uma tty admite um leitor só, e o
 # force_receiver é o dono exclusivo da porta.
@@ -596,8 +604,10 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             String, '/load_cell/tare_result', self._cb_lc_tare_result, 10)
         self.create_subscription(
             String, '/ft_sensor/command_result', self._cb_ft_cmd_result, 10)
-        self.create_subscription(
-            Float32, '/touch_sensor/value', self._cb_touch_value, QOS_SENSOR)
+        # Guardado num atributo porque ele é criado e destruído em tempo de
+        # execução — ver _reconcile_touch_echo_sub.
+        self._touch_value_sub = None
+        self._reconcile_touch_echo_sub()
 
         # Home pose customizável Default (ARM_HOME_DEG) é sobrescrito se
         # ~/.config/touch_pack/ home_pose.json existir.
@@ -678,6 +688,11 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         self._touch_canvas = None      # FigureCanvasTkAgg | None
         self._touch_anim = None        # FuncAnimation | None (blit)
         self._touch_anim_running = False
+        # Medição do custo do frame da figura do toque (s) — alimenta o ritmo
+        # adaptativo em _retune_touch_anim.
+        self._touch_frame_t0 = 0.0     # perf_counter do frame em curso
+        self._touch_frame_cost = None  # custo do último frame fechado
+        self._touch_frame_ema = None   # média exponencial do custo
         self._touch_serial_ok = False
         self._sensors_tab_frame: tk.Frame | None = None
         self._sensors_after: str | None = None
@@ -817,6 +832,9 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         # Abre a serial do STM32 (best-effort) e dispara o loop de redesenho
         # da figura embutida na aba Sensores.
         self._start_touch_source()
+        # Com a serial aberta, o assinante do próprio eco sai de cena já aqui
+        # (senão só sairia no primeiro hot-plug, 2 s depois).
+        self._reconcile_touch_echo_sub()
         # A célula NÃO é aberta aqui: o force_receiver é o dono da serial do
         # XIAO e a GUI só assina /load_cell/voltage (ver o topo do arquivo).
         self.root.after(200, self._refresh_sensors_tab)
@@ -844,9 +862,46 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
                       'Qualquer coleta iniciada agora sai SEM dado tátil.',
                       self._touch_source.error)
 
+    def _reconcile_touch_echo_sub(self) -> None:
+        """Assina /touch_sensor/value SÓ quando não há serial local.
+
+        Esta GUI PUBLICA /touch_sensor/value a cada amostra (~1 kHz, ver
+        _touch_pub_period) e ASSINAVA o mesmo tópico ao mesmo tempo. O
+        assinante existe para o caso de o STM32 estar noutra máquina e alguém
+        republicar o escalar na rede; com a serial local viva, ele só recebia
+        o ECO da própria GUI — ~800 mensagens por segundo entregues a si
+        mesma, cada uma um despertar do executor e um callback Python na
+        thread do ROS.
+
+        Isso não aparecia na thread do ROS: aparecia na do Tk, que disputa o
+        GIL com ela. Medido em 27/08/2026, aba Sensores à vista, mesma figura
+        e mesmo sensor: com o eco, `Text.draw` custava 0,95-1,14 ms (25 por
+        quadro) e o quadro inteiro 29-39 ms; sem a thread do ROS, 0,29 ms e
+        17 ms — e 0,27 ms é o que a GUI do openARM mede na mesma máquina, que
+        publica o mesmo escalar mas NÃO o assina. O desenho nunca foi o
+        gargalo.
+
+        Reconciliado no hot-plug (a cada 2 s), porque a serial pode cair e o
+        caminho de rede tem de voltar sozinho."""
+        # getattr: este método roda ANTES de a fonte existir (o bloco de
+        # assinaturas do __init__ vem antes do bloco que a cria).
+        src = getattr(self, '_touch_source', None)
+        serial_ok = src is not None and src.connected
+        if serial_ok and self._touch_value_sub is not None:
+            try:
+                self.destroy_subscription(self._touch_value_sub)
+            except Exception as exc:
+                log.debug('destroy_subscription do eco falhou: %s', exc)
+            self._touch_value_sub = None
+        elif not serial_ok and self._touch_value_sub is None:
+            self._touch_value_sub = self.create_subscription(
+                Float32, '/touch_sensor/value', self._cb_touch_value,
+                QOS_SENSOR)
+
     def _retry_touch_source(self) -> None:
         """Hot-plug: a cada 2 s reconcilia a fonte do toque com o hardware."""
         try:
+            self._reconcile_touch_echo_sub()
             src = self._touch_source
             if src is None:
                 return
@@ -926,18 +981,24 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
                 # válido porque os limites dos eixos são fixos: o raster usa
                 # tempo relativo a agora, não absoluto (ver TouchFigure).
                 #
-                # interval=33 (30 fps) e não 20 (50 fps): um quadro com blit
-                # custa 11,1 ms p50 / 16,4 ms p99 (medido em 10/08/2026), e a
-                # 50 fps o p99 encostava no orçamento de 20 ms — na thread do
-                # Tk, que também pinta todo o resto da GUI. Como a animação
-                # agora roda TAMBÉM durante a coleta (ver _refresh_sensors_tab),
-                # 30 fps é o que deixa folga; num heatmap a diferença não se vê.
+                # O intervalo aqui é só o CHUTE INICIAL (30 fps, o teto da
+                # faixa): a partir do primeiro frame ele passa a ser o custo
+                # medido do desenho, em _retune_touch_anim. Um intervalo fixo
+                # supõe um custo de frame fixo, e ele não é — escala com a área
+                # em pixels da figura (que segue o tamanho da janela) e com a
+                # grade do sensor. Os 33 ms cravados que havia aqui vinham de um
+                # frame de 11,1 ms p50 / 16,4 ms p99 (10/08/2026); na mesma
+                # célula com a janela maximizada e grade 5×5 o frame mede 20,2
+                # ms p50 / 26,0 ms p99 (27/08/2026), e a 30 fps isso ocupava
+                # quase toda a thread que pinta a GUI inteira.
                 self._touch_anim = FuncAnimation(
                     self._touch_figure.fig,
-                    self._touch_figure.update,
+                    self._touch_anim_frame,
                     init_func=self._touch_figure.init_blit,
-                    interval=33, blit=True, cache_frame_data=False)
+                    interval=_TOUCH_ANIM_MIN_MS, blit=True,
+                    cache_frame_data=False)
                 self._touch_anim_running = True
+                self._instrument_touch_blit()
             except Exception as exc:
                 log.warning('[TOUCH] falha ao embutir figura: %s', exc)
                 self._touch_figure = None
@@ -1001,6 +1062,9 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             # `snapshot()` só segura o lock da fonte 0,26 ms (p99 0,60 ms).
             self._set_touch_anim(visible)
             if visible:
+                # Daqui, e não de dentro do callback da animação: ver a
+                # advertência sobre o timer em _retune_touch_anim.
+                self._retune_touch_anim()
                 self._update_sensors_panel()
         finally:
             self._sensors_after = self.root.after(
@@ -1029,8 +1093,87 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             else:
                 anim.pause()
             self._touch_anim_running = run
+            # O frame em curso não fecha atravessando uma pausa: sem isto o
+            # próximo blit mediria também o tempo com a aba escondida.
+            self._touch_frame_t0 = 0.0
+            self._touch_frame_cost = None
         except Exception as exc:
             log.debug('touch anim toggle falhou: %s', exc)
+
+    def _instrument_touch_blit(self) -> None:
+        """Cronometra o frame REAL da figura do toque: do início do callback da
+        FuncAnimation até o último blit entregue ao Tk — que é o custo da
+        tabela em _retune_touch_anim, não só o tempo de mexer nos dados
+        (0,53 ms; a rasterização é o resto).
+
+        Com blit=True o matplotlib chama canvas.blit() uma vez POR EIXO (quatro
+        por frame), então o valor bom é o da ÚLTIMA chamada. Por isso ele fica
+        só anotado aqui e é consumido no callback seguinte, quando o frame
+        anterior já fechou."""
+        canvas = self._touch_canvas
+        if canvas is None:
+            return
+        orig_blit = canvas.blit
+
+        def timed_blit(bbox=None):
+            orig_blit(bbox)
+            t0 = self._touch_frame_t0
+            if t0:
+                self._touch_frame_cost = time.perf_counter() - t0
+
+        canvas.blit = timed_blit
+
+    def _touch_anim_frame(self, *args):
+        """Callback da FuncAnimation: fecha a medição do frame anterior e
+        desenha o atual. A média é exponencial (α=0,2) porque o custo oscila
+        com a quantidade de spikes na janela e não se quer o intervalo
+        pulando a cada frame."""
+        cost = self._touch_frame_cost
+        if cost is not None:
+            self._touch_frame_cost = None
+            ema = self._touch_frame_ema
+            self._touch_frame_ema = (cost if ema is None
+                                     else 0.8 * ema + 0.2 * cost)
+        self._touch_frame_t0 = time.perf_counter()
+        return self._touch_figure.update(*args)
+
+    def _retune_touch_anim(self) -> None:
+        """Ajusta o intervalo da animação ao custo MEDIDO do frame, para o
+        desenho do toque nunca passar de _TOUCH_ANIM_DUTY da thread do Tk.
+
+        Medido em 27/08/2026 nesta célula, janela maximizada e grade 5×5
+        (figura de 1236×875 px), o frame custava 25,9 ms p50 / 33,6 ms p99
+        contra o intervalo fixo de 33 ms: a thread que pinta a GUI INTEIRA
+        ficava ocupada ~80–100% do tempo só com esta figura, e a aba inteira
+        respondia com atraso. Com o período em custo/_TOUCH_ANIM_DUTY sobra
+        sempre ~60% do laço para o resto, em qualquer máquina e qualquer
+        tamanho de janela — que é a variável que muda o custo.
+
+        SÓ PODE SER CHAMADO DE FORA do callback da animação. O setter de
+        `interval` reinicia o timer, e o TimerTk reagenda outro ao fim do
+        callback: chamado lá dentro, os dois se somam e a taxa dobra a cada
+        frame. Daqui (laço `after` da aba) há um único timer pendente."""
+        anim = getattr(self, '_touch_anim', None)
+        src = getattr(anim, 'event_source', None) if anim is not None else None
+        ema = self._touch_frame_ema
+        if src is None or not ema:
+            return
+        cost_ms = ema * 1e3
+        period = min(max(cost_ms / _TOUCH_ANIM_DUTY, _TOUCH_ANIM_MIN_MS),
+                     _TOUCH_ANIM_MAX_MS)
+        want = max(int(period - cost_ms), 1)
+        cur = getattr(src, 'interval', 0)
+        # Histerese: mexer no interval reinicia o timer do Tk, então só quando
+        # a correção for de verdade — não a cada 80 ms.
+        if cur <= 0 or abs(want - cur) / cur > 0.20:
+            # Os DOIS, nesta ordem: `TimedAnimation._step` reescreve
+            # `event_source.interval = self._interval` ao fim de CADA frame,
+            # então mexer só no timer dura um frame e some (verificado no
+            # matplotlib 3.5.1 e ainda presente nas 3.x). `_interval` é o
+            # campo que a animação restaura; o setter do timer é o que faz o
+            # novo valor valer já no próximo disparo.
+            anim._interval = want
+            src.interval = want
 
     def _experiment_active(self) -> bool:
         """True se há EXPERIMENTO em andamento: palpação rodando (fase !=
@@ -6624,14 +6767,46 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
 
     # Loop ROS em thread separada
     def _spin_ros(self):
-        while not self._stop_event.is_set() and rclpy.ok():
+        """Gira o nó com um executor PERSISTENTE.
+
+        `rclpy.spin_once(self, ...)` num laço CRIA UM EXECUTOR NOVO A CADA
+        VOLTA — e, com timeout de 50 ms, isso são 20 executores por segundo,
+        cada um remontando em Python o waitset do nó inteiro (esta GUI tem
+        dezenas de assinaturas). O custo não aparece nesta thread: aparece na
+        do Tk, que disputa o GIL com ela.
+
+        Medido em 27/08/2026, com a aba Sensores à vista e a mesma figura:
+        cada `Text.draw` do heatmap custava 1,14 ms com este laço rodando e
+        0,27 ms com a thread parada — 4× — e o frame inteiro caía de ~40 ms
+        para ~12 ms. Os 0,27 ms são exatamente o que a GUI do openARM mede na
+        mesma máquina, com a mesma figura e o mesmo sensor; a diferença de
+        fluidez entre as duas abas era esta thread, não o desenho.
+
+        O que é C puro mal sentiu (o resample do heatmap, 4,5 contra 3,8 ms;
+        o blit, 0,4 contra 0,7 ms): quem apanha é o código interpretado, que
+        larga e retoma o GIL a cada punhado de bytecodes — e `Text.draw` é o
+        caminho mais interpretado da figura, 25 vezes por quadro."""
+        executor = SingleThreadedExecutor()
+        executor.add_node(self)
+        try:
+            while not self._stop_event.is_set() and rclpy.ok():
+                try:
+                    executor.spin_once(timeout_sec=0.05)
+                except Exception as exc:
+                    log.error('[SPIN] spin_once falhou: %s', exc)
+                    if not rclpy.ok():
+                        break
+                    # Continua girando — uma exceção isolada não deve parar
+                    # o executor.
+        finally:
             try:
-                rclpy.spin_once(self, timeout_sec=0.05)
-            except Exception as exc:
-                log.error('[SPIN] spin_once falhou: %s', exc)
-                if not rclpy.ok():
-                    break
-                # Continua girando — uma exceção isolada não deve parar o executor.
+                executor.remove_node(self)
+            except Exception:
+                pass
+            try:
+                executor.shutdown()
+            except Exception:
+                pass
 
     def _on_close(self):
         self._stop_event.set()
