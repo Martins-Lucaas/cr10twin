@@ -161,6 +161,8 @@ _N_PER_KGF = 9.80665
 # Tema + widgets compartilhados (cores, named fonts do Tk — ver o aviso
 # sobre o bug do fontconfig em ui_helpers — tooltip e botões do header).
 from .gui_loadcell import FtAxesMixin
+from .gui_ft_arrow import FtArrowMixin
+from .gui_ft_charts import FtChartsMixin
 from .gui_matrix import MatrixMixin
 from .gui_constants import (
     MATRIX_STEP_DEFAULT, MATRIX_N_DEFAULT, MATRIX_SHAPES,
@@ -396,7 +398,7 @@ COVVI_GRIPS: dict[str, tuple[int | None, dict[str, float]]] = {
 
 
 # Nó ROS + GUI
-class PalpationGUI(FtAxesMixin, MatrixMixin, Node):
+class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
     # A classe nasceu com 234 métodos num arquivo só, e achar código nela
     # exigia ferramenta em vez de leitura. Está sendo recortada por MIXINS:
     # o corte é mecânico (os métodos continuam operando sobre `self`), então

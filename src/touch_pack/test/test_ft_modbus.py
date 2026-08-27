@@ -280,3 +280,88 @@ def test_derivacao_nao_cresce_sem_limite():
         for _ in range(200):
             t._tap_feed(b'z' * 1024)
         assert len(t._tap_buf) <= 65536
+
+
+# ── Descoberta do mapa de registradores (varredura só de leitura) ─────
+# Estas funções existem para destravar o FT_MODBUS_MAP sem sniffer. O que os
+# testes protegem é a PRUDÊNCIA delas: varrer sem escrever, e sugerir sem
+# escolher.
+
+class _EscravoFalso:
+    """Escravo com um mapa conhecido; tudo fora dele devolve exceção 0x02."""
+
+    def __init__(self, regs: dict, mudos=()):
+        self.regs = dict(regs)
+        self.mudos = set(mudos)
+        self.escritas = []
+
+    def read_registers(self, addr, count, func=m.FUNC_READ_HOLDING):
+        if addr in self.mudos:
+            raise m.ModbusTimeout('sem resposta')
+        if addr not in self.regs:
+            raise m.ModbusExceptionResponse(func, 0x02)
+        return [self.regs[addr + i] for i in range(count)]
+
+    def write_register(self, addr, value):
+        self.escritas.append((addr, value))
+
+
+def test_varredura_classifica_ok_ilegal_e_mudo():
+    esc = _EscravoFalso({0x00: 7, 0x01: 9}, mudos={0x03})
+    scan = m.scan_registers(esc, 0x00, 0x03)
+    assert scan[0x00] == (m.SCAN_OK, 7)
+    assert scan[0x01] == (m.SCAN_OK, 9)
+    assert scan[0x02] == (m.SCAN_ILLEGAL, None)
+    assert scan[0x03] == (m.SCAN_MUTE, None)
+
+
+def test_varredura_nao_escreve_nada():
+    """A trava do mapa protege as escritas; a varredura não pode furá-la."""
+    esc = _EscravoFalso({0x00: 1})
+    m.scan_registers(esc, 0x00, 0x05)
+    assert esc.escritas == []
+
+
+def test_varredura_reporta_progresso_endereco_a_endereco():
+    esc = _EscravoFalso({0x00: 1})
+    vistos = []
+    m.scan_registers(esc, 0x00, 0x02,
+                     on_progress=lambda a, st, v: vistos.append((a, st)))
+    assert [a for a, _ in vistos] == [0x00, 0x01, 0x02]
+
+
+def test_sugestao_acha_o_baud_em_palavra_alta_primeiro():
+    # 1000000 = 0x000F4240
+    scan = {0x10: (m.SCAN_OK, 0x000F), 0x11: (m.SCAN_OK, 0x4240)}
+    out = m.suggest_map(scan, baud=1_000_000)
+    assert (0x10, 'hi-lo') in out['baud']
+
+
+def test_sugestao_acha_o_baud_em_palavra_baixa_primeiro():
+    scan = {0x10: (m.SCAN_OK, 0x4240), 0x11: (m.SCAN_OK, 0x000F)}
+    out = m.suggest_map(scan, baud=1_000_000)
+    assert (0x10, 'lo-hi') in out['baud']
+
+
+def test_sugestao_devolve_TODOS_os_candidatos_sem_escolher():
+    """node_id=1 casa com qualquer registrador que valha 1 — e isso é o
+    ponto: escolher sozinho seria o erro que a trava existe para impedir."""
+    scan = {a: (m.SCAN_OK, 1) for a in (0x00, 0x05, 0x09)}
+    out = m.suggest_map(scan, node_id=1)
+    assert out['node_id'] == [0x00, 0x05, 0x09]
+
+
+def test_sugestao_ignora_enderecos_que_nao_responderam():
+    scan = {0x10: (m.SCAN_OK, 1000), 0x11: (m.SCAN_ILLEGAL, None)}
+    out = m.suggest_map(scan, rate_hz=1000, node_id=1000)
+    assert out['rate'] == [(0x10, 'u16')]      # não formou par de 32 bits
+
+
+def test_sugestao_sem_alvo_nao_chuta():
+    scan = {0x10: (m.SCAN_OK, 1)}
+    assert m.suggest_map(scan) == {'node_id': [], 'rate': [], 'baud': []}
+
+
+def test_format_scan_sai_colavel():
+    txt = m.format_scan({0x03: (m.SCAN_OK, 1000), 0x04: (m.SCAN_ILLEGAL, None)})
+    assert txt.splitlines() == ['0x0003    1000  0x03E8', '0x0004  illegal']

@@ -224,6 +224,67 @@ FT_MODBUS_MAP: dict = {
     'device_id':  None,   # leitura do painel "Device ID"
 }
 
+# ── Leitura POLLED (o modo que o HMI/cliente de fábrica usa) ──────────
+# CONFIRMADO 26/08/2026 pela tela de comando do HMI, conferida byte a byte:
+#
+#     requisição   01 03 00 03 00 0C B5 CF
+#     resposta     01 03 18 <24 B = 6x float32 LE> 10 A3
+#
+# Os dois CRCs fecham com crc16_modbus() e os 24 bytes decodificam para 50,0
+# nos seis eixos (o valor de exemplo da tela). test_ft_polled.py usa esses
+# dois quadros como vetores dourados, no mesmo espírito do test_ft_hkvl56.
+#
+# Isto é um caminho DIFERENTE do stream "ST" de 28 bytes: aqui o host é
+# MESTRE e pergunta, em vez de escutar um talker. Os dois convivem na mesma
+# linha 485 e o parâmetro `ft_mode` do nó escolhe qual usar.
+#
+# Detalhe que decide o parser: a resposta traz BYTECOUNT (0x18), não o
+# endereço inicial. Ou seja, o FA7155 fala o enquadramento Modbus PADRÃO, e
+# NÃO o estilo HKVL-56 (que põe 2 bytes de endereço no lugar e teria 30
+# bytes). Use STYLE_STANDARD com count=12 ao decodificar.
+FT_MODBUS_DATA_ADDR = 0x0003   # holding register inicial dos seis eixos
+FT_MODBUS_DATA_REGS = 12       # 12 regs = 24 bytes = 6 x float32 LE
+
+
+def ft_polled_max_rate_hz(baud: float = 115200) -> float:
+    """Teto de amostras/s no modo POLLED — outra conta que a do stream.
+
+    No stream você paga 28 B por amostra e mais nada. Aqui cada amostra custa
+    a requisição (8 B), a resposta (29 B) e os DOIS silêncios de 3,5
+    caracteres que o Modbus RTU exige entre quadros:
+
+        (8 + 29) x 10 bits + 2 x 35 bits = 440 bits por amostra
+
+    A 115200 isso dá ~262 Hz. É o teto do FIO: a latência de USB (~1 ms por
+    sentido num CH340) não entra aqui e derruba a taxa medida para algo em
+    torno de 150-200 Hz. Por isso a GUI mostra a taxa MEDIDA ao lado deste
+    teto, em vez de prometer o número teórico.
+    """
+    return float(baud) / ((8 + 29) * 10 + 2 * 35)
+
+
+# Modo de aquisição. Ortogonal ao MEIO (`ft_transport`: serial ou tcp) — dá
+# para pollar pela 485 do flange na porta 60000 exatamente como pelo USB.
+FT_MODE_STREAM = 'stream'
+FT_MODE_POLLED = 'polled'
+FT_MODE_CHOICES = (FT_MODE_STREAM, FT_MODE_POLLED)
+
+# ── Gráficos: paridade com o cliente de fábrica ───────────────────────
+# Números lidos de Csv/Range.csv da instalação do Six_Axis_FT.exe — é onde o
+# cliente PERSISTE as escalas, então é o que ele mostra ao abrir.
+#
+# O mesmo arquivo traz Column_Y1..Y6_Max = -100. Um "máximo" negativo é
+# sentinela de "nunca ajustado", não escala: as barras de coluna continuam
+# usando o fundo de escala real da unidade (FT_RATED_*), não isto.
+#
+# E os valores de força/torque abaixo são DEFAULTS GENÉRICOS da série, não
+# desta unidade: ±200 N é metade do fundo de escala da variante D (400 N) e
+# ±50 N·m é 2,5x o dela (20 N·m). Ficam aqui porque a paridade pedida é com o
+# que o cliente MOSTRA ao abrir; a escala é ajustável na própria aba.
+FT_CHART_WINDOW_N   = 2000     # Chart_X1_Max / Chart_X2_Max — amostras
+FT_CHART_FORCE_MAX  = 200.0    # Chart_Y1_Max / Min — N
+FT_CHART_TORQUE_MAX = 50.0     # Chart_Y2_Max / Min — N·m
+
 # Node ID do escravo. 1 é o default Modbus e o que o cliente de fábrica traz
 # pré-preenchido; se você mudar com Send_ModBus_ID, mude aqui também.
 FT_MODBUS_SLAVE_ID = 1

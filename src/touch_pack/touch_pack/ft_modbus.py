@@ -36,6 +36,8 @@ import time
 from typing import Callable, Optional, Sequence
 
 from .constants import (
+    FT_MODBUS_DATA_ADDR,
+    FT_MODBUS_DATA_REGS,
     FT_MODBUS_MAP,
     FT_MODBUS_MAP_CONFIRMED,
     FT_MODBUS_SLAVE_ID,
@@ -402,6 +404,22 @@ class FtDevice:
     # ── Leitura ───────────────────────────────────────────────────────
     # Ler é seguro mesmo com o mapa por confirmar: no pior caso o escravo
     # devolve exceção 0x02 (endereço ilegal), que não altera nada nele.
+    def read_wrench(self) -> tuple:
+        """Uma amostra dos seis eixos pelo caminho POLLED do cliente/HMI.
+
+        Manda `01 03 00 03 00 0C` e decodifica os 24 bytes da resposta. É o
+        ÚNICO endereço do mapa que está confirmado (ver FT_MODBUS_DATA_ADDR),
+        e é de leitura — por isso não passa por `_require_map`, que guarda só
+        as escritas.
+
+        O resultado tem exatamente a mesma forma que um quadro "ST" do
+        stream: seis float32 little-endian em N e N·m. Quem consome não
+        precisa saber por qual caminho a amostra chegou.
+        """
+        frame = self.client.read_frame(
+            FT_MODBUS_DATA_ADDR, FT_MODBUS_DATA_REGS, FUNC_READ_HOLDING)
+        return parse_wrench(frame, FT_MODBUS_DATA_REGS, STYLE_STANDARD)
+
     def read_device_id(self) -> Optional[int]:
         """`Device ID` do painel do cliente de fábrica."""
         addr = FT_MODBUS_MAP.get('device_id')
@@ -431,3 +449,108 @@ class FtDevice:
             if v is not None:
                 out[nome] = v
         return out
+
+
+# ── Descoberta do mapa de registradores, SEM sniffer ──────────────────
+# O procedimento documentado no constants.py pede Portmon ou um segundo
+# adaptador em escuta. As duas funções abaixo fazem o mesmo trabalho pela
+# própria linha, e sem risco: elas só LEEM. O pior caso de uma leitura em
+# endereço inexistente é a exceção 0x02, que não altera nada no escravo.
+
+SCAN_OK      = 'ok'        # respondeu com valor
+SCAN_ILLEGAL = 'illegal'   # exceção 0x02 — endereço não existe
+SCAN_MUTE    = 'mudo'      # timeout ou resposta corrompida
+
+
+def scan_registers(client: FtModbusClient,
+                   start: int = 0x0000,
+                   end: int = 0x0040,
+                   func: int = FUNC_READ_HOLDING,
+                   on_progress: Optional[Callable[[int, str, Optional[int]],
+                                                  None]] = None) -> dict:
+    """Varre `start`..`end` (inclusive) lendo UM registrador de cada vez.
+
+    Devolve {addr: (status, valor|None)} com os status SCAN_*. Ler um por vez
+    e não em bloco é de propósito: um bloco que cruze a fronteira do que
+    existe é recusado inteiro, e aí você não descobre onde fica a fronteira.
+
+    Custo: um round-trip por endereço. Com o timeout padrão de 0,5 s, uma
+    faixa de 65 endereços leva até ~30 s no pior caso (tudo mudo) e poucos
+    segundos no caso normal, em que o escravo responde na hora. Passe um
+    `client` com `timeout_s` menor para varrer faixas grandes.
+
+    `on_progress(addr, status, valor)` é chamado a cada endereço, para a GUI
+    poder desenhar a varredura enquanto ela acontece.
+    """
+    out: dict = {}
+    for addr in range(int(start), int(end) + 1):
+        try:
+            valor = client.read_registers(addr, 1, func)[0]
+            status = SCAN_OK
+        except ModbusExceptionResponse:
+            status, valor = SCAN_ILLEGAL, None
+        except ModbusError:
+            status, valor = SCAN_MUTE, None
+        out[addr] = (status, valor)
+        if on_progress is not None:
+            on_progress(addr, status, valor)
+    return out
+
+
+def suggest_map(scan: dict, *, baud: Optional[int] = None,
+                rate_hz: Optional[int] = None,
+                node_id: Optional[int] = None) -> dict:
+    """Casa os valores LIDOS com o estado que o host já conhece.
+
+    A varredura diz QUAIS endereços existem; ela não diz o que significam.
+    Esta função tenta fechar essa lacuna com o único conhecimento externo que
+    sai de graça: o sensor está agora num baud, numa taxa e num node ID que o
+    host sabe de cor. Um par de registradores que valha exatamente 1000000 é
+    candidato forte a `baud`.
+
+    É PALPITE, e o formato do retorno diz isso: cada chave devolve a LISTA de
+    todos os candidatos, não um vencedor. Coincidência é banal — `node_id=1`
+    casa com qualquer registrador que valha 1 — e escolher sozinho seria
+    exatamente o erro que a trava do FT_MODBUS_MAP existe para impedir.
+
+    Palavra alta primeiro é a convenção do Modbus e a que `_u32_to_regs` usa,
+    mas nem todo escravo obedece; os dois arranjos são testados e o retorno
+    marca qual casou, porque isso muda como a ESCRITA tem de ser montada.
+    """
+    ok = {a: v for a, (st, v) in scan.items() if st == SCAN_OK and v is not None}
+    out: dict = {'node_id': [], 'rate': [], 'baud': []}
+
+    if node_id is not None:
+        out['node_id'] = [a for a, v in sorted(ok.items()) if v == int(node_id)]
+
+    for chave, alvo in (('rate', rate_hz), ('baud', baud)):
+        if alvo is None:
+            continue
+        alvo = int(alvo)
+        cand = []
+        for a in sorted(ok):
+            if a + 1 not in ok:
+                continue
+            hi, lo = ok[a], ok[a + 1]
+            if (hi << 16 | lo) == alvo:
+                cand.append((a, 'hi-lo'))
+            elif (lo << 16 | hi) == alvo:
+                cand.append((a, 'lo-hi'))
+        # Um valor pequeno cabe em 16 bits e também aparece sozinho.
+        if 0 <= alvo <= 0xFFFF:
+            cand += [(a, 'u16') for a, v in sorted(ok.items()) if v == alvo]
+        out[chave] = cand
+    return out
+
+
+def format_scan(scan: dict) -> str:
+    """Varredura em texto colável, para ir junto do relato de bancada."""
+    linhas = []
+    for addr in sorted(scan):
+        status, valor = scan[addr]
+        if status == SCAN_OK:
+            linhas.append(f'0x{addr:04X}  {valor:6d}  0x{valor:04X}')
+        else:
+            linhas.append(f'0x{addr:04X}  {status}')
+    return '\n'.join(linhas)
+

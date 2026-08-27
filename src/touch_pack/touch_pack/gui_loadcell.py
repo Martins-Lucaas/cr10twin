@@ -11,13 +11,31 @@ start/stop do stream. A aba passou a ter o que o cliente de fábrica tem:
 
   Painel                    equivalente na FIBOS
   ─────────────────────────────────────────────────────────────────
+  Acquisition mode          Serial communication (stream x polled 0x03)
   Command channel           Modbus correspondence + Device ID
   Sensor commands           Set_Zero, Send_Frequency, Send_ModBus_ID,
                             Send_Baud_rate, StartReading/stopReading
+  Register scan             (não tem equivalente — ver abaixo)
+  Charts                    gráficos qwt de força e torque
+  Columns                   vista de colunas
+  Force vector 3D           Qt5OpenGL + OBJ/arrowhead.obj
   Display filter            Savitzky-Golay (janela ímpar, ordem < janela)
   Statistics                Mean_Num / MAX_Num
   Recording                 Save_CsvMsg (carimbo yyyy-MM-dd hh:mm:ss.zzz)
   Chart ranges              Csv/Range.csv
+
+DOIS PONTOS EM QUE ESTA ABA NÃO COPIA O FABRICANTE, DE PROPÓSITO:
+
+* MODO DE AQUISIÇÃO. O cliente de fábrica só pergunta (Modbus 0x03 em laço,
+  ~262 Hz de teto a 115200). Aqui o default continua sendo o stream "ST" a
+  1 Mbps, que entrega 1 kHz; polled é escolha, não imposição. O painel
+  "Acquisition mode" troca os dois a quente e mostra os dois tetos.
+
+* REGISTER SCAN não existe na FIBOS. Ele é a saída para a trava abaixo sem
+  sniffer: varre o espaço de registradores SÓ LENDO (endereço inexistente
+  devolve exceção 0x02, que não altera nada no escravo) e casa os valores
+  lidos com o baud, a taxa e o node ID que o host já conhece. O que ele
+  produz são CANDIDATOS para o FT_MODBUS_MAP, nunca conclusão.
 
 TRAVA: enquanto `FT_MODBUS_MAP_CONFIRMED` for False em constants.py, os
 botões de ESCRITA ficam desabilitados e o painel diz por quê. Endereço de
@@ -44,6 +62,7 @@ from .constants import (
     FT_RATE_CHOICES_HZ, FT_RATED_FORCE_N, FT_RATED_TORQUE_NM,
     FT_SAFE_OVERLOAD_PCT, FT_SERIAL_BAUD, FT_SG_ORDER_DEFAULT,
     FT_SG_WINDOW_DEFAULT, FT_STATS_WINDOW_DEFAULT, RUNS_DIR, ft_axis_rated,
+    FT_MODE_POLLED, FT_MODE_STREAM, ft_max_rate_hz, ft_polled_max_rate_hz,
 )
 from .ft_stats import RollingStats, StreamingSavGol, validate_savgol
 from .ui_helpers import (
@@ -145,6 +164,7 @@ class FtAxesMixin:
         # Sinalizado pela thread do ROS, consumido pela do Tk: widget não
         # pode ser tocado fora da thread da GUI.
         self._ft_csv_error = ''
+        self._ft_charts_init()
 
     def _ft_feed_processing(self, now: float, vals: tuple) -> None:
         """Uma amostra dos seis eixos, na taxa do sensor (~1 kHz).
@@ -158,10 +178,17 @@ class FtAxesMixin:
             return                      # aba ainda não construída
         with self._lock:
             sg_on = self._ft_sg_on
+            mostrados = []
             for axis, v in zip(FT_AXES, vals):
-                self._ft_smooth[axis] = (
-                    self._ft_sg[axis].update(v) if sg_on else v)
+                sv = self._ft_sg[axis].update(v) if sg_on else v
+                self._ft_smooth[axis] = sv
+                # A estatística é do sinal CRU: ela mede o sensor, não o
+                # filtro de exibição.
                 self._ft_stats[axis].update(v)
+                mostrados.append(sv)
+            # Os gráficos recebem o valor mostrado — é o que o cliente de
+            # fábrica plota, e o que o CSV de exibição guarda.
+            self._ft_charts_feed(mostrados)
             csv = self._ft_csv
         if csv is not None:
             try:
@@ -210,6 +237,31 @@ class FtAxesMixin:
         except (AttributeError, tk.TclError):
             pass
         self._set_status(f'{cmd}: {detail}', cor)
+        if cmd == 'scan':
+            if ok:
+                sug = data.get('suggest') or {}
+                linhas = ['CANDIDATES (verify against the factory client '
+                          'before filling FT_MODBUS_MAP):']
+                for chave in ('node_id', 'rate', 'baud'):
+                    v = sug.get(chave) or []
+                    achado = ', '.join(v) if v else 'nothing matched'
+                    linhas.append(f'  {chave:8s} {achado}')
+                linhas += ['', 'ADDRESSES THAT ANSWERED:',
+                           str(data.get('text', ''))]
+                self._ft_set_scan_text(chr(10).join(linhas))
+            else:
+                self._ft_set_scan_text(f'scan failed: {detail}')
+            return
+
+        if cmd == 'mode' and ok:
+            novo = str(data.get('mode', ''))
+            if novo:
+                try:
+                    self._ft_mode_var.set(novo)
+                except (AttributeError, tk.TclError):
+                    pass
+            return
+
         if cmd == 'probe' and ok:
             txt = '  ·  '.join(f'{k} = {v}' for k, v in data.items())
             try:
@@ -226,7 +278,11 @@ class FtAxesMixin:
         self._ft_processing_init()
 
         self._build_ft_link_card(root)
+        self._build_ft_mode_card(root)
         self._build_ft_axes_card(root)
+        self._build_ft_chart_card(root)
+        self._build_ft_columns_card(root)
+        self._build_ft_arrow_card(root)
         self._build_ft_command_card(root)
         self._build_ft_filter_card(root)
         self._build_ft_stats_card(root)
@@ -263,6 +319,53 @@ class FtAxesMixin:
                   f'link ceiling {FT_MAX_RATE_HZ:.0f} Hz @ {FT_SERIAL_BAUD} baud'),
             font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w', justify='left')
         self._ft_link_note.pack(fill='x', pady=(6, 0))
+
+    # ── Modo de aquisição (stream x polled) ─────────────────
+    def _build_ft_mode_card(self, root: tk.Frame) -> None:
+        """Stream x polled — o par do painel "Serial communication" da FIBOS.
+
+        O cliente de fábrica adquire PERGUNTANDO (Modbus 0x03 em laço). Este
+        repo nasceu ESCUTANDO o stream "ST" a 1 Mbps. Os dois caminhos existem
+        no sensor e convivem na mesma linha 485; aqui se escolhe qual está no
+        ar. A troca é a quente: o driver polled não é dono da porta, então
+        ligar e desligar o laço não reabre nada.
+        """
+        card = self._card(root, 'Acquisition mode', expand=False)
+
+        teto_s = ft_max_rate_hz(FT_SERIAL_BAUD)
+        teto_p = ft_polled_max_rate_hz(115200)
+        tk.Label(
+            card,
+            text=(f'stream — the cell talks on its own, 28-byte "ST" frames. '
+                  f'Wire ceiling {teto_s:.0f} Hz at {FT_SERIAL_BAUD} baud.\n'
+                  f'polled — the host asks (01 03 00 03 00 0C), exactly like '
+                  f'the factory client. Wire ceiling {teto_p:.0f} Hz at '
+                  f'115200, and the MEASURED rate lands well below it because '
+                  f'USB latency is not in that number. This is the mode that '
+                  f'fits the 115200 of the flange 485.'),
+            font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
+            justify='left', wraplength=780).pack(fill='x', pady=(6, 8))
+
+        row = tk.Frame(card, bg=PANEL)
+        row.pack(fill='x')
+        self._ft_mode_var = tk.StringVar(value=FT_MODE_STREAM)
+        for valor, rotulo in ((FT_MODE_STREAM, 'stream (listen)'),
+                              (FT_MODE_POLLED, 'polled (ask)')):
+            tk.Radiobutton(row, text=rotulo, value=valor,
+                           variable=self._ft_mode_var, bg=PANEL, fg=TEXT,
+                           selectcolor=PANEL, activebackground=PANEL,
+                           activeforeground=TEXT, font=FONT_LBL,
+                           highlightthickness=0, bd=0).pack(side='left',
+                                                            padx=(0, 18))
+        tk.Button(row, text='Apply mode',
+                  command=lambda: self._ft_send_cmd(
+                      'mode', mode=self._ft_mode_var.get()),
+                  bg=PRIMARY, fg='white', activebackground=PRIMARY_HV,
+                  activeforeground='white', font=FONT_LBL, relief='flat',
+                  bd=0, padx=12, pady=5, cursor='hand2').pack(side='left')
+        tk.Label(row, text='Switches live — the port is not reopened.',
+                 font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM).pack(
+            side='left', padx=(12, 0))
 
     # ── Os seis eixos ─────────────────────────────────────────────────
     def _build_ft_axes_card(self, root: tk.Frame) -> None:
@@ -401,10 +504,73 @@ class FtAxesMixin:
                  font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM).pack(
             side='left', padx=(10, 0))
 
+        # ── Varredura de registradores ────────────────────
+        # É a saída para a trava acima sem sniffer e sem segundo adaptador:
+        # LER é inofensivo (endereço inexistente devolve exceção 0x02, que
+        # não altera nada no escravo), então dá para descobrir QUAIS
+        # endereços existem antes de escrever em qualquer um.
+        tk.Frame(card, bg=BORDER, height=1).pack(fill='x', pady=(10, 8))
+        tk.Label(card,
+                 text=('Register scan — read-only, safe with the map still '
+                       'unconfirmed. It finds which addresses EXIST and '
+                       'matches their values against the baud, rate and node '
+                       'id this host already knows. The result is a list of '
+                       'CANDIDATES, never a conclusion.'),
+                 font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
+                 justify='left', wraplength=780).pack(fill='x', pady=(0, 6))
+
+        r5 = tk.Frame(card, bg=PANEL)
+        r5.pack(fill='x', pady=3)
+        self._ft_scan_ini = tk.StringVar(value='0')
+        self._ft_scan_fim = tk.StringVar(value='64')
+        for rotulo, var in (('from', self._ft_scan_ini),
+                            ('to', self._ft_scan_fim)):
+            tk.Label(r5, text=rotulo, font=FONT_SMALL, bg=PANEL,
+                     fg=TEXT_DIM).pack(side='left', padx=(0, 4))
+            tk.Entry(r5, textvariable=var, width=6,
+                     font=FONT_MONO_S).pack(side='left', padx=(0, 12))
+        tk.Button(r5, text='⌕  Scan registers', command=self._ft_do_scan,
+                  bg=PRIMARY, fg='white', activebackground=PRIMARY_HV,
+                  activeforeground='white', font=FONT_LBL, relief='flat',
+                  bd=0, padx=12, pady=5, cursor='hand2').pack(side='left')
+        tk.Label(r5, text='Decimal addresses. Takes a few seconds.',
+                 font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM).pack(
+            side='left', padx=(10, 0))
+
+        self._ft_scan_txt = tk.Text(card, height=9, font=FONT_MONO_S,
+                                    bg=PANEL, fg=TEXT, relief='flat',
+                                    highlightthickness=1,
+                                    highlightbackground=BORDER, wrap='word')
+        self._ft_scan_txt.pack(fill='x', pady=(6, 2))
+        self._ft_scan_txt.insert('1.0', 'No scan yet.')
+        self._ft_scan_txt.config(state='disabled')
+
         self._ft_cmd_lbl = tk.Label(card, text='—', font=FONT_SMALL, bg=PANEL,
                                     fg=TEXT_DIM, anchor='w', justify='left',
                                     wraplength=780)
         self._ft_cmd_lbl.pack(fill='x', pady=(8, 2))
+
+    def _ft_do_scan(self) -> None:
+        try:
+            ini = int(self._ft_scan_ini.get())
+            fim = int(self._ft_scan_fim.get())
+        except ValueError:
+            self._ft_cmd_lbl.config(text='scan: addresses must be integers.',
+                                    fg=DANGER)
+            return
+        self._ft_set_scan_text('Scanning…')
+        self._ft_send_cmd('scan', start=ini, end=fim)
+
+    def _ft_set_scan_text(self, txt: str) -> None:
+        """O Text fica 'disabled' para ser só de leitura, e o Tk recusa
+        insert nesse estado — por isso o normal/insert/disabled."""
+        try:
+            self._ft_scan_txt.config(state='normal')
+            self._ft_scan_txt.delete('1.0', 'end')
+            self._ft_scan_txt.insert('1.0', txt)
+            self._ft_scan_txt.config(state='disabled')
+        except (AttributeError, tk.TclError):
+            pass
 
     def _ft_btn(self, parent, text, command, state):
         b = tk.Button(parent, text=text, command=command, state=state,
@@ -788,5 +954,8 @@ class FtAxesMixin:
 
         # O aviso de "dois publicadores em /ft_sensor/wrench" saiu junto com
         # o bridge do CR10 (24/08/2026): o único produtor é o ft_receiver.
+
+        self._refresh_ft_charts(shown, live)
+        self._refresh_ft_arrow(shown, live)
 
         self.root.after(100, self._refresh_ft_axes)
