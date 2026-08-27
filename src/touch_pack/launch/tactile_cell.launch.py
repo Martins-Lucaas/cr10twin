@@ -4,11 +4,11 @@ tactile_cell.launch.py — Launcher principal do touch_pack.
 Argumentos (todos opcionais):
     end_effector     hand | touch_tool  (default: hand)
                        hand       → CR10 + mão COVVI; tcp_link = ponta do Index
-                       touch_tool → CR10 + TCP de palpação (flange fixo +
-                                    célula FA7155 de 6 eixos + acoplador
-                                    hot-swap + ponteira F retangular 15×17);
-                                    tcp_link = face da ponteira, +67,7 mm do
-                                    flange
+                       touch_tool → CR10 + TCP de palpação (acoplador do robô +
+                                    célula axial de 100 kg + acoplador da
+                                    ferramenta + touch_tool + ponteira D com o
+                                    laminado tátil 5×5); tcp_link = face do
+                                    laminado, +162,2 mm do flange
     control_mode     sim_only | mirror | real_from_sim (default sim_only)
     robot_ip         IP do controlador CR10 real (default 192.168.5.2)
     no_gui           true = não abrir palpation_gui (default false);
@@ -17,6 +17,14 @@ Argumentos (todos opcionais):
     sensor           4 | 5  (default 4) — grade do sensor de toque
                        4 → sensor 4×4 (firmware com TOTAL/Ifinal)
                        5 → sensor 5×5 (sem TOTAL; ativação média por frame)
+    force_sensor     load_cell | ft6  (default: load_cell)
+                       load_cell → célula axial de 100 kg no XIAO ESP32S3 +
+                                   HX711, pela USB (force_receiver)
+                       ft6       → célula FA7155 de 6 eixos, pela RS485
+                                   (ft_receiver)
+                       Os dois publicam /load_cell/force_net; SÓ UM sobe.
+    lc_port          porta USB do XIAO (ex.: /dev/ttyACM0). Vazio (default) =
+                       auto-detect pelo VID da Espressif.
     ft_port          porta do conversor USB-RS485 (ex.: COM5, /dev/ttyUSB0).
                        Vazio (default) = auto-detect pelo VID.
 
@@ -343,9 +351,14 @@ def launch_setup(context, *args, **kwargs):
     sensor = LaunchConfiguration('sensor').perform(context).strip()
     if sensor not in ('4', '5'):
         sensor = '5'
-    # Qual célula está na bancada. A de 6 eixos é a montada — valor
-    # desconhecido cai nela, não na axial, para que um erro de digitação não
-    # suba silenciosamente o driver da célula que não está no cabo.
+    # Qual célula está na bancada. A axial de 100 kg é a montada — valor
+    # desconhecido cai nela, não na de 6 eixos, para que um erro de digitação
+    # não suba silenciosamente o driver da célula que não está no cabo.
+    force_sensor = LaunchConfiguration(
+        'force_sensor').perform(context).strip().lower()
+    if force_sensor not in ('load_cell', 'ft6'):
+        force_sensor = 'load_cell'
+    lc_port = LaunchConfiguration('lc_port').perform(context).strip()
     ft_port = LaunchConfiguration('ft_port').perform(context).strip()
 
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
@@ -415,6 +428,12 @@ def launch_setup(context, *args, **kwargs):
                      'end_effector': end_effector,
                      # Grade do sensor de toque (4×4 | 5×5).
                      'sensor':       sensor,
+                     # Qual célula está no cabo. A GUI monta a aba "Load
+                     # Cell" desta célula: com a axial, Reading + Calibration;
+                     # com a FA7155, 6 Axes. Vai pelo MESMO argumento que
+                     # escolheu o receiver acima, senão a tela mostraria os
+                     # painéis de uma célula e o dado viria da outra.
+                     'force_sensor': force_sensor,
                      # URDF completo (com <visual>) que foi para o Gazebo —
                      # a aba "3D Manipulation" renderiza ESTE modelo.
                      'robot_description_path': urdf_spawn_path}],
@@ -425,12 +444,23 @@ def launch_setup(context, *args, **kwargs):
     # taxel_* vazios (era o que acontecia com o default 4×4 contra o 5×5 real).
     logger_node = Node(
         package='touch_pack', executable='palpation_logger',
-        parameters=[{'sensor': sensor}])
+        parameters=[{'sensor': sensor,
+                     # Proveniência do run: sem isto o params.json não diz
+                     # qual célula gerou o CSV, e as colunas lc_voltage_*
+                     # trocam de unidade entre as duas.
+                     'force_sensor': force_sensor}])
 
-    # Célula de carga: FA7155 de 6 eixos por RS485. Dona exclusiva da porta.
-    force_rx_node = Node(
-        package='touch_pack', executable='ft_receiver',
-        parameters=[{'ft_serial_port': ft_port}])
+    # Célula de carga: UM dos dois drivers, nunca os dois. Ambos são donos
+    # exclusivos da sua porta e ambos publicam /load_cell/force_net — com os
+    # dois no ar o explorer regularia contra a média de duas células.
+    if force_sensor == 'ft6':
+        force_rx_node = Node(
+            package='touch_pack', executable='ft_receiver',
+            parameters=[{'ft_serial_port': ft_port}])
+    else:
+        force_rx_node = Node(
+            package='touch_pack', executable='force_receiver',
+            parameters=[{'lc_serial_port': lc_port}])
 
     # Receptor do touch sensor (STM32 → UDP 8081).
     touch_rx_node = Node(
@@ -487,11 +517,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'end_effector', default_value='hand',
-            description='Efector final: hand (COVVI) | touch_tool (flange '
-                        'fixo + célula FA7155 de 6 eixos + acoplador '
-                        'hot-swap + ponteira F 15×17 com o laminado tátil '
-                        '5×5 colado na face; tcp_link a +67,7 mm do '
-                        'flange)'),
+            description='Efector final: hand (COVVI) | touch_tool '
+                        '(acoplador do robô + célula axial de 100 kg + '
+                        'acoplador da ferramenta + touch_tool + ponteira D '
+                        'com o laminado tátil 5×5 colado na face; tcp_link a '
+                        '+162,2 mm do flange). A GEOMETRIA segue a célula '
+                        'PARAFUSADA — force_sensor só escolhe o driver.'),
         DeclareLaunchArgument(
             'control_mode', default_value='sim_only',
             description='sim_only | mirror | real_from_sim'),
@@ -503,6 +534,16 @@ def generate_launch_description():
             'sensor', default_value='5',
             description="Sensor de toque: '5' (5×5, sem TOTAL — o montado na "
                         "bancada, DEFAULT) | '4' (4×4, com Ifinal)"),
+        DeclareLaunchArgument(
+            'force_sensor', default_value='load_cell',
+            description='Célula de força: load_cell (axial de 100 kg no '
+                        'XIAO+HX711, DEFAULT — a montada na bancada) | ft6 '
+                        '(FA7155 de 6 eixos por RS485). Só um driver sobe: '
+                        'os dois publicam /load_cell/force_net.'),
+        DeclareLaunchArgument(
+            'lc_port', default_value='',
+            description='Porta USB do XIAO ESP32S3 (ex.: /dev/ttyACM0). '
+                        'Vazio = auto-detect pelo VID da Espressif.'),
         DeclareLaunchArgument(
             'ft_port', default_value='',
             description='Porta do conversor USB-RS485 do FA7155 (ex.: COM5, '

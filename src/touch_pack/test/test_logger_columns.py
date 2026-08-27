@@ -70,7 +70,8 @@ def _start_msg(mode, **kw):
     return m
 
 
-def _run_once(tmpdir, monkeypatch, mode, sensor='5', n_taxels=25, **start_kw):
+def _run_once(tmpdir, monkeypatch, mode, sensor='5', n_taxels=25,
+              force_sensor=None, **start_kw):
     """Executa um run completo contra um logger real e devolve as linhas do
     __samples.csv resultante."""
     monkeypatch.setattr(PL, 'OUTPUT_DIR', tmpdir)
@@ -86,6 +87,11 @@ def _run_once(tmpdir, monkeypatch, mode, sensor='5', n_taxels=25, **start_kw):
     logger._cols = logger._rows
     logger._n_taxels = logger._rows * logger._cols
     logger._adc_cols = [''] * logger._n_taxels
+    if force_sensor is not None:
+        # Mesma derivação do __init__, aplicada aqui pelo mesmo motivo que a
+        # grade: exercitar o caminho de gravação com a célula escolhida sem
+        # reconstruir o nó com parâmetros.
+        logger._force_sensor = force_sensor
 
     pub = rclpy.create_node('test_pub')
     p_start = pub.create_publisher(PalpationStart, '/palpation/start',
@@ -255,3 +261,59 @@ def test_grade_4x4_nao_e_mais_descartada(ros, tmpdir_runs, monkeypatch):
     assert 'taxel_15' in r and 'taxel_16' not in r
     assert r['taxel_15'] == '15'
     assert r['taxel_age_ms'] != ''
+
+
+# ── PROVENIÊNCIA do run ───────────────────────────────────────────────
+# As colunas lc_voltage_raw_v/lc_voltage_v trocam de UNIDADE com a célula
+# (volts na axial de 100 kg, newtons na FA7155 — ver o cabeçalho do
+# ft_receiver_node), e o TCP mudou 94,5 mm entre as duas pilhas. Nada disso
+# está na PalpationStart, então sem estes campos o CSV é ambíguo assim que
+# alguém trocar a célula — e ninguém reconstrói isso depois.
+
+def _params_do_run(tmpdir):
+    import json
+    achados = glob.glob(os.path.join(tmpdir, '*', '*', PL.RUN_PARAMS_JSON))
+    assert achados, 'o run não gravou o params.json'
+    with open(achados[-1], encoding='utf-8') as fh:
+        return json.load(fh)
+
+
+def test_o_run_registra_qual_celula_o_produziu(ros, tmpdir_runs, monkeypatch):
+    _run_once(tmpdir_runs, monkeypatch, 'TOUCH')
+    p = _params_do_run(tmpdir_runs)
+    assert p['force_sensor'] in ('load_cell', 'ft6')
+    assert p['lc_voltage_unit'] in ('V', 'N')
+
+
+@pytest.mark.parametrize('cell,unidade', [('load_cell', 'V'), ('ft6', 'N')])
+def test_a_unidade_das_colunas_de_tensao_segue_a_celula(ros, tmpdir_runs,
+                                                        monkeypatch, cell,
+                                                        unidade):
+    """É ESTE campo que desambigua o CSV: na axial as colunas lc_voltage_*
+    são volts, na FA7155 são newtons. O run tem de GRAVAR a unidade, não
+    deixá-la inferível pela ordem de grandeza."""
+    _run_once(tmpdir_runs, monkeypatch, 'TOUCH', force_sensor=cell)
+    p = _params_do_run(tmpdir_runs)
+    assert p['force_sensor'] == cell
+    assert p['lc_voltage_unit'] == unidade
+
+
+def test_o_run_registra_o_comprimento_do_TCP(ros, tmpdir_runs, monkeypatch):
+    """O TCP mudou de 67,7 para 162,2 mm com a troca de célula, e ele
+    reinterpreta TODA coordenada cartesiana gravada no run."""
+    from touch_pack.constants import tool_tcp_mm
+    _run_once(tmpdir_runs, monkeypatch, 'TOUCH')
+    p = _params_do_run(tmpdir_runs)
+    assert p['tool_tcp_mm'] == pytest.approx(tool_tcp_mm())
+
+
+def test_celula_desconhecida_cai_no_default_da_bancada(ros, tmpdir_runs,
+                                                       monkeypatch):
+    """Erro de digitação no launch não pode gravar proveniência inventada."""
+    monkeypatch.setattr(PL, 'OUTPUT_DIR', tmpdir_runs)
+    logger = PL.PalpationLogger()
+    try:
+        assert logger.get_parameter('force_sensor').value == 'load_cell'
+        assert logger._force_sensor == 'load_cell'
+    finally:
+        logger.destroy_node()

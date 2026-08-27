@@ -48,7 +48,8 @@ Controle de força (DESCENDING/HOLD):
   desta bancada ENRIJECE 17× ao longo de um único toque (ver o bloco
   NÃO-ULTRAPASSAGEM nas constantes):
     cota superior de rigidez  k_push = margem·max(EMA, última secante)
-    não-ultrapassagem         Δx ≤ frac·((alvo+tol) − fz)/k_push
+    não-ultrapassagem         Δx ≤ frac·(alvo − fz)/k_push  (mira no ALVO,
+                              não na borda da banda)
     rampa                     Δx cresce no máximo ×_QS_STEP_GROWTH por tick
   O alívio (err < 0) usa a MESMA cota superior: recuar demais larga o
   contato e o passo livre seguinte volta batendo.
@@ -414,11 +415,14 @@ _LEARNED_FLATNESS_M = 0.001       # 1 mm: desconto por não-planicidade da peça
 _DESCEND_TOUCH_V_MS    = 0.0002   # 0,2 mm/s: TETO do rastejo final. Deixou de
                                   # ser o valor usado — ver _crawl_v_ms.
 # Pico do toque em streaming = v · T_halt · K (curso comprometido × rigidez).
+# O ORÇAMENTO desse pico é o limiar de contato — o primeiro impacto detecta,
+# não mede (ver crawl_v_ms).
 # T_halt é a latência da cadeia explorer→JTC→sim→mirror→ServoJ→braço e NÃO foi
 # medida; usa-se o 0,3 s conservador que já dimensiona a frenagem. Medi-la com
 # latency_probe.py é o jeito mais barato de acelerar o rastejo — v é linear em
-# 1/T_halt. `_stream_q` publica UM waypoint por tick, então não há fila a
-# encurtar: o que resta em T_halt é a cadeia física.
+# 1/T_halt, e com o orçamento agora fixo em 0,1 N é o ÚNICO jeito. `_stream_q`
+# publica UM waypoint por tick, então não há fila a encurtar: o que resta em
+# T_halt é a cadeia física.
 _STREAM_HALT_LAT_S = _ZONE_REACTION_S
 # Zona de desaceleração antes do contato aprendido.
 _DESCEND_DECEL_ZONE_M = 0.003     # 3 mm
@@ -496,16 +500,18 @@ _QS_FREE_STEP_MAX_M = 8.0e-6 # 8 µm: teto da re-aproximação sem contato mesmo
 #      k_upper), usada em TODO teto de passo. Curva convexa: a inclinação
 #      logo à frente é maior que a já medida, então a margem cobre o trecho
 #      de dentro do próximo passo.
-#   2. não-ultrapassagem — o passo nunca projeta a força além da BORDA
-#      SUPERIOR da banda, mesmo com k_push: Δx ≤ frac·((alvo+tol)−fz)/k_push.
-#      Perto do alvo a folga tende à própria tolerância, então o passo final
-#      é do tamanho da banda, não do erro.
+#   2. não-ultrapassagem — o passo nunca projeta a força além do ALVO,
+#      mesmo com k_push: Δx ≤ frac·(alvo−fz)/k_push. A mira era `alvo+tol`
+#      até 27/08/2026, e com ela parar uma tolerância acima do setpoint era
+#      o comportamento CORRETO da lei — overshoot por especificação. Agora a
+#      folga tende a zero junto com o erro: a aproximação é geométrica por
+#      baixo e o alvo é o teto, não a borda.
 #   3. rampa — o passo de empurrar só cresce em progressão geométrica.
 #      Sem ela a descida saltava do rastejo de 8 µm do pé da curva
 #      direto para os 200 µm do teto absoluto num único tick, que é
 #      exatamente onde o overshoot nascia.
 _QS_K_PUSH_MARGIN  = 2.0     # fator de segurança da cota superior de rigidez
-_QS_NO_CROSS_FRAC  = 0.9     # fração da folga até a borda superior da banda
+_QS_NO_CROSS_FRAC  = 0.9     # fração da folga até o ALVO que um passo pode gastar
 _QS_STEP_GROWTH    = 3.0     # crescimento máximo do passo de empurrar por tick
 _QS_DX_FLOOR_M     = 1.0e-6  # 1 µm: primeiro passo de empurrar (semente da rampa)
 _QS_FREE_RESET_TICKS = 3     # leituras seguidas fora do contato p/ reiniciar a rampa
@@ -708,10 +714,35 @@ _SETTLE_TICKS   = 6     # ticks de espera entre fases (6 × 30 ms = 180 ms)
 _MAX_JOINT_VEL_RAD_S = math.pi  # 180°/s
 
 
-def crawl_v_ms(target_f: float, tol_n: float, k_nm: float,
+def crawl_v_ms(k_nm: float,
                t_halt_s: float = _STREAM_HALT_LAT_S) -> float:
-    """Velocidade de rastejo (m/s) que mantém o pico do toque DENTRO da banda:
-    `v = (alvo + tol) / (T_halt · K)`.
+    """Velocidade de rastejo (m/s) que faz o PRIMEIRO IMPACTO parar no limiar
+    de contato: `v = _CONTACT_ON_N / (T_halt · K)`.
+
+    O orçamento era `alvo + tol` até 27/08/2026, e com ele o primeiro toque
+    tinha licença para chegar ao setpoint SOZINHO — o transiente de impacto
+    entregava a força inteira do ensaio antes de qualquer laço reagir, e a
+    regulação quase-estática só arrumava o que sobrasse. Contra um alvo de
+    5 N isso é um golpe de 5 N numa amostra que pode ser biológica.
+
+    Agora o impacto mira em DETECTAR, não em medir: o transiente para no
+    limiar de contato e quem sobe de lá até o setpoint é o regulador, em
+    micro-passos, com as três guardas de não-ultrapassagem. O pico do toque
+    deixa de depender do setpoint — 0,2 N e 5 N tocam com a mesma força.
+
+    O QUE ISSO CUSTA. `v` é linear no orçamento, então cortá-lo de `alvo+tol`
+    para 0,1 N divide a velocidade de rastejo na mesma razão: contra a ponta
+    rígida de referência, um alvo de 1,6 N descia nos 200 µm/s do teto e
+    passa a descer a ~12 µm/s. Sem contato aprendido a descida INTEIRA roda
+    nessa velocidade (ver o perfil de dois estágios em `_phase_descending`),
+    então o primeiro toque de uma home nova fica caro; do segundo em diante o
+    estágio rápido cobre tudo menos a zona de incerteza.
+
+    E o grosso desse custo NÃO é o orçamento, é `T_halt`: os 0,3 s são
+    emprestados de `_ZONE_REACTION_S` e nunca foram MEDIDOS. `v` é linear em
+    1/T_halt, e a latência de transporte medida no executor da onda é de
+    ~85 ms — se ela valer aqui, o rastejo volta para ~42 µm/s só com a
+    medição. `latency_probe.py` é o instrumento.
 
     `k_nm` deve ser a ponta RÍGIDA de referência, não a K estimada: antes do
     contato não existe estimativa, e errar para o lado mole custa FORÇA.
@@ -719,8 +750,26 @@ def crawl_v_ms(target_f: float, tol_n: float, k_nm: float,
     """
     k = max(1.0, float(k_nm))
     t = max(1e-3, float(t_halt_s))
-    v = (float(target_f) + float(tol_n)) / (t * k)
+    v = _CONTACT_ON_N / (t * k)
     return float(np.clip(v, _DESCEND_CRAWL_V_MIN_MS, _DESCEND_TOUCH_V_MS))
+
+
+def impact_peak_n(v_ms: float, k_nm: float,
+                  t_halt_s: float = _STREAM_HALT_LAT_S) -> float:
+    """Pico do toque (N) para uma velocidade JÁ comandada: `v · T_halt · K`.
+
+    É o mesmo modelo de `crawl_v_ms`, invertido. Existe separado porque
+    `crawl_v_ms` devolve a velocidade CLIPADA, e o clip pode tornar o
+    orçamento inalcançável sem que nada acuse: em `_DESCEND_CRAWL_V_MIN_MS`
+    (10 µm/s) o piso passa a mandar acima de 33 kN/m, e a 900 kN/m — a rigidez
+    que o próprio `_StiffnessEstimator` cita para um sensor bem fixo — o pico
+    real vira 2,7 N contra um orçamento de 0,1 N.
+
+    Quem chama compara o resultado com `_CONTACT_ON_N` e AVISA. Baixar o piso
+    não é opção: abaixo de 10 µm/s um tick de 30 ms não move nem 0,3 µm e a
+    descida some no quantum de 10 µm da FK. O que resta é dizer a verdade.
+    """
+    return float(v_ms) * max(1e-3, float(t_halt_s)) * max(1.0, float(k_nm))
 
 
 def setpoint_resolvable(target_f: float, tol_n: float,
@@ -1808,7 +1857,9 @@ class TactileExplorer(Node):
             if msg.approach_speed_mms > 0.0:
                 # Slider "Descent Speed" da GUI (mm/s) = velocidade do estágio
                 # RÁPIDO da descida. O rastejo não sai daqui: ele é derivado do
-                # setpoint e da rigidez (crawl_v_ms).
+                # limiar de contato e da rigidez de referência (crawl_v_ms) —
+                # e NÃO do setpoint, para o primeiro impacto ser o mesmo em
+                # qualquer ensaio.
                 v_max = max(1.0, float(msg.approach_speed_mms))
                 v_min = max(0.5, v_max * 0.2)
                 self.set_parameters([
@@ -2392,9 +2443,29 @@ class TactileExplorer(Node):
             # justamente o que deixava o passo entregar várias vezes o ΔF
             # pedido num contato que enrijece.
             k_push = self._k_est.k_upper
-            # Folga até a BORDA SUPERIOR da banda: é isto que o passo de
-            # empurrar não pode gastar por inteiro.
-            head_n = (target_f + tol_n) - fz
+            # Folga até o ALVO — não até a borda de cima da banda. É isto
+            # que o passo de empurrar não pode gastar por inteiro.
+            #
+            # Mirar em `alvo + tol` (como se fazia até 27/08/2026) tornava o
+            # overshoot ESTRUTURAL: a lei prometia não passar da BORDA, então
+            # parar uma tolerância inteira acima do setpoint era o
+            # comportamento correto dela. Contra um alvo de 0,5 N com banda
+            # de 0,092 N isso é +18 % de força na amostra, dentro da
+            # especificação e ainda assim errado — o ensaio pede 0,5 N.
+            #
+            # A assimetria é deliberada e é a certa: cruzar para cima mete
+            # força numa amostra que pode ser biológica; ficar abaixo custa
+            # um tick. Com a mira no alvo a aproximação vira geométrica POR
+            # BAIXO — a folga encolhe ~0,55 por passo quando k_push é a cota
+            # justa (2x a rigidez real), então a banda é alcançada em poucos
+            # ticks e a janela `stable_s` absorve a cauda assintótica.
+            #
+            # O que se perde: perto do alvo o passo agora encolhe com o ERRO
+            # em vez de estacionar no tamanho da banda, então o trecho final
+            # leva cerca do dobro de ticks. Passo abaixo do LSB da junta não
+            # se perde — `q_cmd` guarda a posição COMANDADA e os sub-LSB
+            # acumulam nela.
+            head_n = target_f - fz
             # Rampa: o passo de empurrar parte de _QS_DX_FLOOR_M e só cresce
             # por _QS_STEP_GROWTH a cada tick.
             ramp_m = (_QS_DX_FLOOR_M if step_up_prev is None
@@ -3474,12 +3545,32 @@ class TactileExplorer(Node):
         exit_tol = (tol_override if tol_override is not None
                     else max(_HOLD_TOL_N, _HOLD_TOL_PCT * target_f))
 
-        # Velocidade DERIVADA do pico que a banda deste alvo tolera. Sem
-        # contato aprendido a descida INTEIRA roda nela.
+        # Velocidade DERIVADA do pico que o primeiro impacto pode ter, que é
+        # o LIMIAR DE CONTATO e não a banda do alvo: o toque detecta, o
+        # regulador é que sobe até o setpoint. Sem contato aprendido a descida
+        # INTEIRA roda nela — é o preço, e ele é linear em T_halt (ver
+        # crawl_v_ms).
         v_slow_ms      = min(v_fast_ms,
-                             crawl_v_ms(target_f, exit_tol,
-                                        self._K_RIGID_REF_NM))
+                             crawl_v_ms(self._K_RIGID_REF_NM))
         v_unlearned_ms = v_slow_ms
+        # O orçamento do impacto é o limiar de contato, mas quem entrega é a
+        # velocidade DEPOIS do clip. Acima de ~33 kN/m o piso de
+        # _DESCEND_CRAWL_V_MIN_MS passa a mandar e o orçamento deixa de ser
+        # atingível — em silêncio, porque crawl_v_ms só clipa. Este é o aviso.
+        pico_prev = impact_peak_n(v_slow_ms, self._K_RIGID_REF_NM)
+        if pico_prev > _CONTACT_ON_N * 1.05:
+            self.get_logger().warn(
+                f'[TOQUE] o primeiro impacto deve parar em '
+                f'{_CONTACT_ON_N:.2f} N, mas a {self._K_RIGID_REF_NM/1e3:.0f} '
+                f'N/mm e {v_slow_ms*1e6:.1f} µm/s o pico previsto é '
+                f'{pico_prev:.2f} N ({pico_prev/_CONTACT_ON_N:.1f}x o '
+                f'orçamento). A velocidade está no piso de '
+                f'{_DESCEND_CRAWL_V_MIN_MS*1e6:.0f} µm/s, que existe para a '
+                'descida não sumir no quantum de 10 µm da FK — descer mais '
+                'devagar não é opção. O que compra o orçamento de volta é '
+                f'medir T_halt (hoje {_STREAM_HALT_LAT_S:.2f} s, EMPRESTADO '
+                'da frenagem e nunca medido) com latency_probe.py: o pico é '
+                'linear nele.')
         # Margem da zona lenta ESCALADA pela velocidade do estágio rápido —
         # ver o bloco de _ZONE_REACTION_S — e LIMITADA pelo curso disponível.
         #

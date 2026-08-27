@@ -22,20 +22,17 @@ superior da banda, nem no pior caso de rigidez.**
 
 QUAL FERRAMENTA ESTAS CURVAS DESCREVEM
 ══════════════════════════════════════
-As curvas medidas acima são todas da ferramenta ANTIGA — viga S de 100 kg +
-acoplador impresso + ponteira D de silicone, TCP a 162,2 mm do flange. Elas
-continuam aqui porque são as regressões que este arquivo existe para impedir,
-mas NÃO são mais a bancada.
+As curvas medidas acima são da pilha da viga S de 100 kg + acoplador impresso
++ ponteira D de silicone, TCP a 162,2 mm do flange — que voltou a ser a
+bancada em 27/08/2026 (entre 18/08 e 26/08 o padrão foi a FA7155 de 6 eixos,
+TCP a 67,7 mm, curta e maciça em alumínio e portanto muito mais rígida).
 
-A célula padrão desde 18/08/2026 é `end_effector:=touch_tool`: pilha FA7155 de
-6 eixos, TCP a 67,7 mm — 94,5 mm mais curta e maciça em alumínio, portanto
-mais rígida que qualquer coisa que esses runs mediram. A parametrização de
-`test_descida_nao_ultrapassa_o_alvo` foi estendida até `_K_MAX_NM`
-(1000 N/mm), o envelope que o próprio estimador declara suportar, e a faixa
-de 300 N/mm para cima falhava INTEIRA antes das duas correções que
-acompanham este arquivo (cota do resultado nulo em `k_upper` e aceitação do
-par que atravessa a fronteira do contato): a 900 N/mm um alvo de 0,5 N
-fechava com pico de 5,0 N.
+As duas convivem no repo, então a parametrização cobre as duas faixas: o
+silicone pelo lado mole e `f_rigido` até `_K_MAX_NM` (1000 N/mm), o envelope
+que o próprio estimador declara suportar. A faixa de 300 N/mm para cima
+falhava INTEIRA antes de duas correções (cota do resultado nulo em `k_upper`
+e aceitação do par que atravessa a fronteira do contato): a 900 N/mm um alvo
+de 0,5 N fechava com pico de 5,0 N.
 """
 import pytest
 
@@ -67,7 +64,7 @@ def f_rigido(k_n_mm):
     return lambda x_mm: 0.06 + k_n_mm * max(0.0, x_mm)
 
 
-def _passo(explorer_mod, est, *, target_f, tol_n, fz, boost=1.0,
+def _passo(explorer_mod, est, *, target_f, fz, boost=1.0,
            step_up_prev=None, free_ticks=0, dx_max_m=200e-6,
            df_hard_n=1.0):
     """Reproduz UM passo da lei do `_qs_regulate` com o estimador dado.
@@ -81,7 +78,7 @@ def _passo(explorer_mod, est, *, target_f, tol_n, fz, boost=1.0,
     in_contact = fz > m._CONTACT_ON_N
     k = est.value
     k_push = est.k_upper
-    head_n = (target_f + tol_n) - fz
+    head_n = target_f - fz          # mira no ALVO, não na borda da banda
     ramp_m = (m._QS_DX_FLOOR_M if step_up_prev is None
               else m._QS_STEP_GROWTH * step_up_prev)
     if not in_contact:
@@ -137,7 +134,7 @@ def _descer(explorer_mod, curva, target_f, tol_n, *,
         if abs(target_f - fz) <= tol_n:
             return pico, tick
         step_m, step_up_prev, free_ticks = _passo(
-            m, est, target_f=target_f, tol_n=tol_n, fz=fz, boost=boost,
+            m, est, target_f=target_f, fz=fz, boost=boost,
             step_up_prev=step_up_prev, free_ticks=free_ticks,
             dx_max_m=dx_max_m, df_hard_n=df_hard_n)
         x += step_m
@@ -208,20 +205,30 @@ def test_par_de_1um_ainda_ensina_o_estimador(m):
 
 # ── o invariante ─────────────────────────────────────────────────────
 
-def test_passo_de_empurrar_nunca_projeta_alem_da_banda(m):
+def test_passo_de_empurrar_nunca_projeta_alem_do_alvo(m):
     """Invariante central: ΔF do passo, calculado com a cota SUPERIOR de
-    rigidez, cabe dentro da folga até a borda de cima da banda."""
+    rigidez, cabe dentro da folga até o ALVO.
+
+    A mira era a BORDA DE CIMA DA BANDA até 27/08/2026, e com ela parar uma
+    tolerância inteira acima do setpoint era o comportamento CORRETO da lei —
+    overshoot por especificação, não por falha. Contra um alvo de 0,5 N com a
+    banda de 4σ (0,092 N) isso valia +18 % de força na amostra.
+
+    É este teste que trava a mira: reverter `head_n` para `(alvo+tol) − fz`
+    faz o `fz=1.59` abaixo passar, porque lá a folga até a borda é 12x a
+    folga até o alvo.
+    """
     est = m._StiffnessEstimator()
     est.reset()
     est.update_pair(5.0e-5, 2.5 * 5e-5 * 1e3)        # 2,5 N/mm medidos
-    alvo, tol = 1.6, 0.05
+    alvo = 1.6
     for fz in (0.10, 0.50, 1.00, 1.40, 1.55, 1.59):
-        step_m, _, _ = _passo(m, est, target_f=alvo, tol_n=tol, fz=fz,
+        step_m, _, _ = _passo(m, est, target_f=alvo, fz=fz,
                               step_up_prev=1.0e-3)   # rampa já larga
         df_pior = step_m * est.k_upper
-        assert fz + df_pior <= alvo + tol + 1e-9, (
+        assert fz + df_pior <= alvo + 1e-9, (
             f'fz={fz:.2f} N: passo de {step_m*1e6:.1f} µm projeta '
-            f'{fz + df_pior:.3f} N, acima da borda {alvo + tol:.2f} N')
+            f'{fz + df_pior:.3f} N, acima do alvo {alvo:.2f} N')
 
 
 def test_rampa_impede_o_salto_do_pe_da_curva_para_o_teto(m):
@@ -229,7 +236,7 @@ def test_rampa_impede_o_salto_do_pe_da_curva_para_o_teto(m):
     200 µm × 2,5 N/mm = 0,5 N contra uma banda de 0,05 N."""
     est = m._StiffnessEstimator()
     est.reset()
-    step_m, _, _ = _passo(m, est, target_f=1.6, tol_n=0.05, fz=0.10,
+    step_m, _, _ = _passo(m, est, target_f=1.6, fz=0.10,
                           step_up_prev=8.0e-6)
     assert step_m <= m._QS_STEP_GROWTH * 8.0e-6 + 1e-12, (
         f'passo de {step_m*1e6:.1f} µm cresceu mais que '
@@ -242,7 +249,7 @@ def test_alivio_usa_a_cota_superior_e_nao_larga_o_contato(m):
     est = m._StiffnessEstimator()
     est.reset()
     est.update_pair(1.0e-5, 28_000.0 * 1.0e-5)       # 28 N/mm
-    step_m, _, _ = _passo(m, est, target_f=1.0, tol_n=0.05, fz=1.6)
+    step_m, _, _ = _passo(m, est, target_f=1.0, fz=1.6)
     assert step_m < 0.0, 'acima da banda o passo tem de recuar'
     recuo_pedido = 0.6 / 28_000.0                     # ΔF/K real
     assert abs(step_m) <= recuo_pedido * 1.01, (
@@ -252,40 +259,59 @@ def test_alivio_usa_a_cota_superior_e_nao_larga_o_contato(m):
 
 # ── a descida inteira, contra as curvas medidas ──────────────────────
 
+# `teto` é o EXCESSO máximo tolerado sobre o alvo, e desde a mira no alvo
+# (27/08/2026) ele é ZERO em toda linha menos uma: o pico da descida fica
+# ABAIXO do setpoint, não dentro de uma banda acima dele. Antes o teto era a
+# própria tolerância em toda linha, porque a lei mirava na borda.
 @pytest.mark.parametrize('curva,alvo,tol,teto', [
-    (f_silicone,        1.6, 0.05, 0.05),   # o caso dos runs TOUCH
-    (f_silicone,        0.5, 0.05, 0.05),
-    (f_silicone,        3.0, 0.15, 0.15),
-    (f_silicone,        0.2, 0.05, 0.05),
-    (f_rigido(10.0),    0.5, 0.05, 0.05),   # o caso dos runs MANUAL
-    (f_rigido(10.0),    0.2, 0.05, 0.05),
-    (f_rigido(28.0),    1.0, 0.05, 0.05),
+    (f_silicone,        1.6, 0.05, 0.0),    # o caso dos runs TOUCH
+    (f_silicone,        0.5, 0.05, 0.0),
+    (f_silicone,        3.0, 0.15, 0.0),
+    # ÚNICA linha com excesso, e ele NÃO vem da não-ultrapassagem: vem da
+    # RAMPA. No pé mole do silicone o estimador só latcha em x≈0,42 mm, e
+    # três ticks de rampa depois (24→72→216 µm) o passo de 216 µm cai num
+    # trecho onde k_push (193 N/m) subestima a inclinação real (~390 N/m) —
+    # o ×2 de _QS_K_PUSH_MARGIN não cobre o quanto a curva enrijece DENTRO
+    # de um passo desse tamanho. É a hipótese do ×2 falhando, e o remédio é
+    # trocar a cota heurística pela curva F(x) medida (_ContactCurve), não
+    # mexer na mira. Os 6 mN residuais ficam em 1/4 do σ da célula
+    # (FORCE_NOISE_SIGMA_N = 23 mN), então não há passo que os resolva sem
+    # o sensor enxergá-los primeiro. Era +6,2 mN com a mira antiga.
+    (f_silicone,        0.2, 0.05, 0.007),
+    (f_rigido(10.0),    0.5, 0.05, 0.0),    # o caso dos runs MANUAL
+    (f_rigido(10.0),    0.2, 0.05, 0.0),
+    (f_rigido(28.0),    1.0, 0.05, 0.0),
     # ── A CÉLULA PADRÃO (end_effector:=touch_tool) ────────────────────
     # Tudo abaixo é a pilha FA7155 + ponteira F. Antes da cota do resultado
     # nulo em `k_upper` e do par de cruzamento, TODA linha de 300 N/mm para
     # cima falhava: o alívio dimensionado com o default de 40 N/mm largava o
     # contato, o estimador nunca latchava e a regulação entrava em ciclo
     # QUIQUE — a 900 N/mm um alvo de 0,5 N fechava com pico de 5,0 N.
-    (f_rigido(100.0),   0.3, 0.05, 0.05),
-    (f_rigido(300.0),   0.5, 0.05, 0.05),
-    (f_rigido(300.0),   1.0, 0.05, 0.05),
-    (f_rigido(600.0),   0.3, 0.05, 0.05),
-    (f_rigido(600.0),   1.0, 0.05, 0.05),
-    (f_rigido(900.0),   0.5, 0.05, 0.05),
-    (f_rigido(900.0),   3.0, 0.15, 0.15),
-    (f_rigido(1000.0),  0.5, 0.05, 0.05),   # _K_MAX_NM: o teto declarado
-    (f_rigido(1000.0),  1.0, 0.05, 0.05),
-    # Alvo baixo CONTRA contato muito rígido é o único canto que ainda passa
-    # da banda, e só pelo primeiro passo de sonda: sem nenhum curso
-    # acumulado a cota do resultado nulo vale _K_MAX_NM, o passo sai em
-    # 0,17 µm e a 300 N/mm isso já é 0,05 N. O excesso residual (21 mN) fica
-    # ABAIXO do ruído de pico da célula (_K_PAIR_MIN_DF_N = 0,04 N), então
-    # não há passo de sonda menor que o resolva — era +0,381 N antes.
-    (f_rigido(300.0),   0.2, 0.05, 0.05 + 0.04),
+    (f_rigido(100.0),   0.3, 0.05, 0.0),
+    (f_rigido(300.0),   0.5, 0.05, 0.0),
+    (f_rigido(300.0),   1.0, 0.05, 0.0),
+    (f_rigido(600.0),   0.3, 0.05, 0.0),
+    (f_rigido(600.0),   1.0, 0.05, 0.0),
+    (f_rigido(900.0),   0.5, 0.05, 0.0),
+    (f_rigido(900.0),   3.0, 0.15, 0.0),
+    (f_rigido(1000.0),  0.5, 0.05, 0.0),    # _K_MAX_NM: o teto declarado
+    (f_rigido(1000.0),  1.0, 0.05, 0.0),
+    # Alvo baixo CONTRA contato muito rígido era o canto que mais passava da
+    # banda (+0,381 N no início desta série, +21 mN depois da cota do
+    # resultado nulo). Com a mira no alvo ele fecha 15 mN ABAIXO do
+    # setpoint: aqui quem mordia era a não-ultrapassagem, e mirar 50 mN mais
+    # alto era exatamente o que sobrava de folga para o passo de sonda gastar.
+    (f_rigido(300.0),   0.2, 0.05, 0.0),
 ])
 def test_descida_nao_ultrapassa_o_alvo(m, curva, alvo, tol, teto):
     """Com os MESMOS parâmetros da GUI daqueles runs (hold_dx_max_um=200,
-    hold_df_max_n=1,0) o pico da descida fica dentro de uma banda do alvo."""
+    hold_df_max_n=1,0) o pico da descida fica ABAIXO do alvo.
+
+    `teto=0.0` é a forma forte do invariante e a razão de a mira ter mudado:
+    não basta o pico caber na banda, ele não pode passar do setpoint. Uma
+    única linha (o pé mole do silicone) tem teto não-nulo, e o comentário
+    dela nomeia a causa — que não é a mira.
+    """
     pico, ticks = _descer(m, curva, alvo, tol)
     assert pico - alvo <= teto, (
         f'pico {pico:.3f} N contra alvo {alvo:.2f} ± {tol:.2f} '
@@ -302,22 +328,20 @@ def test_descida_nao_ultrapassa_o_alvo(m, curva, alvo, tol, teto):
 def test_teto_absoluto_da_gui_nao_manda_mais_sozinho(m, curva, alvo, tol):
     """hold_dx_max_um vinha da GUI em 200 µm e era o ÚNICO limitador ativo
     perto do alvo. O que se cobra é que ele não seja mais quem segura o pico:
-    para QUALQUER teto — 20× frouxo ou 4× apertado — o pico continua dentro
-    da banda, porque quem morde antes é a não-ultrapassagem por k_push.
+    para QUALQUER teto — 20× frouxo ou 4× apertado — o pico fica ABAIXO do
+    alvo, porque quem morde antes é a não-ultrapassagem por k_push.
 
     NÃO se cobra que o pico seja o mesmo nos três tetos. Com a cota do
     resultado nulo em `k_upper`, um contato mole passa a ser reconhecido como
     mole em poucos ticks e o teto frouxo deixa a descida convergir mais
-    rápido (silicone a 1,6 N: 9 ticks com 1 mm contra 41 com 50 µm). O pico
-    sobe junto — 1,621 contra 1,551 N — e continua 29 mN abaixo da borda.
-    Essa diferença é velocidade de convergência, não risco: a versão antiga
-    do teste lia os 70 mN de spread como falha e escondia que o ganho estava
-    do lado certo.
+    rápido. O pico sobe junto e continua abaixo do setpoint; essa diferença é
+    velocidade de convergência, não risco. A versão antiga do teste lia o
+    spread como falha e escondia que o ganho estava do lado certo.
     """
     picos = [_descer(m, curva, alvo, tol, dx_max_m=dx)[0]
              for dx in (1.0e-3, 200e-6, 50e-6)]
     for dx, pico in zip((1.0e-3, 200e-6, 50e-6), picos):
-        assert pico <= alvo + tol, (
+        assert pico <= alvo, (
             f'com teto absoluto de {dx*1e6:.0f} µm o pico foi {pico:.3f} N, '
-            f'acima da borda {alvo + tol:.2f} N — é o teto que está '
-            'segurando, não a guarda de não-ultrapassagem')
+            f'acima do alvo {alvo:.2f} N — é o teto que está segurando, não '
+            'a guarda de não-ultrapassagem')

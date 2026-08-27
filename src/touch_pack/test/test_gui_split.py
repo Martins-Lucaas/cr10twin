@@ -18,6 +18,7 @@ _PKG = pathlib.Path(__file__).resolve().parents[1] / 'touch_pack'
 # (arquivo, classe) de cada fatia já extraída. Novas fatias entram aqui.
 MIXINS = [
     ('gui_loadcell.py', 'FtAxesMixin'),
+    ('gui_lc_axial.py', 'LcAxialMixin'),
     ('gui_matrix.py', 'MatrixMixin'),
 ]
 HOST = ('palpation_gui.py', 'PalpationGUI')
@@ -72,13 +73,19 @@ def test_no_method_was_lost_in_the_split():
     have = _methods(*HOST)
     for filename, cls_name in MIXINS:
         have |= _methods(filename, cls_name)
-    # O wizard de calibração saiu com a célula axial (20/08/2026): a FA7155
-    # vem calibrada de fábrica e o único ajuste do host é o TARE. O que
-    # precisa continuar existindo é a aba dos seis eixos e o tare.
+    # As DUAS células convivem no repo e cada uma traz o seu grupo. Da FA7155:
+    # a aba dos seis eixos e o tare (ela vem calibrada de fábrica, não há o que
+    # ajustar). Da axial de 100 kg: o wizard de calibração, que saiu junto com
+    # ela em 20/08/2026 e voltou quando ela voltou a ser a célula da bancada —
+    # sem a reta slope/intercept o force_receiver não publica força nenhuma.
     esperados = {
         '_build_lc_axes_tab', '_refresh_ft_axes', '_cb_ft_wrench',
         '_lc_do_tare', '_cb_lc_tare_result', '_cb_lc_tared',
         '_cb_lc_force_net_gui', '_cb_lc_force_raw_gui',
+        '_build_lc_calibration_tab', '_refresh_lc_calib', '_cb_lc_voltage',
+        '_lc_start_capture', '_lc_do_fit', '_lc_save_calibration',
+        '_build_lc_reading_tab', '_refresh_lc_reading', '_lc_do_rezero',
+        '_cb_lc_calibrated', '_lc_load_previous', '_lc_backup_previous',
     }
     assert esperados <= have, f'sumiram: {sorted(esperados - have)}'
 

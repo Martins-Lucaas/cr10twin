@@ -111,12 +111,15 @@ admittance_controller:
       frame:
         id: tcp_link
       CoG:
-        # Centroide do conjunto do TCP (flange fixo + célula FA7155 de 6 eixos
-        # + acoplador hot-swap + ponteira F), calculado da geometria real por
-        # scripts/gen_tcp_meshes_from_step.py: 0.3837 kg com CoM em
-        # Z = +19.5 mm do flange → −48.2 mm no frame do tcp_link (+67.7 mm).
-        pos:   [0.0, 0.0, -0.0482]
-        force: 3.76   # m * g = 0.3837 * 9.80665
+        # Centroide do conjunto do TCP (acoplador_robo + célula axial de 100 kg
+        # + acoplador_tool + touch_tool + ponteira D com o laminado 5×5),
+        # calculado da geometria real por scripts/gen_tcp_meshes_from_step.py:
+        # 0.6034 kg com CoM em Z = +58.7 mm do flange → −103.5 mm no frame do
+        # tcp_link (+162.2 mm). A viga S de aço responde por 79 % da massa,
+        # e é ela que faz este conjunto pesar 57 % mais que a pilha da FA7155
+        # (0.3837 kg, CoM a −48.2 mm) que esteve aqui até 26/08/2026.
+        pos:   [0.0, 0.0, -0.1035]
+        force: 5.92   # m * g = 0.6034 * 9.80665
 
     admittance:
       # Eixos cartesianos do `control.frame` (tcp_link):

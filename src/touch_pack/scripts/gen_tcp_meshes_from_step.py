@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """Gera os meshes STL do TCP de palpação a partir do CAD em `cad/step/`.
 
-A pilha vem de UMA montagem (`MONTAGEM_FA7155_stack.step`) em vez de STEPs
-soltos: os sólidos já estão posicionados uns em relação aos outros, então as
-alturas saem do arquivo em vez de números digitados aqui — que era a fonte de
-erro toda vez que uma peça mudava de espessura.
+A pilha vem de UMA montagem em vez de STEPs soltos: os sólidos já estão
+posicionados uns em relação aos outros, então as alturas saem do arquivo em vez
+de números digitados aqui — que era a fonte de erro toda vez que uma peça mudava
+de espessura.
+
+DUAS pilhas, uma por célula de força (`--stack`):
+
+    load_cell  célula axial de 100 kg (viga S) — a montada na bancada.
+               MONTAGEM_COMPLETA.step, TCP a 162,2 mm.
+    ft6        célula FA7155 de 6 eixos. MONTAGEM_FA7155_stack.step, TCP a
+               67,7 mm.
+
+Trocar a célula troca a FERRAMENTA inteira, não só o driver: massa, CoM e
+altura do TCP mudam, e com eles a compensação de gravidade e todo arquivo de
+pose já ensinado. Rodar isto é o passo que produz os números para o URDF.
 """
 from __future__ import annotations
 
@@ -29,6 +40,10 @@ from OCP.gp import gp_Trsf, gp_Vec
 # ── Densidades (kg/m³) ─────────────────────────────────────────────────────
 RHO_PRINTED = 950.0
 RHO_ALU     = 2700.0
+# Aço-liga da viga S de 100 kg. Aqui a geometria SABE mais que o catálogo: o
+# STEP traz os rasgos em S (60,5 cm³ contra 74,0 cm³ do envelope), então
+# integrar a densidade dá um número melhor que o "≈0,5 kg" da folha.
+RHO_STEEL   = 7850.0
 
 # Massa de catálogo do FA7155 (manual §3.1: ≤ 0,3 kg). O STEP do fabricante é
 # um envelope MACIÇO — a 2700 kg/m³ daria 339 g para uma peça que tem cavidade
@@ -36,18 +51,36 @@ RHO_ALU     = 2700.0
 # catálogo manda.
 FA7155_MASS_KG = 0.300
 
-# ── A pilha ────────────────────────────────────────────────────────────────
-STACK_STEP = 'MONTAGEM_FA7155_stack.step'
-
+# ── As pilhas ──────────────────────────────────────────────────────────────
 # Sólidos da montagem em ordem de Z crescente (a ordem que `read_solids`
 # devolve) → (link, nome do STL, densidade, massa fixa em kg ou None para usar
-# a densidade).
-STACK_SOLIDS = [
-    ('ft_flange',    'fa7155_flange_fixo.stl',          RHO_ALU,     None),
-    ('ft_sensor',    'fa7155_sensor.stl',               RHO_ALU,     FA7155_MASS_KG),
-    ('coupler_tool', 'acoplador_celula_hotswap.stl',    RHO_PRINTED, None),
-    ('tool_tip',     'ponteira_F_retangular_15x17.stl', RHO_PRINTED, None),
-]
+# a densidade, quantos SÓLIDOS a entrada consome).
+#
+# `link=None` descarta a entrada: a montagem completa traz o punho do robô como
+# referência de montagem, e ele não é da ferramenta — nem entra na massa nem
+# define a base da pilha.
+#
+# n > 1 funde os sólidos num COMPOUND: um mesh só e uma inércia só. É o caso do
+# laminado tátil, que são três camadas coladas (flex / piezorresistiva / flex)
+# com 0,5 mm somados — separá-las em três links seria mentir sobre um sanduíche
+# que não tem grau de liberdade nenhum.
+STACKS = {
+    'load_cell': ('MONTAGEM_COMPLETA.step', [
+        (None,            None,                        None,        None, 1),
+        ('coupler_robot', 'acoplador_robo.stl',        RHO_PRINTED, None, 1),
+        ('load_cell',     'celula_carga_100kg.stl',    RHO_STEEL,   None, 1),
+        ('coupler_tool',  'acoplador_tool.stl',        RHO_PRINTED, None, 1),
+        ('touch_tool',    'touch_tool.stl',            RHO_PRINTED, None, 1),
+        ('tool_tip',      'ponteira_D_sensor_5x5.stl', RHO_PRINTED, None, 1),
+        ('tool_tip',      'sensor_5x5_pad.stl',        RHO_PRINTED, None, 3),
+    ]),
+    'ft6': ('MONTAGEM_FA7155_stack.step', [
+        ('ft_flange',    'fa7155_flange_fixo.stl',          RHO_ALU,     None,           1),
+        ('ft_sensor',    'fa7155_sensor.stl',               RHO_ALU,     FA7155_MASS_KG, 1),
+        ('coupler_tool', 'acoplador_celula_hotswap.stl',    RHO_PRINTED, None,           1),
+        ('tool_tip',     'ponteira_F_retangular_15x17.stl', RHO_PRINTED, None,           1),
+    ]),
+}
 
 # PLANO DE MONTAGEM: a face INFERIOR do flange fixo do FA7155 é a face do
 # flange do CR10 — o flange fixo parafusa direto no punho (manual §2.1, quatro
@@ -119,9 +152,13 @@ def mass_props(shape, rho: float):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument('--stack', choices=sorted(STACKS), default='load_cell',
+                    help='qual pilha gerar (default: load_cell, a montada '
+                         'na bancada)')
     ap.add_argument('--deflection', type=float, default=0.15,
                     help='desvio linear da tesselagem em mm (default 0.15)')
     args = ap.parse_args()
+    stack_step, stack_solids = STACKS[args.stack]
 
     # O console do Windows abre em cp1252 e engasga nos acentos do relatório.
     try:
@@ -139,29 +176,47 @@ def main() -> int:
         return 1
     os.makedirs(mesh_dir, exist_ok=True)
 
-    solids = read_solids(os.path.join(step_dir, STACK_STEP))
-    if len(solids) != len(STACK_SOLIDS):
-        print(f'ERRO: {STACK_STEP} tem {len(solids)} sólidos, mas STACK_SOLIDS '
-              f'descreve {len(STACK_SOLIDS)}. O CAD mudou — atualize a tabela.',
-              file=sys.stderr)
+    solids = read_solids(os.path.join(step_dir, stack_step))
+    esperados = sum(e[4] for e in stack_solids)
+    if len(solids) != esperados:
+        print(f'ERRO: {stack_step} tem {len(solids)} sólidos, mas a tabela de '
+              f'{args.stack} descreve {esperados}. O CAD mudou — atualize a '
+              f'tabela.', file=sys.stderr)
         return 1
 
-    # Origem da pilha = menor Z da montagem (base do flange fixo) e, com ela, a
-    # altura de cada link e o TCP. Nada disto é digitado à mão.
-    z_base = min(bbox(sd)[2] for sd in solids)
-    z_link = {entry[0]: bbox(sd)[2] - z_base
-              for entry, sd in zip(STACK_SOLIDS, solids)}
-    z_tcp_mm = max(bbox(sd)[5] for sd in solids) - z_base
+    # Cada entrada consome n sólidos consecutivos; n > 1 vira um compound.
+    pecas, i = [], 0
+    for link, stl_name, rho, mass_fix, n in stack_solids:
+        grupo = solids[i:i + n]
+        i += n
+        if link is None:
+            continue        # peça de referência, não é da ferramenta
+        shape = grupo[0] if n == 1 else compound(grupo)
+        pecas.append((link, stl_name, rho, mass_fix, shape))
+
+    # Origem da pilha = menor Z das peças DA FERRAMENTA (a face que parafusa no
+    # flange do CR10) e, com ela, a altura de cada link e o TCP. Nada disto é
+    # digitado à mão — descartar o punho antes desta conta é o que impede a
+    # base cair 30 mm abaixo do flange.
+    z_base = min(bbox(sh)[2] for *_, sh in pecas)
+    z_link = {}
+    for link, _stl, _rho, _mf, shape in pecas:
+        z = bbox(shape)[2] - z_base
+        # Um link com várias peças (ponteira + laminado) fica na MENOR delas:
+        # é a base do link, não a de cada sólido.
+        z_link[link] = min(z_link.get(link, z), z)
+    z_tcp_mm = max(bbox(sh)[5] for *_, sh in pecas) - z_base
 
     # link → lista de (massa, CoM, tensor no CoM).
     by_link: dict[str, list] = {}
     print('# Meshes gerados e blocos <inertial> da geometria real '
           '(frame de cada link, metros/kg)')
-    print(f'# Montagem: {STACK_STEP} — base em Z={z_base:.2f} mm no arquivo, '
-          'normalizada para 0 (face do flange do CR10)')
+    print(f'# Pilha {args.stack} — montagem: {stack_step}, base em '
+          f'Z={z_base:.2f} mm no arquivo, normalizada para 0 (face do flange '
+          'do CR10)')
     print()
 
-    for (link, stl_name, rho, mass_fix), solid in zip(STACK_SOLIDS, solids):
+    for link, stl_name, rho, mass_fix, solid in pecas:
         shape = translate(solid, -z_base - z_link[link])
 
         BRepMesh_IncrementalMesh(shape, args.deflection, False, 0.35, True)

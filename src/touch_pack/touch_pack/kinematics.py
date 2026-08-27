@@ -59,22 +59,26 @@ T_HAND_ATTACH = np.array([
     [0.0,  0.0,  0.0,  1.00000],
 ], dtype=float)
 
-# TCP de palpação: pilha da célula de 6 eixos montada no flange. Geometria
-# lida de `cad/step/MONTAGEM_FA7155_stack.step` (Z=0 na face do flange do
+# TCP de palpação: pilha da célula axial de 100 kg montada no flange.
+# Geometria lida de `cad/step/MONTAGEM_COMPLETA.step` (Z=0 na face do flange do
 # CR10, +Z saindo dela):
 #
-#     0,0 …   6,0   flange fixo FA7155        (⌀75, comprado à parte)
-#     0,4 …  36,9   célula FA7155 de 6 eixos  (⌀75, liga de alumínio)
-#    37,2 …  59,2   acoplador_celula_hotswap  (disco ⌀66 + haste)
-#    49,7 …  67,7   ponteira F                (luva + cabeça 15,4 × 17,4)
+#     0,0 …  18,5   acoplador_robo      (disco ⌀63,5, impresso)
+#    15,5 …  91,7   célula axial 100 kg (viga S 50,8 × 19,1 × 76,2, aço)
+#    88,7 … 118,7   acoplador_tool      (disco ⌀63,5 × 30, impresso)
+#   101,7 … 157,7   touch_tool          (corpo ⌀58 × 56)
+#   147,7 … 161,7   ponteira D          (luva + cabeça 22,4 × 24,9)
+#   161,7 … 162,2   laminado tátil 5×5  (0,5 mm colados na face)
 #
-# 18/08/2026: era 162,2 mm com a pilha da célula axial de 100 kg (viga S +
-# touch_tool + ponteira D com sensor 5×5). A célula de 6 eixos é 94,5 mm mais
-# curta — poses ensinadas com a ferramenta antiga NÃO valem mais.
+# Este número segue a célula PARAFUSADA, não o `force_sensor` do launch (que
+# só escolhe qual driver sobe). Entre 18/08/2026 e 26/08/2026 valeu 67,7 mm,
+# com a pilha da FA7155 de 6 eixos: a viga S é 94,5 mm mais longa, e poses
+# ensinadas com a ferramenta curta NÃO valem mais. Quem avisa é o carimbo
+# `tool_tcp_mm` (constants.tool_stamp_mismatch), que lê justamente daqui.
 T_TOUCH_TOOL_ATTACH = np.array([
     [1.0,  0.0,  0.0,  0.0000],
     [0.0,  1.0,  0.0,  0.0000],
-    [0.0,  0.0,  1.0,  0.0677],  # +67.7 mm — flange → face da ponteira
+    [0.0,  0.0,  1.0,  0.1622],  # +162.2 mm — flange → face do laminado
     [0.0,  0.0,  0.0,  1.0000],
 ], dtype=float)
 

@@ -82,6 +82,8 @@ IDLE → HOME → DESCENDING → HOLD → [SLIDING] → RETRACT → HOME → IDL
 
 Control runs through **direct streaming** at 33 Hz — no action server, no trajectory queue. Each setpoint is computed and published individually, which keeps latency minimal and makes `stop`/`pause` respond immediately.
 
+**The setpoint is approached from below.** Every pushing micro-step is capped so that, projected through the *upper bound* of the local stiffness (`k_upper`), it cannot take the force past the **target** — not past the upper edge of the band. Until 27/08/2026 the cap aimed at `target + tol`, which made stopping a whole tolerance above the setpoint the *correct* behaviour of the law: against a 0.5 N target with the 4σ band that is +18 % of force into the sample, within spec and still wrong. The asymmetry is deliberate — crossing upward puts force into a sample that may be biological, staying below costs one tick — and it is cheap: measured on the synthetic F(x) curves of `test_no_overshoot.py`, the descent peak moved from "inside the band" to **below the setpoint** in every case at a cost of zero to one tick. **The first impact aims at the contact threshold**, not at the setpoint. The touch transient is `v · T_halt · K`, and `crawl_v_ms` sizes the crawl speed so that peak lands on `CONTACT_ON_N` (0.1 N) — the first contact *detects*, and the quasi-static regulator is what climbs from there to the setpoint. Until 27/08/2026 the budget was `target + tol`, so the impact had licence to deliver the whole setpoint on its own, before any loop could react: against a 5 N run that is a 5 N blow to the sample. The peak no longer depends on the setpoint — 0.2 N and 5 N touch with the same force. **This costs descent time**, because `v` is linear in the budget: against the rigid reference tip a 1.6 N run crawled at the 200 µm/s ceiling and now crawls at ~12 µm/s, and without a learned contact the *whole* descent runs at that speed (4.5 mm of free travel goes from 22 s to 378 s). On soft contacts nothing changes — both budgets clip at the ceiling. The lever is `T_halt`: the 0.3 s in the formula is borrowed from the braking constant and **was never measured**; `v` is linear in `1/T_halt`, so at the ~85 ms measured elsewhere in the chain the crawl returns to ~42 µm/s. `latency_probe.py` is the instrument.
+
 **Force safety:** by convention compression is **positive** and traction is negative. A measurement is **aborted** if the compression exceeds **15 N** (`FORCE_ABORT_LIMIT_N`); the force setpoint is saturated at **10 N**. If the load-cell reading goes stale (> 0.5 s), the force phases abort (`stale`).
 
 ---
@@ -94,8 +96,8 @@ Control runs through **direct streaming** at 33 Hz — no action server, no traj
 | `palpation_gui` | Tkinter GUI: parameters, modes, manual control, load-cell calibration, poses/motions, touch-sensor dashboard |
 | `palpation_logger` | Writes one CSV + JSON per run into `sensors/Data/` |
 | `palpation_report` | Generates a per-cycle statistical report from the run CSVs |
-| `force_receiver` | *(legacy cell)* Reads the XIAO ESP32S3 over **USB serial** (sole owner of the port) → `/load_cell/voltage`, `/load_cell/force`, `/load_cell/calibrated`; relays `/load_cell/rezero` as `'Z'` |
-| `ft_receiver` | **Default.** Reads the **FA7155 6-axis cell** over RS485/USB (sole owner of the port) → `/ft_sensor/wrench` (all six channels) plus the same `/load_cell/*` contract the modulation loop consumes. Replaces `force_receiver`; **never run both** |
+| `force_receiver` | **Default.** Reads the **axial 100 kg cell** on the XIAO ESP32S3 over **USB serial** (sole owner of the port) → `/load_cell/voltage`, `/load_cell/force`, `/load_cell/force_net`, `/load_cell/calibrated`; relays `/load_cell/rezero` as `'Z'` |
+| `ft_receiver` | Reads the **FA7155 6-axis cell** over RS485/USB (sole owner of the port) → `/ft_sensor/wrench` (all six channels) plus the same `/load_cell/*` contract the modulation loop consumes. Alternative to `force_receiver`; **never run both** |
 | `touch_receiver` | Receives UDP from the touch-sensor plotter (port **8081**) → `/touch_sensor/value` |
 | `force_sync` | Pairs force × touch by arrival → `/touch_sync/data` (`SyncedTouch`), one message per load-cell sample |
 | `mirror_node` | Mirrors sim → real CR10 **without the GUI** (covers `no_gui:=true` in MIRROR) |
@@ -137,7 +139,8 @@ ros2 launch touch_pack tactile_cell.launch.py control_mode:=mirror no_gui:=true
 | `control_mode` | `sim_only` | `sim_only` · `mirror` · `real_from_sim` |
 | `robot_ip` | `192.168.5.2` | IP of the real CR10 controller |
 | `no_gui` | `false` | `true` = no Tkinter (uses `mirror_node` in MIRROR) |
-| `force_sensor` | `ft6` | `ft6` (FA7155 6-axis over RS485 — **the cell on the bench**) · `load_cell` (axial 100 kg on the XIAO+HX711) |
+| `force_sensor` | `load_cell` | `load_cell` (axial 100 kg on the XIAO+HX711 — **the cell on the bench**) · `ft6` (FA7155 6-axis over RS485) |
+| `lc_port` | *(empty)* | USB port of the XIAO (`/dev/ttyACM0`). Empty = auto-detect by the Espressif VID |
 | `ft_port` | *(empty)* | Port of the USB↔RS485 converter (`COM5`, `/dev/ttyUSB0`). Empty = auto-detect by VID |
 
 > The **Palpation** tab/mode is only active with `end_effector:=touch_tool` (it needs the load cell). With `hand` the GUI shows the hand controls instead.
@@ -168,8 +171,32 @@ A notebook with 6 tabs: **Palpation** (`Palpação`) · **Manual Control** (`Con
 <p align="center"><em><strong>Manual Control</strong> tab next to Gazebo: jogging the 6 CR10 joints with the load cell read live (jog uses <code>MovJ</code> when in MIRROR).</em></p>
 
 ### Load Cell tab
-- **Reading**: live force/voltage + tare.
-- **Calibration**: a wizard that collects (mass kg, voltage V) pairs and runs a linear regression (slope/intercept).
+
+The tab shows **the cell that is on the cable** — `force_sensor` reaches the
+GUI as a parameter, the same argument that picked the receiver, so the panels
+and the data can't come from different cells. Only the selected cell's sub-tabs
+are built: with the S-beam on the cable, a 6-axis panel would show six
+convincing zeros (nobody publishes `/ft_sensor/wrench`) and read as a dead cell.
+
+**`force_sensor:=load_cell`** — axial 100 kg (default):
+- **Reading**: net force (the number the explorer regulates and the 15 N abort
+  watches) on a 0…15 N bar with a tick at the contact threshold, plus the three
+  stages side by side — bridge voltage → force before tare → force after tare.
+  The gap between the last two *is* the current zero, which is how you catch
+  drift without unloading the tip. Board status, measured rate and whether the
+  receiver has a calibration loaded. Both zeros are here, named: **Tare (host)**
+  and **Re-zero the firmware ('Z')**.
+- **Calibration**: a wizard that **opens with the calibration in force already
+  loaded** — V₀, the points that produced it and the line itself, read from
+  `sensors/load_cell_calib.json`. Capture mass `0` with the cell empty to set
+  V₀, then one point per standard mass; *Clear points* starts a fresh set.
+  The fit adjusts **only the slope**, holding V₀ at the measured zero, and
+  writes that same file.
+
+**`force_sensor:=ft6`** — FA7155:
+- **6 Axes**: the six live channels, link health, Modbus command panel, charts,
+  filter, statistics and recording. No calibration wizard — the FA7155 is
+  factory-calibrated.
 
 ### Poses & Motions tab
 - **Capture a pose** from the real robot (feedback port) or from Gazebo (`/joint_states`).
@@ -445,7 +472,7 @@ FSM phases: `IDLE · HOME · DESCENDING · HOLD · SLIDING · RETRACT · DONE ·
 FK and Jacobian for the selected end effector:
 
 ```python
-T_TOUCH_TOOL_ATTACH  # palpation TCP — +67.7 mm in Z from Link6 (tcp_link)
+T_TOUCH_TOOL_ATTACH  # palpation TCP — +162.2 mm in Z from Link6 (tcp_link)
 T_HAND_ATTACH        # COVVI hand attachment (prosthesis coupler)
 ```
 
@@ -466,56 +493,63 @@ strips the standalone `world`/`Link6` scaffolding), so the simulated stack and
 the standalone URDF can no longer drift apart.
 
 The links come from a single CAD assembly,
-[`cad/step/MONTAGEM_FA7155_stack.step`](../../cad/step) — four solids already
-positioned against each other. The file inherited the Z of the assembly it was
-modelled in (its base lands at Z = +95 mm), so the mesh generator normalizes by
-the **lowest Z of the assembly**: the underside of the FA7155 fixed flange,
-which is the face that bolts to the CR10 wrist (FA7155 manual §2.1 — four M6
-bolts and a Φ6 pin, with no printed coupler in between).
+[`cad/step/MONTAGEM_COMPLETA.step`](../../cad/step) — the solids are already
+positioned against each other, and Z = 0 in that file *is* the CR10 flange
+face. The robot wrist is in the assembly as a mounting reference only: the mesh
+generator drops it, so it counts neither towards the mass nor towards the
+origin.
 
 | Z range (mm) | Link | CAD solid | Material |
 |---|---|---|---|
-| 0.0 … 6.0 | `ft_flange_link` | FA7155 fixed flange | aluminium (bought separately) |
-| 0.4 … 36.9 | `ft_sensor_link` | `FA7155D_20Nm` | aluminium alloy, 6-axis cell |
-| 37.2 … 59.2 | `coupler_tool_link` | `acoplador_celula_hotswap` | printed, blue |
-| 49.7 … **67.7** | `tool_tip_link` | `ponteira_F_retangular_15x17` | printed, blue |
+| 0.0 … 18.5 | `coupler_robot_link` | `acoplador_robo` | printed, blue |
+| 15.5 … 91.7 | `load_cell_link` | `celula_carga_100kg` | alloy steel, S-beam |
+| 88.7 … 118.7 | `coupler_tool_link` | `acoplador_tool` | printed, blue |
+| 101.7 … 157.7 | `touch_tool_link` | `touch_tool` | printed, blue |
+| 147.7 … 161.7 | `tool_tip_link` | `ponteira_D_sensor_5x5` | printed, blue |
+| 161.7 … **162.2** | `tool_tip_link` | `sensor_5x5_pad` | tactile laminate |
 
 ```
-Link6 → ft_flange (+0) → ft_sensor (+0.4) → coupler_tool (+36.8)
-      → tool_tip (+12.5) → tcp_link (+18.0)  = +67.7 mm
+Link6 → coupler_robot (+0) → load_cell (+15.5) → coupler_tool (+73.2)
+      → touch_tool (+13.0) → tool_tip (+46.0) → tcp_link (+14.5)  = +162.2 mm
 ```
 
-`tcp_link` sits on the **contact face of the tip** (15.4 × 17.4 mm). The
-overlapping Z ranges are the mechanical fits (the fixed flange seats into the
-cell's lower recess, the coupler's shaft goes into the tip's sleeve), so each
-link only carries collision geometry for what is actually *exposed*.
+`tcp_link` sits on the **contact face of the laminate**. The overlapping Z
+ranges are the mechanical fits (the S-beam's ends thread into both couplers,
+the touch tool's shaft goes into the tip's sleeve), so each link only carries
+collision geometry for what is actually *exposed*.
 
-**No 5×5 tactile sensor on this tip.** Tip D carried the 17 × 19.47 mm laminate
-glued to its head; tip F is solid and its face is 15.4 × 17.4 mm — the laminate
-does not fit. Swapping back to tip D restores the sensor *and* changes the TCP
-height; it is the only hot-swap part in the stack.
+**The 5×5 tactile sensor is on this tip.** Tip D was designed for it: its head
+is 22.4 × 24.9 mm against the laminate's 17 × 19.47 mm, so the laminate is
+fully supported — no edge overhang, unlike tip F (15.4 × 17.4 mm) of the
+FA7155 stack. The three laminate layers (flex / piezoresistive / flex, 0.5 mm
+together) are glued and become a single link.
 
 Meshes and inertias are regenerated from the assembly with:
 
 ```bash
-python3 src/touch_pack/scripts/gen_tcp_meshes_from_step.py
+python3 src/touch_pack/scripts/gen_tcp_meshes_from_step.py            # load_cell (default)
+python3 src/touch_pack/scripts/gen_tcp_meshes_from_step.py --stack ft6
 ```
 
-It writes the four STLs into `meshes/`, prints the `<inertial>` blocks and the
-TCP height. Total assembly: **0.3837 kg**, CoM at **Z = +19.5 mm** from the
-flange. Printed-part density is 950 kg/m³; the FA7155's mass is the catalogue
-value (0.300 kg, manual §3.1) rather than the density of its solid STEP
-envelope, which would give 339 g for a part that has an internal cavity and
-electronics.
+It writes the STLs into `meshes/`, prints the `<inertial>` blocks and the TCP
+height. Total assembly: **0.6034 kg**, CoM at **Z = +58.7 mm** from the flange
+(weight 5.92 N). Printed-part density is 950 kg/m³; the S-beam is integrated at
+7850 kg/m³ — here the geometry knows more than the catalogue, because the STEP
+carries the S cutouts (60.5 cm³ against the 74.0 cm³ envelope) and integrating
+gives 474.8 g, better than the datasheet's "≈0.5 kg".
 
 > **Changing the TCP length touches three files**: `urdf/touch_tool_tcp.urdf`
 > (the source of truth), `kinematics.T_TOUCH_TOOL_ATTACH`, and the
 > `gravity_compensation.CoG` block of `config/tactile_controllers.yaml`.
 >
-> This TCP is **94.5 mm shorter** than the previous one (162.2 → 67.7 mm): the
-> 6-axis cell replaces a 76 mm S-beam plus two couplers. Joint-space HOME poses
-> and learned contact depths saved under `~/.config/touch_pack/` from before the
-> swap put the tip that much higher — **re-teach HOME before the first run**.
+> **The geometry follows the cell that is bolted on, not the driver that is
+> running** — `force_sensor:=ft6` picks the receiver, it does not move the TCP.
+> Between 18/08/2026 and 26/08/2026 this stack was the FA7155's, at 67.7 mm;
+> the S-beam is **94.5 mm longer**. Joint-space HOME poses and learned contact
+> depths saved under `~/.config/touch_pack/` during that window put the tip that
+> much lower — **re-teach HOME before the first run**. The `tool_tcp_mm` stamp
+> written into those files says which tool taught them, and the GUI warns on
+> load.
 
 Real arm ↔ URDF convention: joint offsets are handled in `kinematics.py` (joints 2 and 4 have an offset relative to DH); `_HOME_Q` and `JOINT_MIN/MAX` are also in the URDF convention.
 
@@ -560,10 +594,15 @@ The real arm's velocity is set by `SpeedFactor(%)` — synchronized with the GUI
 
 ## 6-axis load cell (FA7155 over RS485)
 
-The FA7155 replaces the axial 100 kg cell. **There is no firmware of ours in
-this path**: the sensor is an RS485 talker that starts streaming the moment it
-is powered, a USB↔RS485 converter (ZK-U485/CH340) bridges it to the PC, and
-`ft_receiver` is the driver. The XIAO + HX711 chain comes out entirely.
+The **alternative** to the axial 100 kg cell, selected with
+`force_sensor:=ft6`. **There is no firmware of ours in this path**: the sensor
+is an RS485 talker that starts streaming the moment it is powered, a USB↔RS485
+converter (ZK-U485/CH340) bridges it to the PC, and `ft_receiver` is the
+driver. Running it means the XIAO + HX711 chain comes out entirely — *and so
+does the mechanical stack*: the FA7155 is 94.5 mm shorter, so
+`urdf/touch_tool_tcp.urdf` and `kinematics.T_TOUCH_TOOL_ATTACH` have to change
+with it (see **Palpation TCP**). The `force_sensor` argument alone only swaps
+the driver.
 
 ### Wiring
 
@@ -613,20 +652,18 @@ flipped sign means the safety cutoff sees tension where there is compression.
 
 ### Running it
 
-This is the **default cell** — the plain launch already brings up
-`ft_receiver`:
+It is **not** the default — ask for it explicitly:
 
 ```bash
-ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool sensor:='5'
+ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool sensor:='5' force_sensor:=ft6
 ```
 
 `ft_port:=COM5` (or `/dev/ttyUSB0`) pins the port when more than one USB-serial
-adapter is present. To go back to the axial 100 kg cell on the XIAO, pass
-`force_sensor:=load_cell`. Both nodes publish `/load_cell/force_net`, so **only
-one may run** — two publishers on the safety loop's topic make the explorer
+adapter is present. Both nodes publish `/load_cell/force_net`, so **only one
+may run** — two publishers on the safety loop's topic make the explorer
 regulate against the average of two cells, which is why an unrecognized
-`force_sensor` value falls back to `ft6` (the cell that is actually on the
-bench) rather than silently starting the driver for a board that is not
+`force_sensor` value falls back to `load_cell` (the cell that is actually on
+the bench) rather than silently starting the driver for a board that is not
 plugged in.
 
 Everything downstream is unchanged: `/load_cell/force_net` still carries a
@@ -647,6 +684,30 @@ away the unfiltered value, which is the whole reason those fields exist.
 ---
 
 ## Load cell (XIAO ESP32S3 + HX711)
+
+**This is the default cell** — the plain launch already brings up
+`force_receiver`:
+
+```bash
+ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool sensor:='5'
+```
+
+`lc_port:=/dev/ttyACM0` pins the port when more than one ESP32 is on the
+machine; empty (the default) auto-detects by the Espressif VID `0x303A`.
+
+Unlike the FA7155, this path has **firmware of ours** in it
+(`sensors/ForceDriver/`, PlatformIO) and it needs a **calibration file** —
+without one `force_receiver` publishes no `/load_cell/force_net` at all, on
+purpose: the explorer then refuses the run for a missing reading instead of
+regulating against a line nobody checked. The repo ships one:
+`sensors/load_cell_calib.json`, the 7-point calibration of the cell on the
+bench, and that versioned file **is** the path both the receiver and the wizard
+use (`constants.LC_CALIB_FILE`). One file, not a copy in `~/.config` and
+another in the repo — that pair was how you end up calibrating one and
+measuring with the other.
+
+The GUI's **Load Cell** tab is the axial cell's: **Reading** (live force,
+voltage, both zeros) and **Calibration** (the wizard).
 
 **Transport: USB serial only.** The UDP/WiFi path was removed on 27/07/2026 —
 along with the ESP's static IP, port 8080, the `FRCV` discovery on 8090 and OTA
@@ -684,13 +745,43 @@ At 10 Hz no filter tuning yields a fast response (median-of-3 alone costs
 100 ms). Cut the RATE→GND trace and bridge pin 15 to DVDD; nothing in software
 needs to change.
 
+**Two different zeros, and they are not interchangeable.**
+`/load_cell/tare` is the **host** tare: a software subtraction inside
+`force_receiver`, redone automatically at startup once the window is stable and
+the resting reading sits near the calibration's V₀ (that second guard is what
+stops it from zeroing a real load already resting on the tip). `/load_cell/rezero`
+is the **firmware** zero: it becomes the byte `'Z'` on the wire and makes the
+MCU re-collect the bridge's resting offset, which is the only way to take
+*thermal* drift out of the equation. The host tare subtracts the symptom; `'Z'`
+rebuilds the reference.
+
 **Sign convention**: calibration is performed **in compression** (cell pointing
 up, standard masses resting on it), so `force = (v − ref)/slope` is positive in
 compression and negative in tension, whatever the wiring polarity — `slope`
-absorbs it. Single source of truth: `constants.lc_force_n`.
+absorbs it. Single source of truth: `constants.lc_force_n`, used by the
+receiver, by the calibration wizard and by any offline reprocessing — so the
+newton on the plot and the newton in the log are the same newton. The file
+itself has a single reader too, `constants.lc_load_calibration`, which is
+where the `intercept` / `zero_voltage` alias is resolved once instead of in
+every consumer.
 
-The calibration is read from `~/.config/touch_pack/load_cell_calib.json` and
-reloaded periodically; it is produced by the wizard in the Load Cell tab.
+**The fit holds V₀ fixed** (`constants.lc_fit_slope`): `slope = Σ((v−V₀)·F)/ΣF²`
+over the mass points, with V₀ the measured no-load average. It is not a free
+two-parameter regression, and the difference is not cosmetic — on the 7 points
+that came with this cell, the free fit returns V₀ = −4.29e-5 V against the
++2.77e-5 V actually measured, and a slope 0.8 % away. A measured no-load
+average is far better determined than anything a regression can infer from the
+loaded points, and 0.8 % of force scale never shows up as a failure, only as
+one run that disagrees with another. This is the method that produced the
+calibration shipped in the repo, and `test_force_receiver.py` locks a refit of
+the stored points against the stored slope.
+
+The calibration is read from `sensors/load_cell_calib.json` and reloaded
+periodically (5 s timer, by mtime — the receiver owns the serial port and must
+not be restarted just to pick up a new fit); it is produced by the wizard in
+the **Calibration** sub-tab of the Load Cell tab, which writes that same file.
+Override with `lc_calib_path:=<file>` on the node if you need to try a fit
+without touching the versioned one.
 
 ---
 

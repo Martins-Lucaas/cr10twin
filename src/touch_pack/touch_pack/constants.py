@@ -6,6 +6,8 @@ de um único módulo ficam nele.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import os
 
@@ -70,6 +72,152 @@ def hold_tol_n(target_f: float) -> float:
     (4σ) e a fração do alvo. É a LEI do explorer, exposta aqui para a GUI
     poder mostrar (e mandar) o mesmo número em vez de um default próprio."""
     return max(HOLD_TOL_N, HOLD_TOL_PCT * abs(float(target_f)))
+
+# ── Célula axial de 100 kg (XIAO ESP32S3 + HX711) ─────────────────────
+# A célula da BANCADA. Ponte de extensômetros de 100 kg lida por um HX711 e
+# carimbada por um XIAO ESP32S3, que empurra linhas ASCII pela USB. O driver é
+# o `force_receiver` (ver force_receiver_node.py) e o formato do quadro está em
+# lc_serial.py. O firmware mora em `sensors/ForceDriver/`.
+#
+# A alternativa é a FA7155 de 6 eixos (bloco seguinte, `force_sensor:=ft6`).
+# Os DOIS publicam `/load_cell/force_net`; só um pode rodar por vez.
+LC_USB_VIDS = (
+    0x303A,   # Espressif — o XIAO ESP32S3 aparece como USB CDC nativo
+)
+LC_SERIAL_BAUD = 115200       # Serial.begin() do main.cpp
+# Taxa ditada pelo pino RATE do HX711: GND = 10 Hz, DVDD = 80 Hz. As placas
+# vermelhas de prateleira vêm com RATE em GND, e ~10 Hz é o que se mede.
+LC_NOMINAL_RATE_HZ = 10.0
+# Piso abaixo do qual o receiver reclama: nesta faixa não é mais "célula
+# lenta", é linha engasgando ou HX711 sem amostra pronta.
+LC_MIN_RATE_HZ = 5.0
+
+# Conversão counts → volts feita NO FIRMWARE: v_sensor = counts·AVDD/2²⁴, já
+# no domínio ×PGA. MANTER SINCRONIZADO com COUNTS_TO_V do
+# sensors/ForceDriver/src/main.cpp — é o par que faz o volt do CSV significar
+# a mesma coisa dos dois lados do cabo.
+LC_HX711_AVDD_V   = 3.3
+LC_HX711_BITS     = 24
+LC_HX711_GAIN     = 128       # canal A
+LC_FW_VOLTAGE_SCALE  = LC_HX711_AVDD_V / (2 ** LC_HX711_BITS)   # 196,70 nV
+LC_FW_VOLTAGE_OFFSET = 0.0
+
+# Placa da célula: 100 kg, 2 mV/V. Serve para o valor NOMINAL da sensibilidade
+# — o que vale de fato é o `slope` da calibração; este número existe para o
+# filtro ter uma escala antes do primeiro arquivo e para o wizard saber quando
+# um ajuste saiu absurdo.
+LC_RATED_LOAD_KG          = 100.0
+LC_RATED_SENSITIVITY_MV_V = 2.0
+G_N_PER_KG                = 9.80665
+LC_RATED_FORCE_N          = LC_RATED_LOAD_KG * G_N_PER_KG        # 980,7 N
+# V/N no domínio em que o firmware publica (ponte × PGA):
+#   ponte a fundo de escala = 2 mV/V × 3,3 V = 6,6 mV em 980,7 N
+#   ×128 do PGA             → 8,61e-4 V/N
+# A calibração de 7 pontos de 2026 mediu 8,70e-4 V/N — 1 % acima do nominal,
+# que é o esperado para a tolerância de sensibilidade de uma célula destas.
+LC_NOMINAL_V_PER_N = (
+    (LC_RATED_SENSITIVITY_MV_V * 1e-3 * LC_HX711_AVDD_V / LC_RATED_FORCE_N)
+    * LC_HX711_GAIN)
+# Fundo de escala do ADC no mesmo domínio: ±0,5·AVDD/gain = ±12,89 mV. Leitura
+# além disto não é força, é entrada saturada ou fiação errada.
+LC_FS_VOLTAGE_V = 0.5 * LC_HX711_AVDD_V / LC_HX711_GAIN
+
+# Mínimo de pontos para o wizard aceitar um ajuste. Dois pontos SEMPRE dão
+# reta; com três já existe resíduo, que é o único jeito de a tela avisar que
+# uma massa foi digitada errada.
+LC_CALIB_MIN_POINTS = 3
+# Faixa aceita para o slope ajustado, em torno do nominal. Fora dela o ajuste
+# é recusado com a conta na tela: é o erro clássico de digitar grama onde se
+# pede quilo (fator 1000), e ele passaria despercebido — a reta continua
+# lindíssima, só a escala do mundo inteiro muda.
+LC_SLOPE_TOL_FRAC = 0.5
+
+
+def lc_load_calibration(path: str):
+    """Lê a calibração do JSON: `(slope, intercept, pontos)` ou None.
+
+    LEITOR ÚNICO do arquivo, e é isso que ele existe para ser. O
+    `force_receiver` quer a reta, o wizard da GUI quer a reta E os pontos que
+    a produziram, e qualquer reprocessamento offline quer os dois — três
+    leitores separados divergiriam no primeiro campo com dois nomes.
+
+    E há um campo com dois nomes: `intercept` é o V₀ da reta, `zero_voltage` é
+    o alias histórico do MESMO número. Arquivos anteriores ao campo `intercept`
+    só trazem o alias, e recusá-los invalidaria calibrações boas que ninguém
+    tem como refazer sem as massas padrão na mão.
+
+    Os pontos saem como `(massa_kg, forca_N, v_sensor)` com a FORÇA DERIVADA
+    da massa, e não lida do arquivo: `force_n` gravado é só `massa × g`, e
+    derivá-lo aqui garante que um arquivo escrito com outro valor de g não
+    entorte um reajuste. Ponto sem massa ou sem tensão é descartado — meio
+    ponto é pior que nenhum.
+    """
+    try:
+        with open(path, encoding='utf-8') as f:
+            d = json.load(f)
+        slope = float(d['slope'])
+        intercept = float(d.get('intercept', d.get('zero_voltage', 0.0)))
+    except Exception:
+        return None
+    if not slope:
+        return None
+    pontos = []
+    for item in (d.get('points') or []):
+        try:
+            m = float(item['mass_kg'])
+            v = float(item['v_sensor'])
+        except (TypeError, KeyError, ValueError):
+            continue
+        pontos.append((m, m * G_N_PER_KG, v))
+    pontos.sort()
+    return slope, intercept, pontos
+
+
+def lc_fit_slope(points, v_zero: float):
+    """Ajusta `v = slope·F + v_zero` com o V₀ FIXO. Devolve (slope, pior_res).
+
+    `points` são pares `(forca_N, v_sensor)`; None se não houver span de força.
+
+    POR QUE O V₀ NÃO É AJUSTADO. Ele é MEDIDO — é a média de uma janela inteira
+    de amostras com a célula descarregada, e é o ponto mais bem determinado de
+    toda a calibração. Deixá-lo flutuar num ajuste de dois parâmetros joga essa
+    informação fora e ainda permite que o resultado contradiga a medição: nos
+    7 pontos que vieram com esta célula, o ajuste livre devolve V₀ = −4,29e-5 V
+    contra os +2,77e-5 V medidos, e o slope sai 0,8 % diferente. 0,8 % de
+    escala de força é o tipo de erro que nunca aparece como falha — só como um
+    ensaio que não bate com o outro.
+
+    Este é o método que produziu a calibração em vigor no repo, e o teste
+    `test_lc_calibration_fit` o trava contra o arquivo.
+    """
+    den = math.fsum(f * f for f, _v in points)
+    if den <= 0.0:
+        return None
+    slope = math.fsum((v - v_zero) * f for f, v in points) / den
+    if not slope:
+        return None
+    pior = max(abs(lc_force_n(v, slope, v_zero) - f) for f, v in points)
+    return slope, pior
+
+
+def lc_force_n(v_sensor: float, slope: float, intercept: float) -> float:
+    """Força em newtons a partir da tensão da ponte (domínio ×PGA).
+
+    FONTE ÚNICA da conta: o `force_receiver`, o wizard de calibração e
+    qualquer reprocessamento offline de CSV têm de usar ESTA função, senão o
+    N do gráfico e o N do log deixam de ser o mesmo N.
+
+    A calibração é feita em COMPRESSÃO (célula apontada para cima, massas
+    padrão em cima), então o resultado é positivo comprimindo e negativo
+    tracionando qualquer que seja a polaridade da fiação — o sinal do `slope`
+    absorve a inversão. Slope nulo/ausente devolve 0,0: sem calibração não há
+    força, e devolver um número inventado seria pior que devolver zero.
+    """
+    s = float(slope)
+    if not s:
+        return 0.0
+    return (float(v_sensor) - float(intercept)) / s
+
 
 # ── Célula de 6 eixos FA7155 (RS485 em modo ATIVO) ────────────────────
 # Substitui a célula axial de 1 eixo. Não há placa nossa no caminho: o sensor
@@ -685,6 +833,82 @@ def _resolve_runs_dir() -> str:
 
 
 RUNS_DIR = _resolve_runs_dir()
+
+
+def _lc_share_calib() -> str | None:
+    """Cópia da calibração instalada com o pacote, ou None.
+
+    O import do ament é protegido porque `constants` é importado por testes
+    que não têm ROS nenhum — e ele não pode deixar de importar por isso.
+    """
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        return os.path.join(get_package_share_directory('touch_pack'),
+                            'sensors', 'load_cell_calib.json')
+    except Exception:
+        return None
+
+
+def _resolve_lc_calib_file() -> tuple[str, str]:
+    """Onde mora a calibração da célula axial. Devolve (caminho, origem).
+
+    A MESMA CALIBRAÇÃO EM QUALQUER COMPUTADOR é o requisito, e o mecanismo é
+    o git: `sensors/load_cell_calib.json` é versionado, então quem clona o
+    repo recebe a reta de 7 pontos da célula que está na bancada. O que
+    faltava era o caso do deploy — levar só o `install/` deixava a máquina
+    sem arquivo nenhum, e um driver sem reta não publica força.
+
+    Três origens, nesta ordem, e a PRIMEIRA QUE EXISTE ganha:
+
+      repo    `<repo>/sensors/` — a fonte. É a única gravável pelo wizard de
+              um jeito que se propaga (commit), e por isso vem primeiro: numa
+              bancada, recalibrar tem de valer na hora.
+      share   `share/touch_pack/sensors/` — a cópia instalada com o pacote
+              (ver setup.py). É o que faz a calibração chegar numa máquina que
+              não tem a árvore do repo.
+      config  `~/.config/touch_pack/` — último recurso, e o único que NÃO se
+              propaga: o que for calibrado ali fica naquela máquina.
+
+    Se nenhuma existir, devolve o caminho onde o wizard deveria escrever
+    (repo se houver árvore, senão config) para a mensagem de ausência poder
+    ser específica.
+    """
+    repo = (os.path.join(_REPO_ROOT, 'sensors', 'load_cell_calib.json')
+            if _REPO_ROOT else None)
+    share = _lc_share_calib()
+    cfg = os.path.join(CONFIG_DIR, 'load_cell_calib.json')
+    for caminho, origem in ((repo, 'repo'), (share, 'share'), (cfg, 'config')):
+        if caminho and os.path.exists(caminho):
+            return caminho, origem
+    return (repo, 'repo') if repo else (cfg, 'config')
+
+
+LC_CALIB_FILE, LC_CALIB_SOURCE = _resolve_lc_calib_file()
+# Origens que se PROPAGAM para as outras máquinas. `config` não está aqui de
+# propósito: calibrar nela é calibrar só este computador, e o wizard avisa.
+LC_CALIB_SHARED_SOURCES = ('repo', 'share')
+
+
+def lc_calib_fingerprint(path: str = '') -> str:
+    """Oito hex que identificam uma calibração. '' se não houver.
+
+    Existe para "a mesma calibração em qualquer computador" ser VERIFICÁVEL e
+    não só esperada: as duas máquinas imprimem isto na partida do
+    force_receiver e na aba Load Cell, e se os oito caracteres baterem é a
+    mesma reta e os mesmos pontos. Vai também no params.json de cada run, e é
+    ele que responde depois "com que calibração este dado foi medido".
+
+    A impressão é dos NÚMEROS (slope, V₀ e os pares), não do arquivo: campos
+    de metadado, indentação e ordem de chaves não a mudam — dois arquivos que
+    medem igual têm a mesma impressão.
+    """
+    cal = lc_load_calibration(path or LC_CALIB_FILE)
+    if cal is None:
+        return ''
+    slope, intercept, pontos = cal
+    corpo = ';'.join([repr(slope), repr(intercept)]
+                     + [f'{repr(m)},{repr(v)}' for m, _f, v in pontos])
+    return hashlib.sha256(corpo.encode('utf-8')).hexdigest()[:8]
 
 
 # ── MANUAL em DEGRAU (escada de força) ────────────────────────────────

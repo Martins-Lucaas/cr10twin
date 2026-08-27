@@ -105,16 +105,30 @@ class FtAxesMixin:
         self._set_status('Taring — hold the probe unloaded…', WARN)
 
     def _cb_lc_tare_result(self, msg: String) -> None:
-        """'ok;<ref_N>;<deriva_N>' ou 'err;<causa>;<valor>' do ft_receiver."""
+        """'ok;<ref_N>;<deriva_N>' ou 'err;<causa>;<valor>'.
+
+        Os DOIS receivers publicam neste tópico com o mesmo vocabulário — o
+        tare é a mesma operação nas duas células. O que muda é o que dizer ao
+        operador quando não chega dado: numa é a 485 e os 24 V, na outra é o
+        cabo USB. Daí o texto do `no_data` olhar para `_force_sensor`.
+        """
         parts = str(msg.data).split(';')
         kind = parts[0] if parts else ''
+        if kind == 'rezero':
+            # Confirmação do zero do FIRMWARE (só a célula axial o tem).
+            self._set_status(
+                "Re-zero sent to the firmware ('Z') — it stops transmitting "
+                'until the new zero locks, then the host tare is redone.', OK)
+            return
         if kind == 'ok' and len(parts) >= 3:
             try:
                 ref, drift = float(parts[1]), float(parts[2])
             except ValueError:
                 return
+            alvo = ('Six axes tared' if self._force_sensor == 'ft6'
+                    else 'Cell tared')
             self._set_status(
-                f'Six axes tared — reference {ref:+.3f} N '
+                f'{alvo} — reference {ref:+.3f} N '
                 f'(drift {drift:.3f} N across the window).', OK)
             return
         if kind != 'err' or len(parts) < 3:
@@ -123,11 +137,29 @@ class FtAxesMixin:
         if cause == 'no_data':
             self._set_status(
                 'No frames from the cell — check the 24 V supply, the RS485 '
-                'pair and the common ground.', WARN)
+                'pair and the common ground.'
+                if self._force_sensor == 'ft6' else
+                'No samples from the cell — the XIAO must be on the USB '
+                'cable, and force_receiver must be the only program with '
+                'that port open.', WARN)
         elif cause == 'drifting':
             self._set_status(
                 f'Cell drifting ({value} N across the window) — unload it and '
                 'wait for it to settle before taring.', WARN)
+        elif cause == 'no_link':
+            # Só o re-zero produz esta causa: o tare do host não precisa
+            # escrever no fio, o do firmware precisa.
+            self._set_status(
+                "Re-zero could NOT be sent: the receiver has no open port to "
+                'the cell. The firmware zero did not happen — check the USB '
+                'cable before trusting the reading.', DANGER)
+        elif cause == 'no_calib':
+            # Só a célula axial produz esta causa: sem a reta slope/intercept
+            # não há newton com que julgar estabilidade, então nem faz sentido
+            # tentar zerar.
+            self._set_status(
+                'No calibration loaded — fit and save one in the Calibration '
+                'tab before taring.', WARN)
 
     def _cb_lc_tared(self, msg: Bool) -> None:
         with self._lock:

@@ -112,6 +112,7 @@ from .constants import (
     TOUCH_ROWS_DEFAULT, TOUCH_COLS_DEFAULT, TOUCH_EVENT_TYPES,
     PHASE_CODES, run_dir, run_id_from_msg,
     RUN_SAMPLES_CSV, RUN_MATRIX_CSV, RUN_PARAMS_JSON,
+    lc_calib_fingerprint, tool_tcp_mm,
 )
 
 
@@ -254,6 +255,15 @@ class PalpationLogger(Node):
         else:
             self._rows, self._cols = TOUCH_ROWS_DEFAULT, TOUCH_COLS_DEFAULT
         self._n_taxels = self._rows * self._cols
+        # Qual CÉLULA gerou o run. Vem do MESMO argumento de launch que
+        # escolheu o receiver e a aba da GUI, porque sem ele o run fica
+        # AMBÍGUO: as colunas lc_voltage_raw_v/lc_voltage_v são VOLTS com a
+        # célula axial e NEWTONS com a FA7155, e nada mais no diretório do run
+        # diz qual. Dois anos de dados depois, ninguém reconstrói isso.
+        _cell = str(self.declare_parameter(
+            'force_sensor', 'load_cell').value).strip().lower()
+        self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
+            else 'load_cell'
 
         self._lock = threading.Lock()
         self._csv_fh: IO | None = None
@@ -347,6 +357,31 @@ class PalpationLogger(Node):
             params['home_deg'] = list(params.get('home_deg', []))
         except Exception:
             params = {}
+        # PROVENIÊNCIA — não vem da PalpationStart, vem do ambiente do run, e
+        # é o que torna o CSV interpretável fora desta semana:
+        #   force_sensor  qual célula estava no cabo;
+        #   lc_voltage_unit  a unidade REAL das colunas lc_voltage_*, que muda
+        #     com a célula (V na axial, N na FA7155 — ver o cabeçalho do
+        #     ft_receiver_node);
+        #   tool_tcp_mm  o comprimento do TCP, que mudou 94,5 mm entre as duas
+        #     pilhas e reinterpreta toda coordenada cartesiana do run.
+        params['force_sensor'] = self._force_sensor
+        params['lc_voltage_unit'] = ('V' if self._force_sensor == 'load_cell'
+                                     else 'N')
+        # COM QUE CALIBRAÇÃO este dado foi medido. Oito hex dos números da
+        # reta (não do arquivo), que é o que permite comparar um run desta
+        # máquina com um de outra sem confiar em nomes de arquivo. Vazio com
+        # a FA7155, que vem calibrada de fábrica e não tem reta local.
+        try:
+            params['lc_calib_fingerprint'] = (
+                lc_calib_fingerprint()
+                if self._force_sensor == 'load_cell' else '')
+        except Exception:
+            params['lc_calib_fingerprint'] = ''
+        try:
+            params['tool_tcp_mm'] = tool_tcp_mm()
+        except Exception:
+            params['tool_tcp_mm'] = None
         try:
             setpoint = float(msg.force_n)
         except (AttributeError, TypeError, ValueError):

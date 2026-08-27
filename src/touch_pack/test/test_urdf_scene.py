@@ -326,9 +326,10 @@ def test_real_cell_scene_matches_kinematics_fk():
 
 # ── O TRIO DA FERRAMENTA: URDF ↔ kinematics ↔ controllers.yaml ────────
 # O cabeçalho do `urdf/touch_tool_tcp.urdf` diz "Mexeu aqui, mexe nos três".
-# Nada cobrava isso: quando a pilha da célula axial de 100 kg (TCP a 162,2 mm)
-# deu lugar à FA7155 de 6 eixos (67,7 mm), os três foram atualizados à mão e a
-# suíte inteira teria passado se um deles tivesse ficado para trás.
+# Nada cobrava isso na primeira troca de célula (axial de 100 kg → FA7155,
+# 18/08/2026): os três foram atualizados à mão e a suíte inteira teria passado
+# se um deles tivesse ficado para trás. Na volta para a axial (162,2 mm,
+# 0,6034 kg) este teste já existia e é ele que garante que os três batem.
 
 _G = 9.80665
 

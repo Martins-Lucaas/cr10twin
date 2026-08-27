@@ -161,6 +161,7 @@ _N_PER_KGF = 9.80665
 
 # Tema + widgets compartilhados (cores, named fonts do Tk — ver o aviso
 # sobre o bug do fontconfig em ui_helpers — tooltip e botões do header).
+from .gui_lc_axial import LcAxialMixin
 from .gui_loadcell import FtAxesMixin
 from .gui_ft_arrow import FtArrowMixin
 from .gui_ft_charts import FtChartsMixin
@@ -406,7 +407,8 @@ COVVI_GRIPS: dict[str, tuple[int | None, dict[str, float]]] = {
 
 
 # Nó ROS + GUI
-class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
+class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
+                   MatrixMixin, Node):
     # A classe nasceu com 234 métodos num arquivo só, e achar código nela
     # exigia ferramenta em vez de leitura. Está sendo recortada por MIXINS:
     # o corte é mecânico (os métodos continuam operando sobre `self`), então
@@ -453,6 +455,11 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         # responsivo — e não existia operação sem GUI. Aqui só se PEDE o tare.
         self._lc_tare_req_pub = self.create_publisher(
             Empty, '/load_cell/tare', 10)
+        # Zero do FIRMWARE da célula axial: o force_receiver retransmite isto
+        # como o byte 'Z' na serial do XIAO. É outra coisa que o tare acima —
+        # aquele subtrai no software, este refaz a referência dentro do MCU.
+        self._lc_rezero_pub = self.create_publisher(
+            Empty, '/load_cell/rezero', 10)
         # Canal de comando do SENSOR (Modbus pela 485) — o tare acima é do
         # host; este mexe no hardware. Ver ft_modbus.py.
         self._ft_cmd_pub = self.create_publisher(
@@ -597,9 +604,19 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             Float32, '/load_cell/force_net', self._cb_lc_force_net_gui, QOS_SENSOR)
         self.create_subscription(
             Float32, '/load_cell/force', self._cb_lc_force_raw_gui, QOS_SENSOR)
-        # Estado e desfecho do tare — de propriedade do ft_receiver.
+        # Tensão crua da ponte — só existe com a célula axial no ar. É o que
+        # a aba Calibration mede; sem ela o wizard fica dizendo que espera.
+        self.create_subscription(
+            Float32, '/load_cell/voltage', self._cb_lc_voltage, QOS_SENSOR)
+        # Estado e desfecho do tare — de propriedade do receiver.
         self.create_subscription(
             Bool, '/load_cell/tared', self._cb_lc_tared, 10)
+        # Se a força publicada tem origem. O que o Bool SIGNIFICA depende da
+        # célula: no force_receiver é "há reta slope/intercept carregada"
+        # (sem ela não sai força nenhuma); no ft_receiver é "há quadros
+        # válidos chegando", porque a FA7155 já vem calibrada de fábrica.
+        self.create_subscription(
+            Bool, '/load_cell/calibrated', self._cb_lc_calibrated, 10)
         self.create_subscription(
             String, '/load_cell/tare_result', self._cb_lc_tare_result, 10)
         self.create_subscription(
@@ -632,11 +649,24 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         # mesma leitura ANTES do tare.
         self._lc_force_raw: float = 0.0
         # Espelho do tare, para EXIBIÇÃO. O dono da referência e do auto-tare
-        # de partida é o ft_receiver, que tem a porta.
+        # de partida é o receiver, que tem a porta.
         self._lc_tare_done: bool = False
+        self._lc_calibrated: bool = False
         # Força de contato tare-compensada (N, positiva = compressão).
         self._lc_force_net: float = 0.0
         self._lc_force_net_ts: float = 0.0
+        # Tensão da ponte (V, domínio ×PGA) da célula axial — só o
+        # force_receiver publica isto; a FA7155 entrega newton e não tem
+        # tensão nenhuma a mostrar. É a entrada do wizard de calibração.
+        self._lc_voltage: float = 0.0
+        self._lc_voltage_ts: float = 0.0
+        # Chegadas de /load_cell/voltage, para a taxa MEDIDA da aba. 2 s a
+        # 80 Hz (o pino RATE em DVDD) cabem em 160.
+        self._lc_arrivals: collections.deque = collections.deque(maxlen=200)
+        # Coleta do wizard em curso: None ou (t_fim, [amostras]). Mora AQUI e
+        # não na fatia porque a callback do ROS a lê, e ela roda desde o
+        # __init__ — muito antes de a aba de calibração existir.
+        self._lc_capture: tuple[float, list[float]] | None = None
 
         # ── Célula de 6 eixos FA7155 (/ft_sensor/wrench) ──────────────
         # Último wrench recebido, por eixo. Alimenta a aba "6 Axes" e as seis
@@ -677,6 +707,17 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             self._touch_rows, self._touch_cols, self._touch_has_total = 5, 5, False
         self._touch_taxels = self._touch_rows * self._touch_cols
         self._sensor_kind = _sensor
+        # Qual CÉLULA está no cabo. Mesmo argumento que o launch usa para
+        # escolher o receiver, repassado para cá — a GUI não tem como
+        # descobrir sozinha qual nó subiu, e adivinhar pelos tópicos daria uma
+        # aba que muda sozinha quando o driver engasga por 3 s.
+        # 'load_cell' (default, a viga S de 100 kg) → abas Reading +
+        # Calibration; 'ft6' (FA7155) → aba 6 Axes. Valor desconhecido cai no
+        # default, como no launch.
+        _cell = str(self.declare_parameter(
+            'force_sensor', 'load_cell').value).strip().lower()
+        self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
+            else 'load_cell'
         # Contadores de integridade do frame ADC republicado (ver
         # _publish_tactile_line). Frame truncado é DESCARTADO, não completado:
         # o CSV precisa distinguir "não medi" de "medi errado".
@@ -3618,15 +3659,35 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
 
 
 
-    # Aba "Célula de Carga" — leitura + calibração
+    # Aba "Célula de Carga" — o conteúdo é o da célula que está no cabo
     def _build_loadcell_tab(self, root: tk.Frame):
+        """Monta as sub-abas da célula selecionada em `force_sensor`.
+
+        Montar as duas seria pior que escolher: com a viga S no cabo a aba de
+        seis eixos mostraria seis canais mortos (ninguém publica
+        /ft_sensor/wrench), e com a FA7155 no cabo o wizard ofereceria
+        calibrar um sensor que já vem calibrado de fábrica. Só o que tem
+        dado atrás é construído — o que também poupa os refreshes.
+        """
         sub_nb = ttk.Notebook(root, style='Tactile.TNotebook')
         sub_nb.pack(fill='both', expand=True)
 
-        tab_axes = tk.Frame(sub_nb, bg=BG)
-        sub_nb.add(tab_axes, text='6 Axes')
-        self._build_lc_axes_tab(self._scrollable(tab_axes))
-        self.root.after(80, self._refresh_ft_axes)
+        if self._force_sensor == 'ft6':
+            tab_axes = tk.Frame(sub_nb, bg=BG)
+            sub_nb.add(tab_axes, text='6 Axes')
+            self._build_lc_axes_tab(self._scrollable(tab_axes))
+            self.root.after(80, self._refresh_ft_axes)
+            return
+
+        # Célula axial de 100 kg: leitura ao vivo + o wizard que produz a reta
+        # sem a qual o force_receiver não publica força nenhuma.
+        tab_read = tk.Frame(sub_nb, bg=BG)
+        sub_nb.add(tab_read, text='Reading')
+        self._build_lc_reading_tab(self._scrollable(tab_read))
+
+        tab_calib = tk.Frame(sub_nb, bg=BG)
+        sub_nb.add(tab_calib, text='Calibration')
+        self._build_lc_calibration_tab(self._scrollable(tab_calib))
 
     def _spawn_touch_receiver(self) -> None:
         """Inicia o touch_receiver_node (UDP 8081) junto com o force_receiver.
@@ -5910,6 +5971,8 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
             lc_ts     = self._lc_force_net_ts
             f_raw     = self._lc_force_raw        # a mesma leitura pré-tare
             lc_tared  = self._lc_tare_done
+            lc_cal    = self._lc_calibrated
+            volt_ts   = self._lc_voltage_ts
             phase_t0  = self._phase_t_start
             touch_val = self._touch_value
             touch_ts  = self._touch_last_ts
@@ -5936,12 +5999,21 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         # Históricos das sparklines: alimentados sempre, senão o gráfico
         # abriria um buraco do tamanho do tempo passado em outra aba.
         has_data = lc_ts > 0.0 and (time.time() - lc_ts) < 3.0
-        # Indicador do cabeçalho: quadros chegando é o único "online" que a
-        # FA7155 tem — ela não se anuncia na USB, quem aparece é o conversor.
-        self._cell_dot_lbl.config(fg=OK if has_data else TEXT_DIM)
-        self._cell_status_lbl.config(
-            text='ONLINE' if has_data else 'OFFLINE',
-            fg=OK if has_data else TEXT_DIM)
+        # Indicador do cabeçalho, TRÊS estados. Com a FA7155 bastavam dois —
+        # quadros chegando é o único "online" que ela tem, e força sai junto.
+        # A célula axial mudou isso: o force_receiver só publica force_net com
+        # CALIBRAÇÃO e TARE, então a placa pode estar perfeitamente viva e sem
+        # força nenhuma. Reduzir isso a "OFFLINE" mandava o operador conferir
+        # o cabo quando o que faltava era apertar Tare.
+        volt_fresh = volt_ts > 0.0 and (time.time() - volt_ts) < 3.0
+        if has_data:
+            dot_cor, dot_txt = OK, 'ONLINE'
+        elif volt_fresh:
+            dot_cor, dot_txt = WARN, 'NO FORCE'
+        else:
+            dot_cor, dot_txt = TEXT_DIM, 'OFFLINE'
+        self._cell_dot_lbl.config(fg=dot_cor)
+        self._cell_status_lbl.config(text=dot_txt, fg=dot_cor)
         if has_data:
             self._spark_data.append((time.time(), f_net))
         touch_fresh = touch_ts > 0.0 and (time.time() - touch_ts) < 3.0
@@ -5966,9 +6038,21 @@ class PalpationGUI(FtAxesMixin, FtChartsMixin, FtArrowMixin, MatrixMixin, Node):
         if not has_data:
             self.force_value_lbl.config(text='—   N', fg=TEXT_DIM)
             self.force_kgf_lbl.config(text='—   kgf', fg=TEXT_DIM)
-            self.force_status_lbl.config(
-                text='waiting for /load_cell/force_net (start the force receiver)',
-                fg=TEXT_DIM)
+            # Nomeia a peça que falta em vez de mandar "start the force
+            # receiver": com a célula axial o receiver quase sempre JÁ está no
+            # ar, e o que falta é a reta ou o zero.
+            if not volt_fresh:
+                porque = ('waiting for /load_cell/force_net — start the force '
+                          'receiver, or check the cell cable')
+            elif not lc_cal:
+                porque = ('cell alive, no calibration loaded — fit and save '
+                          'one in the Load Cell → Calibration tab')
+            elif not lc_tared:
+                porque = ('cell alive and calibrated, waiting for the tare — '
+                          'unload the tip and press Tare')
+            else:
+                porque = 'waiting for /load_cell/force_net'
+            self.force_status_lbl.config(text=porque, fg=TEXT_DIM)
             self.err_value_lbl.config(text='—  N', fg=TEXT_DIM)
             self.fz_lbl.config(text='—  N')
             self.fkgf_lbl.config(text='—  kgf')
