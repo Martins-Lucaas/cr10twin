@@ -18,7 +18,7 @@ Argumentos (todos opcionais):
                        4 → sensor 4×4 (firmware com TOTAL/Ifinal)
                        5 → sensor 5×5 (sem TOTAL; ativação média por frame)
     force_sensor     load_cell | ft6  (default: load_cell)
-                       load_cell → célula axial de 100 kg no XIAO ESP32S3 +
+                       load_cell → célula axial de 100 kg no XIAO ESP32C6 +
                                    HX711, pela USB (force_receiver)
                        ft6       → célula FA7155 de 6 eixos, pela RS485
                                    (ft_receiver)
@@ -542,7 +542,7 @@ def generate_launch_description():
                         'os dois publicam /load_cell/force_net.'),
         DeclareLaunchArgument(
             'lc_port', default_value='',
-            description='Porta USB do XIAO ESP32S3 (ex.: /dev/ttyACM0). '
+            description='Porta USB do XIAO ESP32C6 (ex.: /dev/ttyACM0). '
                         'Vazio = auto-detect pelo VID da Espressif.'),
         DeclareLaunchArgument(
             'ft_port', default_value='',

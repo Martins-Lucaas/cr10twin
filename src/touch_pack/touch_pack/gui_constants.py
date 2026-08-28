@@ -13,15 +13,28 @@ trajetória do arrasto — que só a GUI conhece.
 """
 from __future__ import annotations
 
-from .constants import FORCE_SETPOINT_MAX_N, MATRIX_SPAN_MAX_MM
+from .constants import (
+    CONTACT_ON_N, FORCE_SETPOINT_MAX_N, MATRIX_SPAN_MAX_MM,
+)
 
 # ── Setpoint de força ─────────────────────────────────────────────────
-# Piso de 0,1 N: é o mesmo piso a que o explorer já satura os setpoints que
-# recebe, então a GUI deixa de esconder metade da faixa útil. Abaixo de
-# ~0,15 N o ruído da célula (σ ≈ 16 mN) e o limiar de contato (0,11 N)
-# passam a pesar dentro da banda de tolerância do HOLD — medir ali exige
-# apertar a tolerância junto. O teto é o do sistema, em constants.py.
-FORCE_SP_MIN, FORCE_SP_MAX, FORCE_SP_DEFAULT = 0.1, FORCE_SETPOINT_MAX_N, 2.0
+# O PISO É O LIMIAR DE CONTATO, e derivá-lo em vez de cravá-lo é o conserto
+# de um defeito que custou um ensaio inteiro.
+#
+# Ele era 0,1 N escrito à mão aqui, e o explorer recusa qualquer setpoint (e
+# qualquer mínimo de onda) abaixo de CONTACT_ON_N. Enquanto os dois números
+# valeram 0,10 por coincidência ninguém percebeu; em 28/08/2026 CONTACT_ON_N
+# subiu para 0,12 e a coincidência acabou. O resultado é que o slider passou
+# a OFERECER 0,1 N como valor mínimo escolhível enquanto o explorer o
+# rejeitava: o run TOUCH/20260828_134305 pediu uma senoide de 0,10–2,00 N,
+# teve o perfil recusado por _force_profile(), e rodou como um HOLD comum —
+# 20 ciclos de onda que simplesmente não aconteceram, sem nada na tela.
+#
+# Abaixo do limiar de contato não há setpoint possível: é uma força que o
+# sistema não distingue de ar livre. Um slider que a oferece está oferecendo
+# uma escolha inválida.
+FORCE_SP_MIN, FORCE_SP_MAX, FORCE_SP_DEFAULT = (
+    CONTACT_ON_N, FORCE_SETPOINT_MAX_N, 2.0)
 
 # ── Configurador visual da grade (MATRIX_MAP) ─────────────────────────
 # Passo entre pontos. O piso é a repetibilidade de posicionamento cartesiano

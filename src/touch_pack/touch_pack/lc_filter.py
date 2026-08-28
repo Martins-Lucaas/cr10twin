@@ -1,8 +1,8 @@
 """Filtro da célula de carga e QoS dos tópicos de sensor.
 
-Morava em `force_receiver_node.py` (célula axial XIAO+HX711, removida em
-20/08/2026). Ficou aqui porque o `ft_receiver` da FA7155 usa o MESMO filtro:
-a cadeia a jusante (`/load_cell/force_net`) tem de ter a mesma dinâmica
+Usado pelos DOIS receivers — `force_receiver` (célula axial XIAO ESP32C6 +
+HX711, em uso na bancada) e `ft_receiver` (FA7155 de 6 eixos) — porque a
+cadeia a jusante (`/load_cell/force_net`) tem de ter a mesma dinâmica
 qualquer que seja a célula, senão os ganhos do explorer mudam de sentido.
 """
 import math
@@ -10,42 +10,69 @@ import math
 from rclpy.qos import (QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy,
                        QoSHistoryPolicy)
 
-from .constants import FT_NOMINAL_RATE_HZ
+from .constants import LC_NOMINAL_RATE_HZ
 
 # Filtro pesado: mediana + One-Euro (Casiez et al. 2012), cutoff ADAPTATIVO:
 # parado cai a ONE_EURO_MINCUTOFF (zero firme); em movimento sobe e a
 # latência despenca. O dt REAL vem do t_us do firmware, então a taxa do
-# HX711 (10 vs 80 Hz) não precisa ser conhecida.
+# HX711 não precisa ser conhecida.
 #
 # beta é expresso em Hz por (N/s), não V/s: o sinal desta célula é minúsculo
 # em volts, então a derivada é convertida para N/s pela sensibilidade da
 # célula (slope da calibração quando existir, nominal antes disso) — senão o
 # termo adaptativo degenera num passa-baixa fixo.
 #
-# ATENÇÃO: a sintonia abaixo foi medida no HX711 a 82 Hz. A FA7155 entrega
-# 1 kHz com ruído diferente — RE-MEDIR antes de confiar nos números. O
-# cutoff é adaptativo e o dt vem do carimbo do sensor, então nada quebra com
-# a taxa nova; o que muda é se 0,3/0,5 continua sendo o ótimo.
+# RE-SINTONIA DE 28/08/2026, medida sobre 63 s do stream REAL a 47,6 Hz com
+# um peso padrão de 0,5 kg (4,903 N) na célula. A sintonia anterior
+# (0,3 / beta 0,5 / dcutoff 5 / teto freq÷3) foi levantada quando o ruído cru
+# era 19,3 mN; o ruído medido AGORA é 114 mN — 5,9× pior — e nesse regime ela
+# falhava de um jeito específico: o termo adaptativo lia o próprio ruído como
+# movimento, o cutoff saturava no teto (15,9 Hz a 47,6 Hz) e o filtro virava
+# quase transparente. Resultado medido: 3σ = 147 mN contra um CONTACT_ON_N de
+# 100 mN, e o sinal cruzava o limiar sozinho em 100 % das janelas de repouso
+# — foi o que abortou os runs com "8 falsos gatilhos".
 #
-# Sintonia de 05/08/2026, medida sobre 60 s do stream REAL a 82 Hz (ruído
-# cru σ=19,3 mN, branco só em parte: a média de 8 amostras rende 1,43× mais
-# que o ideal √n, e há um piso de ~5 mN que nenhum filtro razoável passa —
-# não adianta pedir mais suavização, tem que atacar a fonte).
-# mincutoff 1,2→0,3 Hz e beta 0,25→0,5 Hz/(N/s) melhoram TUDO ao mesmo tempo,
-# porque num transitório quem manda é o beta e não o mincutoff — 1,2 Hz
-# pagava ruído em repouso sem comprar velocidade:
-#                       σ repouso   t90 (degrau 1 N)   assentamento 0,11 N
-#   1,2 / 0,25 (antigo)   6,85 mN         61 ms              115 ms
-#   0,3 / 0,50 (atual)    5,97 mN         49 ms              106 ms
+# As três mudanças atacam isso: beta 0,5→0,1 (o ruído deixa de abrir o
+# cutoff), dcutoff 5→1 Hz (a derivada é estimada numa banda onde há sinal e
+# não ruído) e um TETO ABSOLUTO de 2 Hz no lugar de freq÷3.
+#
+#   config                        3σ       falsos+   t_det 0,5 N
+#   0,3/0,5/dc5/teto freq÷3     147 mN      100 %        21 ms
+#   0,3/0,1/dc1/teto 2 Hz  ←     86 mN        0 %        63 ms
+#   0,25/0,05/dc1/teto 2 Hz      76 mN        0 %        84 ms
+#
+# RE-VALIDADA a 24,5 Hz (guarda de 40 ms) sobre 100 s de stream real: 3σ =
+# 91 mN, 0 % de falsos positivos, 0,5 N detectado em 82 ms. Praticamente
+# igual ao medido a 47,6 Hz — o filtro é limitado por FREQUÊNCIA (teto de
+# 2 Hz, mincutoff 0,3 Hz) e não por número de amostras, então mudar a taxa
+# de entrega quase não mexe no σ. Não precisa re-sintonizar ao mudar a
+# guarda do firmware.
+#
+# ESTA CONCLUSÃO É A QUE MANDA, e ela contraria a conta de livro: para ruído
+# BRANCO, σ cairia com √(taxa), e de 24,5 para 47,6 Hz seriam 1,39× — que não
+# apareceram. Ruído que não melhora com mais amostras é ruído 1/f, e ele
+# atravessa um passa-baixa de 2 Hz qualquer que seja a taxa de entrada.
+# Em 28/08/2026 o firmware passou de 24 para ~82 Hz (sincronia por borda de
+# DOUT, ver o main.cpp). 82 Hz está FORA da faixa em que a conclusão acima foi
+# medida (24,5–47,6 Hz), então ela é a hipótese de trabalho e não um fato
+# medido ali: se o σ a 82 Hz cair perto de 1,7×, o ruído era mais branco do
+# que estas duas capturas sugeriram. Medir com o lc_health_probe antes de
+# mexer em qualquer um dos números acima.
+#
+# ATENÇÃO: medido no HX711. A FA7155 entrega 1 kHz com ruído diferente —
+# RE-MEDIR antes de confiar nestes números para ela.
 MEDIAN_N = 3                  # rejeita glitch isolado de 1 amostra
                               # (5 custa 24 ms de lag e rende só 0,15 mN)
-ONE_EURO_FREQ      = FT_NOMINAL_RATE_HZ   # chute até o 1º dt medido
+ONE_EURO_FREQ      = LC_NOMINAL_RATE_HZ   # chute até o 1º dt medido
 ONE_EURO_MINCUTOFF = 0.3      # Hz — repouso (↓ = zero mais firme, +lag parado)
-ONE_EURO_BETA_N    = 0.5      # Hz por (N/s) — responsividade ao contato
-ONE_EURO_DCUTOFF   = 5.0      # Hz — cutoff do estimador de derivada
-# Cutoff nunca passa de freq/3, senão o passa-baixa de 1ª ordem deixa de
-# filtrar e só propaga ruído de banda alta.
+ONE_EURO_BETA_N    = 0.1      # Hz por (N/s) — responsividade ao contato
+ONE_EURO_DCUTOFF   = 1.0      # Hz — cutoff do estimador de derivada
+# Teto do cutoff. O freq/3 sozinho não protege: a 47,6 Hz ele vale 15,9 Hz, e
+# com o ruído atual o termo adaptativo encostava lá e desligava o filtro. O
+# teto ABSOLUTO de 2 Hz é quem segura — o freq/3 continua como guarda para
+# taxas baixas, onde 2 Hz seria alto demais para um passa-baixa de 1ª ordem.
 ONE_EURO_MAXCUTOFF_FRAC = 1.0 / 3.0
+ONE_EURO_MAXCUTOFF_HZ   = 2.0
 # Escala do termo adaptativo: quantas unidades do sinal de entrada valem 1 N.
 # A FA7155 entrega NEWTONS, então é 1 N/N — o ft_receiver confirma chamando
 # set_sensitivity(1.0) logo após construir o filtro. O default anterior era
@@ -109,8 +136,8 @@ class _LoadCellFilter:
         dx_hat = a_d * dx + (1.0 - a_d) * self._dx_prev
         # |dx_hat| em V/s → N/s antes de entrar no beta.
         cutoff = self._mincutoff + self._beta_n * abs(dx_hat) / self._v_per_n
-        cutoff = min(cutoff, max(freq * ONE_EURO_MAXCUTOFF_FRAC,
-                                 self._mincutoff))
+        cutoff = min(cutoff, ONE_EURO_MAXCUTOFF_HZ,
+                     max(freq * ONE_EURO_MAXCUTOFF_FRAC, self._mincutoff))
         a = self._alpha(cutoff, freq)
         x_hat = a * v_med + (1.0 - a) * self._x_prev
         self._x_prev = x_hat

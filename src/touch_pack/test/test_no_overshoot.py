@@ -345,3 +345,47 @@ def test_teto_absoluto_da_gui_nao_manda_mais_sozinho(m, curva, alvo, tol):
             f'com teto absoluto de {dx*1e6:.0f} µm o pico foi {pico:.3f} N, '
             f'acima do alvo {alvo:.2f} N — é o teto que está segurando, não '
             'a guarda de não-ultrapassagem')
+
+
+# ── Medir força que ainda está se movendo ────────────────────────────
+def test_a_deriva_ve_tendencia_e_ignora_ruido(m):
+    """`_deriva` é o critério de "a força parou": mediana da 2ª metade da
+    janela contra a da 1ª.
+
+    Tendência e não pico-a-pico, porque o ptp cresce com o tamanho da janela
+    mesmo num sinal perfeitamente estacionário — uma janela longa e quieta
+    seria recusada por ser longa. É o mesmo critério do tare do
+    force_receiver (_window_drift) e pelo mesmo motivo.
+    """
+    d = m.TactileExplorer._deriva
+    # Ruído simétrico em torno de um valor fixo: sem tendência.
+    assert d([1.0, 1.02, 0.98, 1.01, 0.99, 1.0]) < 0.02
+    # Rampa: as duas metades discordam, e a deriva é da ordem da rampa.
+    assert d([1.0, 1.1, 1.2, 1.3, 1.4, 1.5]) > 0.2
+    # Degrau no meio: é exatamente o caso que o creep produz.
+    assert d([1.0, 1.0, 1.0, 1.3, 1.3, 1.3]) == pytest.approx(0.3)
+
+
+def test_a_deriva_nao_quebra_com_janela_minuscula(m):
+    """O laço de medida chama isto antes de a janela encher."""
+    d = m.TactileExplorer._deriva
+    assert d([]) == 0.0
+    assert d([1.0]) == 0.0
+
+
+def test_o_limiar_de_assentado_esta_acima_do_ruido_da_celula(m):
+    """Se o limiar ficasse ABAIXO do ruído, a força nunca seria declarada
+    assentada e toda medida perto do alvo gastaria o teto de ticks — a
+    descida ficaria 6x mais lenta sem ganhar exatidão nenhuma."""
+    assert m._QS_SETTLE_DRIFT_N > m._FORCE_NOISE_SIGMA_N
+    # E abaixo da banda do HOLD: um limiar maior que a própria tolerância
+    # declararia assentado um sinal que ainda pode cruzar a banda inteira.
+    assert m._QS_SETTLE_DRIFT_N < m._HOLD_TOL_N
+
+
+def test_a_espera_assentada_so_vale_perto_do_alvo(m):
+    """A medida assentada custa até 1 s por passo. Longe do alvo o passo é
+    grande e o creep é irrelevante ao lado dele, então esperar só faria a
+    descida demorar — o gatilho é o erro cair dentro de algumas bandas."""
+    assert m._QS_SETTLE_NEAR_MULT >= 1.0
+    assert m._QS_SETTLE_MAX_TICKS > m._QS_MEASURE_MAX_TICKS

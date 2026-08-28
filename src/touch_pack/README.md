@@ -96,7 +96,7 @@ Control runs through **direct streaming** at 33 Hz — no action server, no traj
 | `palpation_gui` | Tkinter GUI: parameters, modes, manual control, load-cell calibration, poses/motions, touch-sensor dashboard |
 | `palpation_logger` | Writes one CSV + JSON per run into `sensors/Data/` |
 | `palpation_report` | Generates a per-cycle statistical report from the run CSVs |
-| `force_receiver` | **Default.** Reads the **axial 100 kg cell** on the XIAO ESP32S3 over **USB serial** (sole owner of the port) → `/load_cell/voltage`, `/load_cell/force`, `/load_cell/force_net`, `/load_cell/calibrated`; relays `/load_cell/rezero` as `'Z'` |
+| `force_receiver` | **Default.** Reads the **axial 100 kg cell** on the XIAO ESP32C6 over **USB serial** (sole owner of the port) → `/load_cell/voltage`, `/load_cell/force`, `/load_cell/force_net`, `/load_cell/calibrated`; relays `/load_cell/rezero` as `'Z'` |
 | `ft_receiver` | Reads the **FA7155 6-axis cell** over RS485/USB (sole owner of the port) → `/ft_sensor/wrench` (all six channels) plus the same `/load_cell/*` contract the modulation loop consumes. Alternative to `force_receiver`; **never run both** |
 | `touch_receiver` | Receives UDP from the touch-sensor plotter (port **8081**) → `/touch_sensor/value` |
 | `force_sync` | Pairs force × touch by arrival → `/touch_sync/data` (`SyncedTouch`), one message per load-cell sample |
@@ -683,7 +683,7 @@ away the unfiltered value, which is the whole reason those fields exist.
 
 ---
 
-## Load cell (XIAO ESP32S3 + HX711)
+## Load cell (XIAO ESP32C6 + HX711)
 
 **This is the default cell** — the plain launch already brings up
 `force_receiver`:

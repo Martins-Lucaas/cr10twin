@@ -25,7 +25,11 @@ pytest.importorskip('touch_pack_msgs')
 from touch_pack.constants import (                     # noqa: E402
     G_N_PER_KG, lc_fit_slope, lc_force_n, lc_load_calibration,
 )
-from touch_pack.force_receiver_node import ForceReceiverNode   # noqa: E402
+from touch_pack.constants import LC_NOMINAL_RATE_HZ            # noqa: E402
+from touch_pack.force_receiver_node import (                   # noqa: E402
+    _AUTOZERO_TAU_S, _SEQ_GAP_MAX, _TARE_WIN_S, ForceReceiverNode,
+    autozero_step, tare_window_n,
+)
 
 
 def load_calibration(path):
@@ -345,3 +349,115 @@ def test_a_calibracao_do_repo_tem_impressao_estavel():
         f'a calibração da bancada mudou (impressão {fp}). Se foi de '
         'propósito, atualize este valor E commite o JSON — senão as outras '
         'máquinas continuam medindo com a reta antiga.')
+
+
+# ── A taxa nominal governa duas janelas, e em silêncio ────────────────
+def test_a_taxa_nominal_governa_as_janelas_do_receiver():
+    """LC_NOMINAL_RATE_HZ não é decorativo: a janela do tare e o τ do
+    auto-zero saem DELE. O que o código promete é 2 s de janela e τ de 4 s
+    QUALQUER QUE SEJA A TAXA — e é essa promessa que se verifica aqui, não a
+    fórmula (repetir a fórmula seria tautologia).
+
+    O modo de falha que este teste existe para pegar: o firmware passou a
+    entregar 82 Hz em 28/08/2026 (sincronia por borda de DOUT, ver o main.cpp)
+    e LC_NOMINAL_RATE_HZ subiu junto. Se um dia a taxa mudar e a constante
+    ficar para trás, nada quebra — a janela e o τ só encolhem, e um auto-zero
+    rápido demais passa a comer força de contato REAL sem avisar ninguém.
+    """
+    for taxa in (10.0, 24.0, 82.0, LC_NOMINAL_RATE_HZ):
+        assert tare_window_n(taxa) / taxa == pytest.approx(_TARE_WIN_S, rel=0.1)
+        assert 1.0 / (autozero_step(taxa) * taxa) == pytest.approx(
+            _AUTOZERO_TAU_S)
+
+
+def test_a_janela_do_tare_tem_piso_para_taxas_muito_baixas():
+    """Com o pino RATE do HX711 em GND (10 Hz) a janela de 2 s daria 20
+    amostras; o piso de 8 existe para taxas ainda menores não deixarem o tare
+    decidir com 2 leituras. `_apply_tare` recusa janela com menos de 8."""
+    assert tare_window_n(1.0) == 8
+    assert tare_window_n(0.1) == 8
+
+
+# ── Continuidade do contador do firmware ──────────────────────────────
+def _contador():
+    """Instância mínima para exercitar `_conta_lacuna` sem subir o nó (ele
+    abriria a porta serial). O método só toca estes três atributos."""
+    class _Falso:
+        pass
+    ns = _Falso()
+    ns._seq_prev = None
+    ns._seq_lost = 0
+    ns._seq_resyncs = 0
+    # Os totais nunca zeram — é deles que /load_cell/fw_health se serve, para
+    # um probe que entra no meio da captura poder subtrair as pontas.
+    ns._seq_lost_total = 0
+    ns._seq_resyncs_total = 0
+    return ns
+
+
+def _alimenta(ns, seqs):
+    for s in seqs:
+        ForceReceiverNode._conta_lacuna(ns, s)
+    return ns
+
+
+def test_uma_sequencia_continua_nao_perde_nada():
+    ns = _alimenta(_contador(), [10, 11, 12, 13])
+    assert ns._seq_lost == 0
+    assert ns._seq_resyncs == 0
+
+
+def test_a_primeira_amostra_nunca_conta_como_perda():
+    """A porta abre no meio do stream: o primeiro seq que chega é sempre
+    arbitrário, e compará-lo com nada acusaria perda a cada conexão."""
+    ns = _alimenta(_contador(), [987654])
+    assert ns._seq_lost == 0
+
+
+def test_um_buraco_no_seq_e_contado_como_amostra_perdida():
+    """O que este contador existe para tornar visível: uma amostra que se
+    perde no USB não deixa rastro nenhum na taxa (1 % a menos), e o aviso de
+    taxa só dispara abaixo de LC_MIN_RATE_HZ."""
+    ns = _alimenta(_contador(), [10, 14])
+    assert ns._seq_lost == 3
+    assert ns._seq_resyncs == 0
+
+
+def test_a_placa_reiniciando_nao_e_bilhoes_de_amostras_perdidas():
+    """O contador do firmware recomeça em 0 a cada boot. Sem esta guarda, um
+    replug apareceria no relatório como ~4 bilhões de amostras perdidas — e
+    um número absurdo é indistinguível de um contador quebrado."""
+    ns = _alimenta(_contador(), [50_000, 0, 1, 2])
+    assert ns._seq_lost == 0
+    assert ns._seq_resyncs == 1
+
+
+def test_um_salto_grande_demais_e_ressincronizacao_e_nao_perda():
+    ns = _alimenta(_contador(), [10, 10 + _SEQ_GAP_MAX + 1])
+    assert ns._seq_lost == 0
+    assert ns._seq_resyncs == 1
+    # E o salto NO limite ainda conta como perda: a fronteira é fechada.
+    ns = _alimenta(_contador(), [10, 10 + _SEQ_GAP_MAX])
+    assert ns._seq_lost == _SEQ_GAP_MAX - 1
+
+
+def test_um_seq_repetido_nao_e_perda_negativa():
+    """Linha duplicada (eco de monitor, retransmissão) daria delta 0. Contar
+    isso como perda de −1 corromperia o acumulador."""
+    ns = _alimenta(_contador(), [10, 10])
+    assert ns._seq_lost == 0
+    assert ns._seq_resyncs == 1
+
+
+def test_os_totais_acumulam_enquanto_o_delta_do_relatorio_zera():
+    """Dois pares de contadores, e eles NÃO são redundantes: o log de 10 s
+    quer o delta do período (e o zera), enquanto o /load_cell/fw_health quer o
+    acumulado — um probe que entra no meio de uma sessão já em curso só
+    consegue medir o período dele subtraindo as pontas de um contador que
+    nunca zera."""
+    ns = _alimenta(_contador(), [10, 14, 20])
+    assert ns._seq_lost == ns._seq_lost_total == 3 + 5
+    ns._seq_lost = 0                       # o que o relatório de 10 s faz
+    _alimenta(ns, [22])
+    assert ns._seq_lost == 1
+    assert ns._seq_lost_total == 9

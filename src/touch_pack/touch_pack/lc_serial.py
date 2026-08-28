@@ -16,11 +16,24 @@ e é isso que separa este transporte do `ft_serial.py` da FA7155:
 
 Formato (espelhado no main.cpp):
 
-    F,<seq>,<t_us>,<v_sensor>\\n     amostra
-    #<qualquer coisa>\\n             heartbeat de diagnóstico (0,5 Hz)
+    F,<seq>,<t_us>,<v_sensor>,<counts>\\n   amostra (o 5º campo é opcional)
+    # chave=valor chave=valor\\n           heartbeat de diagnóstico (0,5 Hz)
 
-O `t_us` é o `micros()` do MCU, uint32 COM WRAPAROUND de propósito — quem
+O `t_us` é o instante da BORDA DE DESCIDA do DOUT no relógio do MCU — o fim
+da CONVERSÃO, não o da leitura —, uint32 COM WRAPAROUND de propósito: quem
 calcula o dt subtrai em módulo 2³².
+
+O 5º campo (`counts`, o inteiro cru de 24 bits do HX711) é NOVO e opcional. O
+parser aceita quadros de 4 ou 5 campos porque uma placa com firmware anterior
+continua no cabo até alguém regravá-la, e recusá-la seria transformar uma
+atualização de firmware em pré-requisito para o nó subir. Onde ele existe é a
+medida EXATA: o `v_sensor` é o mesmo número multiplicado por uma constante
+(AVDD/2²⁴) que os dois lados do cabo precisam jurar manter igual.
+
+As linhas `#` não são amostra, mas também não são lixo: o firmware publica
+nelas `zeroed`, `resets`, `conv_us` e a faixa do zero travado. Elas são
+parseadas em `LcLineParser.heartbeat`, e é por esse canal que o nó descobre
+POR QUE não há amostra — `zeroed=0` é bancada vibrando, não cabo solto.
 """
 from __future__ import annotations
 
@@ -45,7 +58,7 @@ _RETRY_S = 2.0
 
 # Teto do buffer antes de descartar por sujeira. A 80 Hz a célula entrega
 # ~2,4 kB/s; 8 kB sem um `\n` significa que o que está na linha não é este
-# protocolo (placa em modo SERIAL_TEST, monitor de outro programa, lixo de
+# protocolo (monitor de outro programa, lixo de
 # boot do ESP).
 _MAX_BUF = 8192
 
@@ -53,7 +66,7 @@ _MAX_BUF = 8192
 def detect_lc_serial_port() -> Optional[str]:
     """Porta do XIAO, achada pelo VID da Espressif.
 
-    Aqui o VID é o do PRÓPRIO MCU (USB CDC nativo do ESP32S3), não o de um
+    Aqui o VID é o do PRÓPRIO MCU (USB CDC nativo do ESP32C6), não o de um
     conversor genérico como no FA7155 — então a detecção é bem mais específica
     e raramente pega o dispositivo errado. Ainda assim: dois ESP32 no mesmo PC
     são dois candidatos, e aí passe a porta pelo parâmetro `lc_serial_port`.
@@ -82,10 +95,20 @@ class LcLineParser:
         self.heartbeats = 0       # linhas '#' (o firmware está vivo)
         self.dropped_bytes = 0
         self.bad_values = 0       # número legível mas não finito
+        # Últimos pares chave=valor vindos de uma linha '#'. Vazio até o
+        # primeiro heartbeat, e nunca é limpo depois: o valor mais recente de
+        # cada chave vale até o firmware mandar outro. Uma placa com firmware
+        # antigo (heartbeat em prosa) simplesmente não preenche nada aqui, e o
+        # nó trata a ausência como "não sei", não como zero.
+        self.heartbeat: dict[str, float] = {}
 
-    def feed(self, chunk: bytes) -> list[tuple[int, int, float]]:
-        """Consome bytes crus e devolve as amostras das linhas COMPLETAS."""
-        out: list[tuple[int, int, float]] = []
+    def feed(self, chunk: bytes) -> list[tuple[int, int, float, int | None]]:
+        """Consome bytes crus e devolve as amostras das linhas COMPLETAS.
+
+        Cada amostra é ``(seq, t_us, v_sensor, counts)``, com `counts` em None
+        quando o firmware do outro lado ainda manda o quadro de 4 campos.
+        """
+        out: list[tuple[int, int, float, int | None]] = []
         buf = self._buf
         buf += chunk
         while True:
@@ -102,11 +125,30 @@ class LcLineParser:
             del buf[:]
         return out
 
-    def _parse(self, line: bytes) -> Optional[tuple[int, int, float]]:
+    def _absorve_heartbeat(self, txt: str) -> None:
+        """Extrai os pares `chave=valor` de uma linha `#`.
+
+        Best-effort de propósito: o firmware também manda linhas `#` em prosa
+        (o zero travado, o aviso de power-cycle), e uma linha sem nenhum par
+        legível não é erro — é só uma linha sem par legível. O que der para ler
+        entra; o resto é ignorado sem contar como link sujo.
+        """
+        for token in txt.lstrip('#').split():
+            chave, sep, valor = token.partition('=')
+            if not sep or not chave:
+                continue
+            try:
+                self.heartbeat[chave] = float(valor)
+            except ValueError:
+                continue
+
+    def _parse(self, line: bytes) -> Optional[tuple[int, int, float,
+                                                    Optional[int]]]:
         txt = line.decode('ascii', errors='replace').strip()
         if not txt or txt.startswith('#'):
             if txt:
                 self.heartbeats += 1
+                self._absorve_heartbeat(txt)
             return None
         parts = txt.split(',')
         if parts[0] != 'F':
@@ -115,13 +157,17 @@ class LcLineParser:
             # relatório de saúde acusa link sujo toda vez que alguém repluga.
             self.dropped_bytes += len(line)
             return None
-        if len(parts) != 4:
+        # 4 campos = firmware anterior ao 5º campo; 5 = o atual, com os counts
+        # crus. Aceitar os dois é o que impede que regravar a placa vire
+        # pré-requisito para o nó subir.
+        if len(parts) not in (4, 5):
             self.bad_lines += 1
             return None
         try:
             seq = int(parts[1]) & 0xFFFFFFFF
             t_us = int(parts[2]) & 0xFFFFFFFF
             v = float(parts[3])
+            counts = int(parts[4]) if len(parts) == 5 else None
         except ValueError:
             self.bad_lines += 1
             return None
@@ -131,7 +177,7 @@ class LcLineParser:
         if not math.isfinite(v):
             self.bad_values += 1
             return None
-        return seq, t_us, v
+        return seq, t_us, v, counts
 
 
 class LoadCellSerialSource:
@@ -141,14 +187,15 @@ class LoadCellSerialSource:
     parser), para que os dois receivers tenham a mesma forma — mais o
     `send_command`, que a FA7155 não tem equivalente pela serial.
 
-    O callback recebe ``(seq, t_us, v_sensor)``: contador e `micros()` do MCU,
-    tensão da ponte em volts no domínio ×PGA.
+    O callback recebe ``(seq, t_us, v_sensor, counts)``: contador e carimbo da
+    borda de DOUT do MCU, tensão da ponte em volts no domínio ×PGA, e o
+    inteiro cru do HX711 (None num firmware anterior ao 5º campo).
     """
 
     def __init__(self, port: Optional[str] = None,
                  baud: int = LC_SERIAL_BAUD,
                  on_sample: Optional[
-                     Callable[[int, int, float], None]] = None):
+                     Callable[[int, int, float, Optional[int]], None]] = None):
         self._port_req = port
         self._baud = int(baud)
         self._on_sample = on_sample
@@ -190,7 +237,14 @@ class LoadCellSerialSource:
             self._thread = None
 
     def send_command(self, data: bytes) -> None:
-        """Manda bytes para o firmware (hoje só `b'Z'`, o re-zero).
+        """Manda bytes para o firmware.
+
+        Dois comandos, ambos de um byte: `b'Z'` refaz o zero de boot, e
+        `b'B'` avisa que há ENSAIO EM CURSO — o firmware inibe o reinício
+        automático enquanto ele estiver válido (3 s), para não tirar a placa do
+        ar no meio de uma palpação. O `'B'` precisa ser reenviado; se o host
+        morrer, o aviso expira e o reinício volta a ser permitido, que é o
+        fail-safe certo (host morto é ensaio nenhum).
 
         A USB é full-duplex e o firmware lê um byte por volta do loop, então
         escrever no meio do stream não colide nem perde amostra.
@@ -205,7 +259,7 @@ class LoadCellSerialSource:
         while self._running:
             port = self._port_req or detect_lc_serial_port()
             if port is None:
-                self.error = ('XIAO ESP32S3 ausente na USB (VIDs aceitos: '
+                self.error = ('XIAO ESP32C6 ausente na USB (VIDs aceitos: '
                               + ', '.join(f'0x{v:04X}' for v in LC_USB_VIDS)
                               + ')')
                 time.sleep(_RETRY_S)
@@ -253,5 +307,5 @@ class LoadCellSerialSource:
             self.last_rx = time.monotonic()
             cb = self._on_sample
             if cb is not None:
-                for seq, t_us, v in samples:
-                    cb(seq, t_us, v)
+                for seq, t_us, v, counts in samples:
+                    cb(seq, t_us, v, counts)

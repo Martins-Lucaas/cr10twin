@@ -53,6 +53,7 @@ setup(
             'force_sync        = touch_pack.force_sync_node:main',
             'mirror_node       = touch_pack.mirror_node:main',
             'latency_probe     = touch_pack.latency_probe:main',
+            'lc_health_probe   = touch_pack.lc_health_probe:main',
         ],
     },
 )

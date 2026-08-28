@@ -39,7 +39,13 @@ FORCE_SETPOINT_MAX_N = 10.0
 # já considerava que tocou e a tela ainda dizia "no contact".
 # A justificativa do VALOR (σ da célula em repouso, carga inercial do traverse)
 # está no bloco de _CONTACT_ON_N em tactile_explorer.py — não duplicar aqui.
-CONTACT_ON_N = 0.10
+#
+# 28/08/2026: 0,10 → 0,12 N. O limiar é o ORÇAMENTO do primeiro impacto, e
+# `crawl_v_ms` divide a velocidade de rastejo por ele — a 0,10 N a descida
+# saía a 12 µm/s e uma palpação de 6,5 mm levava 532 s. Cabe subir porque o
+# filtro re-sintonizado em 28/08 entrega 3σ = 91 mN: 0,12 N continua acima do
+# ruído, com 29 mN de folga, enquanto 0,10 N ficava a 9 mN dele.
+CONTACT_ON_N = 0.12
 # Histerese do INDICADOR — só da tela, o controle não a usa. Acende em
 # CONTACT_ON_N e só apaga abaixo desta fração: com o indicador exatamente igual
 # ao gatilho, o verde pisca em ar livre toda vez que o ruído cruza o limiar.
@@ -73,21 +79,57 @@ def hold_tol_n(target_f: float) -> float:
     poder mostrar (e mandar) o mesmo número em vez de um default próprio."""
     return max(HOLD_TOL_N, HOLD_TOL_PCT * abs(float(target_f)))
 
-# ── Célula axial de 100 kg (XIAO ESP32S3 + HX711) ─────────────────────
+# ── Célula axial de 100 kg (XIAO ESP32C6 + HX711) ─────────────────────
 # A célula da BANCADA. Ponte de extensômetros de 100 kg lida por um HX711 e
-# carimbada por um XIAO ESP32S3, que empurra linhas ASCII pela USB. O driver é
+# carimbada por um XIAO ESP32C6, que empurra linhas ASCII pela USB. O driver é
 # o `force_receiver` (ver force_receiver_node.py) e o formato do quadro está em
 # lc_serial.py. O firmware mora em `sensors/ForceDriver/`.
 #
 # A alternativa é a FA7155 de 6 eixos (bloco seguinte, `force_sensor:=ft6`).
 # Os DOIS publicam `/load_cell/force_net`; só um pode rodar por vez.
 LC_USB_VIDS = (
-    0x303A,   # Espressif — o XIAO ESP32S3 aparece como USB CDC nativo
+    0x303A,   # Espressif — o XIAO ESP32C6 só tem USB Serial/JTAG, sempre este VID
 )
 LC_SERIAL_BAUD = 115200       # Serial.begin() do main.cpp
-# Taxa ditada pelo pino RATE do HX711: GND = 10 Hz, DVDD = 80 Hz. As placas
-# vermelhas de prateleira vêm com RATE em GND, e ~10 Hz é o que se mede.
-LC_NOMINAL_RATE_HZ = 10.0
+# O RATE desta placa está em DVDD, então o HX711 CONVERTE a ~82 Hz (período
+# medido: 12135–12154 µs), e o firmware lê de propósito MAIS DEVAGAR: impõe
+# 40 ms entre leituras (HX_PERIOD_US no main.cpp). A guarda é o que impede o
+# loop de relojoar o chip antes de a conversão terminar, o que o dessincroniza
+# de forma permanente.
+#
+# TENTOU-SE ENTREGAR AS 82 Hz em 28/08/2026, sincronizando pela borda de
+# descida do DOUT em vez do relógio, e a bancada recusou: o MESMO binário caiu
+# de 58,8 Hz para 11,8 Hz ao longo de dez minutos, com os travamentos do HX711
+# subindo de 112 para 160 e a placa entrando em ciclo de reboot. A borda
+# funcionava (dt cravado em 12141 µs, jitter de 7 µs) — o que não sustentava a
+# taxa era o caminho até o dado. Ler mais rápido não é ler melhor.
+#
+# 40 ms é a guarda que sustentou uso prolongado: 6 minutos contínuos a 24,4 Hz
+# com ZERO power-cycles, zero timeouts, zero leituras recusadas e dt de
+# 41000 µs (p99 41000, máx 41087). 20 ms passou em 60 s e dessincronizou
+# depois de alguns minutos — o oscilador RC do HX711 deriva com temperatura, e
+# uma guarda perto do período de conversão perde a margem quando o chip
+# esquenta. O que compra robustez é a MARGEM, não a taxa nominal.
+#
+# Este número é a taxa ENTREGUE, não a do conversor: é ela que o receiver e a
+# GUI usam para julgar perda no caminho. Medido: 24,4 Hz.
+#
+# Este número é a taxa ENTREGUE, não a do conversor: é ela que o receiver e a
+# GUI usam para julgar perda no caminho.
+#
+# ELE NÃO É DECORATIVO — dois parâmetros do force_receiver saem DELE, e
+# mudá-lo sem mudá-los desloca os dois em silêncio:
+#   janela do tare   max(8, rate × _TARE_WIN_S)   → 2 s de janela
+#   passo do auto-zero  1/(_AUTOZERO_TAU_S × rate) → τ de 4 s
+# Deixá-lo em 24 com o firmware a 82 Hz encurtaria a janela do tare para
+# 0,58 s e aceleraria o auto-zero para τ = 1,2 s — e um auto-zero de 1,2 s com
+# banda de 0,30 N começa a comer força de contato REAL. O
+# `test_a_taxa_nominal_governa_as_janelas_do_receiver` trava essa relação.
+#
+# A MEDIR: a taxa efetiva de bancada com o firmware de borda (o
+# `lc_health_probe` reporta). 82 é o nominal do conversor; se a entrega ficar
+# consistentemente abaixo, é este número que muda.
+LC_NOMINAL_RATE_HZ = 24.0
 # Piso abaixo do qual o receiver reclama: nesta faixa não é mais "célula
 # lenta", é linha engasgando ou HX711 sem amostra pronta.
 LC_MIN_RATE_HZ = 5.0
@@ -121,6 +163,12 @@ LC_NOMINAL_V_PER_N = (
 # Fundo de escala do ADC no mesmo domínio: ±0,5·AVDD/gain = ±12,89 mV. Leitura
 # além disto não é força, é entrada saturada ou fiação errada.
 LC_FS_VOLTAGE_V = 0.5 * LC_HX711_AVDD_V / LC_HX711_GAIN
+# O MESMO corte em counts: ±2²⁴/(2·128) = ±65536 exatos. Espelha o
+# HX_FS_COUNTS do main.cpp, e é ELE que o receiver aplica quando o quadro traz
+# o 5º campo. Cortar no inteiro e cortar no volt não são a mesma conta na
+# borda: o que chega do fio já vem com o offset do firmware subtraído, então
+# um |v| comparado contra LC_FS_VOLTAGE_V está deslocado pelo próprio zero.
+LC_FS_COUNTS = 2 ** LC_HX711_BITS // (2 * LC_HX711_GAIN)
 
 # Mínimo de pontos para o wizard aceitar um ajuste. Dois pontos SEMPRE dão
 # reta; com três já existe resíduo, que é o único jeito de a tela avisar que

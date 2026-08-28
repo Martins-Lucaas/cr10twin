@@ -144,7 +144,12 @@ from .plane_probe import (
     slope_along_deg as _slope_along_deg,
     validate_fit as _validate_fit,
 )
+from .lc_filter import (
+    MEDIAN_N as _MEDIAN_N,
+    ONE_EURO_MAXCUTOFF_HZ as _ONE_EURO_MAXCUTOFF_HZ,
+)
 from .constants import (
+    LC_NOMINAL_RATE_HZ as _LC_NOMINAL_RATE_HZ,
     ARM_JOINTS as _ARM_JOINTS,
     HAND_JOINTS as _HAND_PRIMARY,
     HAND_POINTING_RAD as _HAND_POINTING_RAD,
@@ -417,13 +422,25 @@ _DESCEND_TOUCH_V_MS    = 0.0002   # 0,2 mm/s: TETO do rastejo final. Deixou de
 # Pico do toque em streaming = v · T_halt · K (curso comprometido × rigidez).
 # O ORÇAMENTO desse pico é o limiar de contato — o primeiro impacto detecta,
 # não mede (ver crawl_v_ms).
-# T_halt é a latência da cadeia explorer→JTC→sim→mirror→ServoJ→braço e NÃO foi
-# medida; usa-se o 0,3 s conservador que já dimensiona a frenagem. Medi-la com
-# latency_probe.py é o jeito mais barato de acelerar o rastejo — v é linear em
-# 1/T_halt, e com o orçamento agora fixo em 0,1 N é o ÚNICO jeito. `_stream_q`
-# publica UM waypoint por tick, então não há fila a encurtar: o que resta em
-# T_halt é a cadeia física.
-_STREAM_HALT_LAT_S = _ZONE_REACTION_S
+# T_halt é a latência da cadeia explorer→JTC→sim→mirror→ServoJ→braço.
+#
+# 28/08/2026: desacoplado de _ZONE_REACTION_S e fixado em 85 ms. Os dois
+# valores mediam coisas diferentes e estavam colados por conveniência:
+# _ZONE_REACTION_S dimensiona a RAMPA DE FRENAGEM (física do braço, continua
+# 0,3 s) e T_halt é o TRANSPORTE do comando de halt. Herdar 0,3 s aqui punha
+# a descida a 12 µm/s — uma palpação de 6,5 mm em 532 s, medida em
+# sensors/Data/MANUAL/20260828_120028.
+#
+# ATENÇÃO — os 85 ms são a latência de transporte medida no executor da onda,
+# NÃO nesta cadeia. É a melhor referência disponível, mas continua sendo uma
+# transposição, não uma medição direta: `latency_probe.py` é o instrumento que
+# fecha isso. O erro é conservador nos dois sentidos? NÃO: se a cadeia real
+# for mais lenta que 85 ms, o primeiro toque bate com força PROPORCIONALMENTE
+# maior que o orçamento (impact = v · T_halt · K). Medir antes de subir mais.
+#
+# A 12 µm/s a medição era impossível: o curso de frenagem ficava abaixo do
+# quantum de 10 µm da FK. A 50 µm/s ele passa a ser observável.
+_STREAM_HALT_LAT_S = 0.085
 # Zona de desaceleração antes do contato aprendido.
 _DESCEND_DECEL_ZONE_M = 0.003     # 3 mm
 # Piso do rastejo: abaixo disto um tick de 30 ms move menos que 0,3 µm e a
@@ -434,7 +451,51 @@ _DESCEND_CRAWL_V_MIN_MS = 1.0e-5  # 10 µm/s
 # mede em MOVIMENTO com atraso do filtro, e contra contato rígido isso vira
 # quique (passo comandado com leitura defasada alivia/aprofunda demais).
 _QS_SETTLE_TICKS   = 5       # ticks congelado antes de medir (150 ms > lag)
-_QS_MEDIAN_N       = 3       # amostras da mediana settled
+_QS_MEDIAN_N       = 3       # amostras DISTINTAS da mediana settled
+# Teto de ticks do _qs_measure_fz quando as _QS_MEDIAN_N leituras distintas
+# não couberam nos _QS_SETTLE_TICKS.
+#
+# POR QUE ELE EXISTE. A mediana é de amostras DA CÉLULA, e o laço de medida
+# conta em ticks de CONTROLE (33 Hz). Com a célula entregando 24 Hz, os 5
+# ticks (150 ms) viam ~3,6 amostras novas: as outras 1,4 leituras de `reads`
+# eram o MESMO valor lido de novo, porque _fz_corrected() devolve o último
+# force_net recebido sem olhar se ele mudou. Nas últimas 3 posições havia
+# tipicamente uma repetição, e a "mediana de 3" decidia com 2 amostras — no
+# ponto de medida de toda a regulação quase-estática. O _contact_confirm já
+# comparava `seq` para não cair nisso; aqui não se comparava.
+#
+# A 82 Hz o problema não aparece (150 ms = ~12 amostras), e é por isso que o
+# teto quase nunca é alcançado. Ele é a rede para a taxa cair — placa com
+# firmware antigo, pino RATE em GND, link engasgado.
+_QS_MEASURE_MAX_TICKS = _QS_SETTLE_TICKS + 5
+# ── MEDIR FORÇA QUE AINDA ESTÁ SE MOVENDO (a causa do overshoot) ──────
+# O move-then-measure supõe que a força ASSENTA dentro do settle. Contra um
+# contato viscoelástico ela não assenta: continua evoluindo por segundos.
+#
+# Medido no run TOUCH/20260828_134305 (alvo 1,0 N, banda 0,092 N): entre
+# t=120,03 e t=120,76 o braço estava RECUANDO (z 50,77 → 50,79 mm) e a força
+# SUBIU de 1,233 para 1,326 N. Pico de 1,326 N — 0,326 N acima do alvo, 3,5×
+# a meia-banda.
+#
+# Por que isso vira overshoot, e por que o estimador de rigidez leva a culpa
+# sem ser o culpado: o regulador lê a força 150 ms depois do passo, quando só
+# parte do ΔF chegou. A secante que ele deduz (ΔF_parcial/Δx) SUBESTIMA a
+# rigidez real; `k_push` sai baixo; e como todo teto de passo é ΔF/k_push, o
+# passo seguinte sai grande na mesma proporção. O erro se realimenta: quanto
+# mais o material dá creep, mais o regulador acredita que ele é mole, e mais
+# fundo ele empurra.
+#
+# A correção é medir depois de a força PARAR, não depois de um relógio. E é
+# cara — por isso só vale PERTO DO ALVO, onde ultrapassar custa força na
+# amostra. Longe dele o passo é grande, o creep é irrelevante ao lado dele, e
+# esperar só faria a descida demorar.
+_QS_SETTLE_NEAR_MULT = 3.0   # dentro de N bandas do alvo, mede assentado
+_QS_SETTLE_MAX_TICKS = 33    # teto da espera (~1 s a 33 Hz)
+# Deriva que conta como "assentado": a mediana da 2ª metade da janela contra a
+# da 1ª. Deriva e não pico-a-pico, porque o ptp cresce com o tamanho da janela
+# mesmo num sinal estacionário — é o mesmo critério que o tare do
+# force_receiver usa (_window_drift), e pelo mesmo motivo.
+_QS_SETTLE_DRIFT_N = 2.0 * _FORCE_NOISE_SIGMA_N
 _QS_RELAX          = 0.7     # sub-relaxação do passo (robustez a erro de K_est)
 _QS_DF_MAX_N       = 0.2     # N: ΔF projetado máximo por micro-passo (contato rígido, sem silicone)
 # Teto ABSOLUTO do micro-passo. Não é o limitador principal — quem limita por
@@ -454,7 +515,13 @@ _QS_DF_MAX_N       = 0.2     # N: ΔF projetado máximo por micro-passo (contato
 # seguinte.
 _QS_DX_MAX_M       = 1.0e-4  # 100 µm: teto absoluto do micro-passo
 _QS_FREE_STEP_M    = 5.0e-6  # 5 µm/ciclo: re-aproximação se perder contato
-_QS_RELIEF_FLOOR_N = 0.10    # N: alívio nunca projeta abaixo disso, para não perder o contato
+# Amarrado a _CONTACT_ON_N por INVARIANTE, não por coincidência: o alívio não
+# pode projetar abaixo da força que o sistema ainda chama de contato, senão
+# recua até largar a peça e o passo livre seguinte volta batendo (QUIQUE). Era
+# 0,10 cravado à mão enquanto _CONTACT_ON_N também valia 0,10; quando o limiar
+# subiu para 0,12 em 28/08/2026 os dois se descolaram em silêncio. Referenciar
+# a constante fecha isso por construção.
+_QS_RELIEF_FLOOR_N = _CONTACT_ON_N   # N: alívio nunca projeta abaixo disso
 _QS_DF_DEAD_N      = 0.05    # N: ΔF mínimo p/ considerar que o passo "pegou" (abaixo, boost 1,5×)
 _QS_BOOST_MAX      = 6.0     # teto do multiplicador anti-stiction
 _QS_DF_HARD_N      = 0.3     # N: teto DURO de ΔF por passo (boost incluso); acima, estaciona e dá timeout
@@ -665,6 +732,130 @@ _FMOD_FREQ_TOL_FRAC = 0.20
 # ciclo à mesma fração, sem mudar a onda depois que a rampa termina.
 _FMOD_AMP_RAMP_START  = 0.25   # fração da amplitude no ciclo 0
 _FMOD_AMP_RAMP_CYCLES = 3.0    # ciclos até 100 %
+
+# ── CONTROLE REPETITIVO DA ONDA (ILC) ────────────────────────────────
+# O QUE A ADAPTAÇÃO POR CICLO NÃO CONSEGUE FAZER, e por que precisa de um
+# vetor no lugar de um escalar.
+#
+# `fx_gain` é UM número, ajustado pelo módulo do lock-in na fundamental. Ele
+# corrige AMPLITUDE e mais nada — a fase é descartada pelo `hypot` de
+# propósito. Medido no run TOUCH/20260828_154934 (SINE 0,20–2,00 N @ 1 Hz,
+# 20 ciclos), é exatamente o que se vê: a amplitude sai certa e todo o resto
+# sai errado.
+#
+#   grandeza                pedido      medido        veredito
+#   frequência              1,00 Hz     1,00 Hz       ok
+#   amplitude fundamental   0,890 N     0,933 N       ok (ganho 1,047)
+#   centro                  1,099 N     1,454 N       +0,355 N, e DERIVANDO
+#   pico                    2,00 N      2,852 N       +43 %, 19 % do tempo
+#                                                     acima do teto pedido
+#   forma                   senoide     THD 32 %      resíduo 29 % da amp
+#   fase                    0°          −55,5°        154 ms
+#
+# Um escalar não distingue essas três falhas: qualquer valor de `fx_gain` que
+# acerte a amplitude deixa centro, fase e forma como estão.
+#
+# A CORREÇÃO É INDEXADA POR FASE. Cada bin do ciclo guarda sua própria
+# correção de penetração, aprendida do erro medido NAQUELA fase no ciclo
+# anterior. As três falhas caem no mesmo mecanismo sem precisar ser
+# identificadas: erro de centro é a componente DC do vetor, erro de fase é a
+# componente em quadratura, distorção são os harmônicos dele.
+#
+# POR QUE ISSO FUNCIONA COM O ATRASO que impede a malha fechada. O ILC não
+# realimenta DENTRO do ciclo — ele corrige o ciclo SEGUINTE. O atraso de
+# 154 ms deixa de ser um problema de estabilidade e vira o que é: um
+# deslocamento conhecido entre o comando e a medida, que se desconta ao
+# indexar (ver fmod_measure_lag_s).
+_FMOD_ILC_BINS  = 24      # bins de fase por ciclo (~1 por ponto a 1 Hz/24 Hz)
+_FMOD_ILC_ALPHA = 0.4     # ganho de aprendizado por ciclo
+# Teto da correção, em frações da amplitude em posição. O ILC corrige erro de
+# EXECUÇÃO; se ele pedir mais que isto o problema é outro (contato perdido,
+# K absurda, tare errado) e insistir só afunda a ponteira.
+_FMOD_ILC_MAX_FRAC = 0.6
+# Ciclos rodados antes de o ILC começar a aprender. A rampa de amplitude
+# ocupa os primeiros _FMOD_AMP_RAMP_CYCLES e durante ela a onda pedida NÃO é
+# a onda final — aprender ali é aprender a corrigir a rampa.
+_FMOD_ILC_WARMUP_CYCLES = _FMOD_AMP_RAMP_CYCLES + 1.0
+
+
+def fmod_measure_lag_s(freq_hz: float,
+                       rate_hz: float = _LC_NOMINAL_RATE_HZ) -> float:
+    """Atraso do PIPELINE DE MEDIDA (s) na frequência da onda.
+
+    O ILC compara a força medida com o setpoint que a causou, e os dois estão
+    separados por este atraso. Ele é conhecido de antemão, não precisa ser
+    estimado: sai do filtro que o `lc_filter` aplica e da taxa da célula.
+
+    Medido no run TOUCH/20260828_154934 a 1 Hz, o atraso TOTAL foi 55,5°
+    (154 ms). Esta função responde 41,3° dele — One-Euro (26,6°) mais mediana
+    (14,8°). Os ~14° restantes são transporte do executor e o próprio
+    material, que o ILC aprende como qualquer outro erro; o que ele NÃO pode
+    aprender sozinho é um atraso grande o bastante para o erro entrar no bin
+    errado, e é isso que descontar a parte conhecida evita.
+
+    Função pura — testável sem ROS e sem bancada.
+    """
+    f = max(float(freq_hz), 1e-6)
+    # Passa-baixa de 1ª ordem no cutoff em que o One-Euro está TRAVADO em
+    # repouso e perto dele (o teto absoluto de 2 Hz manda; ver lc_filter).
+    tau = 1.0 / (2.0 * math.pi * _ONE_EURO_MAXCUTOFF_HZ)
+    lag_filtro = math.atan(2.0 * math.pi * f * tau) / (2.0 * math.pi * f)
+    # Mediana de N: o valor devolvido é o do meio da janela.
+    lag_mediana = 0.5 * (_MEDIAN_N - 1) / max(float(rate_hz), 1.0)
+    return lag_filtro + lag_mediana
+
+
+class _WaveILC:
+    """Correção de penetração aprendida POR FASE, um ciclo por vez.
+
+    `observe()` acumula, dentro do ciclo, o erro de força de cada bin;
+    `commit()` fecha o ciclo e move a correção; `value()` devolve a correção
+    daquela fase para o feedforward somar.
+    """
+
+    def __init__(self, n_bins: int = _FMOD_ILC_BINS,
+                 alpha: float = _FMOD_ILC_ALPHA, clip_m: float = 1e-3):
+        self.n = int(max(4, n_bins))
+        self.alpha = float(alpha)
+        self.clip_m = float(abs(clip_m))
+        self.corr = np.zeros(self.n)
+        self.cycles = 0
+        self._acc = np.zeros(self.n)
+        self._cnt = np.zeros(self.n)
+
+    def observe(self, phase01: float, err_n: float, k_nm: float) -> None:
+        """Erro de força `err_n` (alvo − medido) atribuído à fase que o
+        causou. O chamador já descontou o atraso da medida."""
+        i = int((phase01 % 1.0) * self.n) % self.n
+        self._acc[i] += float(err_n) / max(float(k_nm), 1.0)
+        self._cnt[i] += 1.0
+
+    def commit(self) -> float:
+        """Fecha o ciclo. Devolve a norma da correção aplicada (m)."""
+        vis = self._cnt > 0
+        upd = np.zeros(self.n)
+        upd[vis] = self._acc[vis] / self._cnt[vis]
+        # FILTRO Q (suavização circular). Sem ele o ILC realimenta o ruído da
+        # célula nos harmônicos altos do vetor, onde a planta não responde, e
+        # a correção diverge em poucos ciclos — é o modo de falha clássico do
+        # controle repetitivo. Com σ de 112 mN no sinal cru desta célula, não
+        # é uma precaução teórica.
+        upd = (np.roll(upd, 1) + 2.0 * upd + np.roll(upd, -1)) / 4.0
+        self.corr = np.clip(self.corr + self.alpha * upd,
+                            -self.clip_m, self.clip_m)
+        self._acc[:] = 0.0
+        self._cnt[:] = 0.0
+        self.cycles += 1
+        return float(np.sqrt(np.mean(self.corr ** 2)))
+
+    def value(self, phase01: float) -> float:
+        """Correção (m) nesta fase, interpolada entre bins — o vetor é
+        circular, então o último bin faz fronteira com o primeiro."""
+        x = (phase01 % 1.0) * self.n
+        i0 = int(x) % self.n
+        i1 = (i0 + 1) % self.n
+        f = x - math.floor(x)
+        return float((1.0 - f) * self.corr[i0] + f * self.corr[i1])
 # Tolerância do limitador de excursão pela força MEDIDA. A leitura chega
 # atrasada em relação ao comando (transporte + filtro): medido nos runs de
 # 17/08/2026, a força entregue atrasa ~85 ms constantes — 14° a 0,5 Hz, 29°
@@ -1408,7 +1599,7 @@ class TactileExplorer(Node):
         """Atualiza o setpoint de força ON-THE-FLY (modo MANUAL/dinâmico)."""
         with self._params_lock:
             self._target_force_n = float(np.clip(
-                float(msg.data), 0.1, _FORCE_SETPOINT_MAX_N))
+                float(msg.data), _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
         self.get_logger().info(
             f'[MANUAL] novo setpoint de força = {self._target_force_n:.2f} N')
 
@@ -1794,7 +1985,7 @@ class TactileExplorer(Node):
             self._target_depth_mm = float(msg.depth_mm)
             # Setpoint de força — saturado no máximo selecionável.
             self._target_force_n = float(np.clip(
-                float(msg.force_n), 0.1, _FORCE_SETPOINT_MAX_N))
+                float(msg.force_n), _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
             self._target_slide_mm = float(msg.slide_dist_mm)
             self._slide_speed_mms = float(msg.speed_mms)
             # Campo novo (06/08/2026): mensagens antigas não o têm, e ausente
@@ -1811,7 +2002,7 @@ class TactileExplorer(Node):
             self._step_start_n = float(np.clip(
                 float(getattr(msg, 'step_start_n', 0.0) or
                       _STEP_START_DEFAULT_N),
-                0.1, _FORCE_SETPOINT_MAX_N))
+                _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
             self._step_size_n = max(0.0, float(
                 getattr(msg, 'step_size_n', 0.0) or 0.0))
             self._step_max_n = float(np.clip(
@@ -2188,21 +2379,63 @@ class TactileExplorer(Node):
                 quiet = 0
             f_prev = f_now
 
-    def _qs_measure_fz(self, q_hold: np.ndarray | None = None) -> float:
+    @staticmethod
+    def _deriva(win: list[float]) -> float:
+        """|mediana da 2ª metade − mediana da 1ª|. Mede TENDÊNCIA, que é o que
+        distingue creep de ruído: o ruído não tem sinal preferido entre as
+        metades, o creep tem."""
+        n = len(win)
+        half = n // 2
+        if half < 1:
+            return 0.0
+        return abs(float(np.median(win[half:])) - float(np.median(win[:half])))
+
+    def _qs_measure_fz(self, q_hold: np.ndarray | None = None,
+                       settle: bool = False) -> float:
         """Mede a força em repouso (modo quase-estático): congela o braço por
         _QS_SETTLE_TICKS (o pipeline One-Euro + JTC esvazia) e devolve a
-        mediana das últimas _QS_MEDIAN_N leituras.
+        mediana das últimas _QS_MEDIAN_N leituras DISTINTAS.
+
+        Distintas por `seq`, e não por posição na lista: o tick de controle é
+        mais rápido que a amostra da célula, então ler duas vezes na mesma
+        janela devolve duas cópias do mesmo número. Uma mediana de 3 com uma
+        repetição dentro é uma mediana de 2 — perde a rejeição de outlier
+        exatamente onde ela importa. Ver _QS_MEASURE_MAX_TICKS.
         """
         q = self._q_now() if q_hold is None else q_hold
         zero_vel = np.zeros(6)
         reads: list[float] = []
-        for _ in range(_QS_SETTLE_TICKS):
+        with self._lc_lock:
+            seen = self._lc_force_seq
+        max_ticks = (_QS_SETTLE_MAX_TICKS if settle else _QS_MEASURE_MAX_TICKS)
+        for tick in range(max_ticks):
             self._stream_q(q, _CTRL_LOOK + _CTRL_DT, velocities=zero_vel)
             time.sleep(_CTRL_DT)
-            fz = self._fz_corrected()
+            with self._lc_lock:
+                fz, seq = self._lc_force_net, self._lc_force_seq
             if self._force_over_limit(fz):
                 return fz
-            reads.append(fz)
+            if seq != seen:
+                seen = seq
+                reads.append(fz)
+            # Os _QS_SETTLE_TICKS são o assentamento e não são negociáveis: é
+            # o tempo que o One-Euro + a fila do JTC levam para esvaziar. Só
+            # depois deles é que ter as amostras basta para sair.
+            if tick + 1 < _QS_SETTLE_TICKS or len(reads) < _QS_MEDIAN_N:
+                continue
+            if not settle:
+                break
+            # Modo assentado: só sai quando a força PARA de derivar. Precisa de
+            # amostras suficientes para as duas metades da janela dizerem algo.
+            if len(reads) >= 2 * _QS_MEDIAN_N and \
+                    self._deriva(reads) < _QS_SETTLE_DRIFT_N:
+                break
+        if not reads:
+            # Célula muda. Devolver a última leitura conhecida mantém o
+            # comportamento anterior; quem chamou aborta por _force_stale_abort,
+            # que é o guarda certo para isso e já roda a cada volta do
+            # _qs_regulate.
+            return self._fz_corrected()
         return float(np.median(reads[-_QS_MEDIAN_N:]))
 
     def _qs_step(self, approach_dir: np.ndarray, step_m: float,
@@ -2256,11 +2489,12 @@ class TactileExplorer(Node):
 
         O terceiro é o que era implícito. Com `fz` ABAIXO do piso a expressão
         do segundo fica POSITIVA e o `max()` transformava um passo de alívio
-        num de empurrar. Hoje isso não acontece, mas só por coincidência de
-        três limites independentes (_QS_RELIEF_FLOOR_N == _CONTACT_ON_N ==
-        0,10 N e o setpoint saturado em ≥ 0,1 N em três lugares). Baixar
-        _CONTACT_ON_N — já foi 0,06 — reabriria o buraco, e o sintoma seria um
-        avanço no exato tick em que o laço decidiu recuar.
+        num de empurrar. Isso dependia de três limites que valiam 0,10 N por
+        coincidência; em 28/08/2026, quando _CONTACT_ON_N subiu para 0,12 N,
+        os três passaram a REFERENCIAR a constante (_QS_RELIEF_FLOOR_N e as
+        saturações de setpoint), então a igualdade agora vale por construção.
+        O `min(..., 0.0)` continua sendo a garantia dura de que alívio nunca
+        vira avanço.
 
         Função pura, e é por isso que ela é uma função: a invariante "alívio
         nunca empurra" precisa ser verificável sem rodar a FSM.
@@ -2297,6 +2531,7 @@ class TactileExplorer(Node):
         deepened_m = 0.0
         fz_prev: float | None = None
         step_prev = 0.0
+        err_prev: float | None = None   # erro da volta anterior (ver `perto`)
         boost = 1.0   # multiplicador anti-stiction (cresce se ΔF não responde)
         # Último passo de EMPURRAR executado — referência da rampa. None = a
         # próxima aproximação recomeça em _QS_DX_FLOOR_M.
@@ -2328,7 +2563,14 @@ class TactileExplorer(Node):
                 tol_n = (self._hold_tol_n if self._hold_tol_n is not None
                          else max(_HOLD_TOL_N, _HOLD_TOL_PCT * target_f))
 
-            fz = self._qs_measure_fz(q_cmd)
+            # PERTO DO ALVO a medida espera a força assentar; longe dele
+            # mede rápido. `err_prev` é o erro da volta ANTERIOR — decidir com
+            # o erro desta volta exigiria a medida que ainda não foi feita, e
+            # uma volta de atraso não muda nada: o que importa é estar no
+            # regime certo quando o passo encolher.
+            perto = (err_prev is not None
+                     and abs(err_prev) <= _QS_SETTLE_NEAR_MULT * tol_n)
+            fz = self._qs_measure_fz(q_cmd, settle=perto)
             if self._force_over_limit(fz):
                 self._relieve_contact(approach_dir)
                 self.get_logger().error(
@@ -2409,6 +2651,7 @@ class TactileExplorer(Node):
                          if abs(fz - fz_prev) < _QS_DF_DEAD_N else 1.0)
 
             err = target_f - fz
+            err_prev = err
             now = time.time()
             in_band = abs(err) <= tol_n
             if in_band:
@@ -3927,10 +4170,21 @@ class TactileExplorer(Node):
             self.get_logger().warn(
                 '[FMOD] perfil sem amplitude/frequência/ciclos — modulação OFF.')
             return None
-        if prof.f_max_n > _FORCE_SETPOINT_MAX_N or prof.f_min_n < 0.1:
+        if prof.f_max_n > _FORCE_SETPOINT_MAX_N or prof.f_min_n < _CONTACT_ON_N:
+            # O piso é _CONTACT_ON_N e NÃO um literal. Ele era '0,1' escrito à
+            # mão nesta mensagem, e em 28/08/2026 _CONTACT_ON_N subiu para
+            # 0,12: o run TOUCH/20260828_134305 pediu 0,10–2,00 N, foi
+            # recusado, caiu no HOLD comum — e o log dizia "faixa 0.10–2.00 N
+            # fora do permitido (0,1–10 N)", uma frase que recusa exatamente o
+            # valor que ela mesma anuncia como permitido. Quem leu não tinha
+            # como descobrir a causa, e o ensaio saiu sem onda nenhuma.
             self.get_logger().error(
                 f'[FMOD] faixa {prof.f_min_n:.2f}–{prof.f_max_n:.2f} N fora do '
-                f'permitido (0,1–{_FORCE_SETPOINT_MAX_N:.0f} N) — modulação OFF.')
+                f'permitido ({_CONTACT_ON_N:.2f}–{_FORCE_SETPOINT_MAX_N:.0f} N) '
+                f'— modulação OFF, o ensaio vai rodar como HOLD comum. '
+                f'O piso é o limiar de contato (CONTACT_ON_N = '
+                f'{_CONTACT_ON_N:.2f} N): abaixo dele a onda pediria uma força '
+                f'que o sistema não distingue de ar livre.')
             return None
         if prof.amp_n > _FMOD_MAX_AMP_N:
             self.get_logger().error(

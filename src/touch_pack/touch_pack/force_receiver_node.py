@@ -25,6 +25,18 @@ O que muda em relação ao `ft_receiver` (FA7155 de 6 eixos):
   o zero do FIRMWARE: vira o byte `'Z'` no fio e refaz o offset de boot dentro
   do MCU, que é o que tira a deriva térmica da ponte da conta.
 
+* É o único processo que ENXERGA o heartbeat da placa (ele é dono da tty), e
+  por isso republica em `/load_cell/fw_health` — chave=valor com `zeroed`,
+  `resets`, `conv_us` e a faixa do zero travado, mais os contadores do host.
+  Sem isso, o diagnóstico do firmware ficaria preso no log deste processo e
+  qualquer ferramenta de medida teria de disputar a porta para vê-lo (é o que
+  o `lc_health_probe` consome).
+* Manda `'B'` de volta enquanto a fase de palpação estiver ativa. O firmware
+  se reinicia sozinho se ficar >5 s sem amostra, o que é o certo numa bancada
+  parada e o ERRADO no meio de um ensaio; o `'B'` inibe isso, vale 3 s no MCU
+  e é reenviado a cada segundo. Se este nó morrer, o aviso expira e a placa
+  volta a poder se recuperar sozinha.
+
 Tudo a jusante de `/load_cell/force_net` é indiferente a qual célula está no
 cabo: mesma convenção (compressão POSITIVA, tare aplicado), mesmo filtro
 mediana + One-Euro do `lc_filter`, mesmos 15 N de aborto.
@@ -47,6 +59,7 @@ from .constants import (
     LC_CALIB_SHARED_SOURCES,
     lc_calib_fingerprint,
     lc_load_calibration,
+    LC_FS_COUNTS as _FS_COUNTS,
     LC_FS_VOLTAGE_V,
     LC_MIN_RATE_HZ,
     LC_NOMINAL_RATE_HZ,
@@ -65,6 +78,34 @@ _TARE_WIN_S = 2.0
 # real (o mais lento do explorer é o HOLD, na casa do segundo) e bem mais
 # rápido que a deriva térmica da ponte, que é de minutos.
 _AUTOZERO_TAU_S = 4.0
+# Salto de `seq` acima do qual não se conta perda: o contador do firmware
+# reinicia em 0 a cada boot da placa, e um replug apareceria como bilhões de
+# amostras perdidas. Acima disto é RESSINCRONIZAÇÃO, não perda.
+_SEQ_GAP_MAX = 1000
+# Cadência do aviso de ENSAIO EM CURSO ('B') mandado ao firmware. O TTL lá é
+# de 3 s (RUN_FLAG_TTL_MS), então 1 s deixa margem para duas perdas seguidas
+# antes de a placa voltar a se achar livre para reiniciar.
+_RUN_KEEPALIVE_S = 1.0
+
+
+def tare_window_n(rate_hz: float) -> int:
+    """Quantas amostras cabem na janela de _TARE_WIN_S segundos."""
+    return max(8, int(max(rate_hz, 1.0) * _TARE_WIN_S))
+
+
+def autozero_step(rate_hz: float) -> float:
+    """Passo do auto-zero para uma constante de tempo de _AUTOZERO_TAU_S."""
+    return 1.0 / (_AUTOZERO_TAU_S * max(rate_hz, 1.0))
+
+
+# As duas acima são funções de módulo, e não expressões dentro do __init__,
+# porque a INVARIANTE que elas carregam precisa ser verificável sem subir ROS:
+# o que o código promete é uma janela de 2 s e um τ de 4 s QUALQUER QUE SEJA A
+# TAXA, e quem quebra essa promessa é uma LC_NOMINAL_RATE_HZ que não
+# corresponde ao que o firmware entrega. Com o firmware a 82 Hz e a constante
+# em 24, a janela do tare vira 0,58 s e o τ vira 1,2 s — e um auto-zero de
+# 1,2 s com banda de 0,30 N começa a comer força de contato REAL, em silêncio.
+# Ver test_a_taxa_nominal_governa_as_janelas_do_receiver.
 
 
 class ForceReceiverNode(Node):
@@ -88,6 +129,14 @@ class ForceReceiverNode(Node):
         self._tared_pub = self.create_publisher(Bool, '/load_cell/tared', 10)
         self._tare_result_pub = self.create_publisher(
             String, '/load_cell/tare_result', 10)
+        # Saúde do FIRMWARE, em chave=valor. O nó é dono exclusivo da tty, e
+        # portanto o único que enxerga o heartbeat da placa — sem republicá-lo
+        # ele fica preso no log deste processo, e qualquer ferramenta de
+        # medida (lc_health_probe) teria de disputar a porta para vê-lo. Mesmo
+        # formato solto do /load_cell/tare_result, pelo mesmo motivo: não vale
+        # uma mensagem nova para um punhado de números de diagnóstico.
+        self._fw_health_pub = self.create_publisher(
+            String, '/load_cell/fw_health', 10)
 
         # ── Parâmetros ────────────────────────────────────────────────
         port = str(self.declare_parameter('lc_serial_port', '').value).strip()
@@ -104,7 +153,7 @@ class ForceReceiverNode(Node):
         # Janelas em TEMPO, não em amostras: o mesmo código serve para o
         # HX711 a 10 Hz (RATE em GND) e a 80 Hz (RATE em DVDD), e trocar o
         # jumper não muda o significado de "janela de 2 s".
-        self._capture_win_n = max(8, int(self._rate_nom * _TARE_WIN_S))
+        self._capture_win_n = tare_window_n(self._rate_nom)
         # 4× a janela do tare: sobra para o auto-tare olhar uma janela cheia
         # sem competir com o tare pedido pelo botão.
         self._buf: collections.deque = collections.deque(
@@ -112,7 +161,7 @@ class ForceReceiverNode(Node):
         # Passo do auto-zero para tau ≈ _AUTOZERO_TAU_S, qualquer que seja a
         # taxa. Cravar um passo por amostra faria o auto-zero ser 8× mais
         # rápido só por alguém ter mudado o pino RATE.
-        self._autozero_rate = 1.0 / (_AUTOZERO_TAU_S * self._rate_nom)
+        self._autozero_rate = autozero_step(self._rate_nom)
 
         # ── Estado ────────────────────────────────────────────────────
         self._filter = _LoadCellFilter()
@@ -136,6 +185,23 @@ class ForceReceiverNode(Node):
         self._last_counts = (0, 0, 0)   # bad_lines, bad_values, dropped
         self._last_heartbeats = 0
         self._saturated = 0
+        # Continuidade do `seq` do firmware. O campo já viajava até a coluna
+        # `lc_seq` do CSV e ninguém o CONFERIA: uma amostra perdida no USB só
+        # aparecia como uma taxa 1 % menor, e o aviso de taxa só dispara abaixo
+        # de LC_MIN_RATE_HZ. Contar a lacuna é o que separa "a taxa está
+        # estranha" de "perdi 37 amostras nos últimos 10 s".
+        self._seq_prev: int | None = None
+        self._seq_lost = 0
+        self._seq_resyncs = 0
+        # Os três acima são zerados a cada relatório de 10 s (é o delta que
+        # interessa no log). Os totais abaixo nunca zeram, porque é deles que
+        # o /load_cell/fw_health precisa: um probe que entra no meio da
+        # captura tem de conseguir subtrair as pontas.
+        self._seq_lost_total = 0
+        self._seq_resyncs_total = 0
+        self._saturated_total = 0
+        self._last_fw_resets = 0
+        self._zero_span_warned = False
 
         self._phase: str = ''
         self.create_subscription(PalpationStatus, '/palpation/status',
@@ -161,6 +227,7 @@ class ForceReceiverNode(Node):
             f'calibração: {self._calib_desc()}')
 
         self._last_rx_warn = False
+        self.create_timer(_RUN_KEEPALIVE_S, self._keepalive_ensaio)
         self.create_timer(1.0, self._publish_status)
         self.create_timer(5.0, self._check_link)
         self.create_timer(5.0, self._reload_calibration)
@@ -328,6 +395,8 @@ class ForceReceiverNode(Node):
         with self._lock:
             self._tare_done = False
             self._tare = 0.0
+        # O zero NOVO merece ser julgado como o de boot foi.
+        self._zero_span_warned = False
         self.get_logger().info(
             "Re-zero enviado ao firmware ('Z') — mantenha a célula "
             'descarregada. O tare do host será refeito quando as amostras '
@@ -357,14 +426,76 @@ class ForceReceiverNode(Node):
         return True
 
     # ── Caminho da amostra ────────────────────────────────────────────
-    def _on_sample(self, seq: int, t_us: int, v_raw: float) -> None:
+    def _conta_lacuna(self, seq: int) -> None:
+        """Continuidade do contador do firmware.
+
+        Um salto de 1 é o caso normal. Um salto maior é amostra que se perdeu
+        no caminho — buffer do CDC estourado, hub engasgado, `_MAX_BUF` do
+        parser descartando sujeira. Um salto ENORME (ou para trás) é o
+        contador tendo recomeçado do zero, o que só acontece quando a placa
+        reinicia: contar isso como perda encheria o relatório de bilhões.
+        """
+        prev = self._seq_prev
+        self._seq_prev = seq
+        if prev is None:
+            return
+        d = (seq - prev) & 0xFFFFFFFF
+        if d == 1:
+            return
+        if 1 < d <= _SEQ_GAP_MAX:
+            self._seq_lost += d - 1
+            self._seq_lost_total += d - 1
+        else:
+            # d == 0 (repetido) ou salto fora de escala: a placa reiniciou ou
+            # o link ressincronizou. Não é perda mensurável.
+            self._seq_resyncs += 1
+            self._seq_resyncs_total += 1
+
+    def _keepalive_ensaio(self) -> None:
+        """Avisa o firmware quando há ENSAIO EM CURSO (byte `'B'`).
+
+        O firmware se reinicia sozinho se ficar >5 s sem amostra — o que é o
+        certo numa bancada parada e o ERRADO no meio de uma palpação, onde
+        tirar a placa do ar por ~3 s joga fora o ensaio sem salvar nada (o
+        explorer já aborta por leitura velha e volta à HOME em segurança).
+        Este aviso inibe o reinício, vale 3 s no MCU e precisa ser reenviado.
+
+        Falha em silêncio de propósito: se a porta não está aberta não há
+        ensaio possível, e um warning por segundo com a placa fora do cabo só
+        afogaria o log de quem está tentando descobrir por que ela não está lá.
+        """
+        if self._phase in self._AUTOZERO_PHASES:
+            return
+        try:
+            self._serial.send_command(b'B')
+        except Exception:
+            pass
+
+    def _on_sample(self, seq: int, t_us: int, v_raw: float,
+                   counts: int | None = None) -> None:
         """Uma linha do firmware. Chamado NA THREAD 'lc-serial' — os
-        publishers do rclpy são seguros aqui, e o filtro/_last_t_us só esta
-        thread toca."""
+        publishers do rclpy são seguros aqui, e o filtro/_last_t_us/_seq_prev
+        só esta thread toca.
+
+        `counts` é o inteiro cru do HX711 (5º campo do quadro) ou None quando
+        a placa ainda roda um firmware anterior a ele.
+        """
+        self._conta_lacuna(seq)
+
         # Além do fundo de escala do ADC não há força possível: é entrada
         # saturada, ponte mal ligada ou HX711 sem célula. Fora antes do filtro.
-        if abs(v_raw) > LC_FS_VOLTAGE_V:
+        # Com os counts na mão o corte é feito no INTEIRO, exatamente o mesmo
+        # ±HX_FS_COUNTS que o firmware aplica: comparar floats contra um
+        # LC_FS_VOLTAGE_V reconstruído deixava os dois lados discordando na
+        # borda, porque o que chega já vem com o offset do firmware subtraído.
+        if counts is not None:
+            if abs(counts) > _FS_COUNTS:
+                self._saturated += 1
+                self._saturated_total += 1
+                return
+        elif abs(v_raw) > LC_FS_VOLTAGE_V:
             self._saturated += 1
+            self._saturated_total += 1
             return
 
         # dt real pelo carimbo do FIRMWARE (wrap de uint32 tratado). Fora de
@@ -452,6 +583,20 @@ class ForceReceiverNode(Node):
         t = Bool(); t.data = bool(tared)
         self._tared_pub.publish(t)
 
+        p = self._serial.parser
+        campos = dict(p.heartbeat)
+        # Contadores do HOST ao lado dos do firmware: os dois juntos é que
+        # dizem onde a amostra se perdeu — `resets` é o HX711 travando, e
+        # `seq_lost` é o que sumiu depois de já ter sido transmitido.
+        campos.update(seq_lost=self._seq_lost_total,
+                      seq_resyncs=self._seq_resyncs_total,
+                      saturated=self._saturated_total,
+                      bad_lines=p.bad_lines, bad_values=p.bad_values,
+                      heartbeats=p.heartbeats)
+        h = String()
+        h.data = ' '.join(f'{k}={v:g}' for k, v in sorted(campos.items()))
+        self._fw_health_pub.publish(h)
+
     def _check_link(self) -> None:
         # Ao contrário do ft_receiver, a vivacidade do link NÃO vira tópico:
         # aqui `/load_cell/calibrated` responde "existe reta carregada", que é
@@ -492,11 +637,70 @@ class ForceReceiverNode(Node):
         # não está respondendo é a ponte. Sem esta linha o contador existia e
         # não dizia nada a ninguém.
         if d_hb and not rx:
+            # O heartbeat DIZ o motivo, e até 28/08/2026 o host o descartava:
+            # `zeroed=0` com leitura acontecendo é o firmware esperando um
+            # repouso que a bancada não dá, e mandar conferir DT/SCK nesse caso
+            # é despachar quem lê o log para o lugar errado.
+            hb = dict(p.heartbeat)
+            if hb.get('zeroed') == 0.0 and hb.get('conv_us', 0.0) > 0.0:
+                self.get_logger().warn(
+                    f'{d_hb} heartbeats e NENHUMA amostra, mas o HX711 está '
+                    f'convertendo (conv_us={hb["conv_us"]:.0f}): o firmware '
+                    'ainda não travou o ZERO DE BOOT. Ele exige a célula em '
+                    'repouso e recomeça a coleta a cada oscilação — pare a '
+                    'bancada e descarregue a ponteira. Nada é transmitido '
+                    'antes de o zero fechar.')
+            else:
+                self.get_logger().warn(
+                    f'{d_hb} heartbeats do XIAO nos últimos 10 s e NENHUMA '
+                    'amostra: o firmware está vivo na USB, quem não responde é '
+                    'o HX711. Confira DT/SCK em D1/D3 e a ponte de 4 fios — o '
+                    'zero de boot não fecha sem amostra, e sem ele nada é '
+                    'transmitido.')
+        # Saúde vinda do PRÓPRIO firmware, que só existe desde que o heartbeat
+        # passou a sair em chave=valor. `resets` são power-cycles do HX711:
+        # alguns por hora é a vida normal do chip, alguns por MINUTO é sintoma
+        # de sincronia perdida e o número que a validação de bancada persegue.
+        resets = int(p.heartbeat.get('resets', 0))
+        d_resets, self._last_fw_resets = resets - self._last_fw_resets, resets
+        if d_resets > 0:
             self.get_logger().warn(
-                f'{d_hb} heartbeats do XIAO nos últimos 10 s e NENHUMA '
-                'amostra: o firmware está vivo na USB, quem não responde é o '
-                'HX711. Confira DT/SCK em D1/D3 e a ponte de 4 fios — o zero '
-                'de boot não fecha sem amostra, e sem ele nada é transmitido.')
+                f'{d_resets} power-cycle(s) do HX711 nos últimos 10 s '
+                f'(total {resets} desde o boot da placa). Um de vez em quando '
+                'é o chip travando e se recuperando; vários por minuto é '
+                'sincronia perdida — rode o lc_health_probe.')
+        span_mv = p.heartbeat.get('zero_mv')
+        if span_mv is not None and span_mv > 0.0 and not self._zero_span_warned:
+            self._zero_span_warned = True
+            with self._lock:
+                slope = self._slope
+            if slope:
+                # A faixa do zero travado em NEWTONS é o que diz se ele vale:
+                # o firmware afrouxa a tolerância até 2 mV para nunca ficar
+                # mudo, e 2 mV são 2,3 N de dispersão.
+                span_n = (span_mv * 1e-3) / abs(slope)
+                if span_n > 4.0 * self._TARE_STABLE_N:
+                    self.get_logger().warn(
+                        f'O zero de boot do firmware travou com {span_mv:.3f} '
+                        f'mV de dispersão (≈{span_n:.2f} N). Ele afrouxa a '
+                        'tolerância para não ficar mudo, então isto não '
+                        'impede o stream — mas é um zero ruim. Mande '
+                        '/load_cell/rezero com a bancada parada e a ponteira '
+                        'descarregada.')
+        if self._seq_lost or self._seq_resyncs:
+            perdidas, resyncs = self._seq_lost, self._seq_resyncs
+            self._seq_lost = self._seq_resyncs = 0
+            if perdidas:
+                self.get_logger().warn(
+                    f'{perdidas} amostra(s) PERDIDAS no caminho nos últimos '
+                    '10 s (lacuna no seq do firmware). O dado que chegou é '
+                    'bom; o que falta some sem deixar rastro na taxa. Costuma '
+                    'ser hub USB ou CPU do host saturada.')
+            if resyncs:
+                self.get_logger().info(
+                    f'{resyncs} ressincronização(ões) do contador do firmware '
+                    'nos últimos 10 s — é o que a placa reiniciando parece '
+                    'daqui.')
         if rx and rate < LC_MIN_RATE_HZ and not self._rate_warned:
             self._rate_warned = True
             self.get_logger().warn(
@@ -511,7 +715,7 @@ class ForceReceiverNode(Node):
             self.get_logger().warn(
                 f'Linha USB suja nos últimos 10 s: {detalhe}. Costuma ser '
                 'outro programa com a mesma tty aberta (monitor do '
-                'PlatformIO) ou a placa gravada em modo SERIAL_TEST.')
+                'PlatformIO) ou outro firmware gravado na placa.')
         if self._saturated:
             self.get_logger().warn(
                 f'{self._saturated} amostras descartadas por saturação do '

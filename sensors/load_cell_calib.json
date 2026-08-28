@@ -6,40 +6,42 @@
   "voltage_offset": 0.0,
   "load_direction": "compression",
   "n_points": 7,
+  "fit": "slope only, V0 held fixed at the measured zero",
+  "max_residual_n": 0.25154069604598206,
   "points": [
     {
       "mass_kg": 0.05,
-      "force_n": 0.4903,
+      "force_n": 0.4903325,
       "v_sensor": 0.00023705349656555688
     },
     {
       "mass_kg": 0.1,
-      "force_n": 0.9807,
+      "force_n": 0.980665,
       "v_sensor": 0.0008614570594941959
     },
     {
       "mass_kg": 0.275,
-      "force_n": 2.6968,
+      "force_n": 2.69682875,
       "v_sensor": 0.0023403130882584
     },
     {
       "mass_kg": 0.5,
-      "force_n": 4.9033,
+      "force_n": 4.903325,
       "v_sensor": 0.0045128259779688455
     },
     {
       "mass_kg": 0.787,
-      "force_n": 7.7178,
+      "force_n": 7.71783355,
       "v_sensor": 0.006627121159145909
     },
     {
       "mass_kg": 1.062,
-      "force_n": 10.4147,
+      "force_n": 10.4146623,
       "v_sensor": 0.008978622499853373
     },
     {
       "mass_kg": 1.525,
-      "force_n": 14.9551,
+      "force_n": 14.955141249999999,
       "v_sensor": 0.013119183872875414
     }
   ]
