@@ -128,7 +128,8 @@ from std_msgs.msg import String, Float32, Bool, Empty
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
-from touch_pack_msgs.msg import PalpationStart, PalpationStatus, MatrixPoint
+from touch_pack_msgs.msg import (PalpationStart, PalpationStatus, MatrixPoint,
+                                 LoadCellSample)
 
 from .kinematics import (
     forward_kinematics, inverse_kinematics, jacobian,
@@ -805,6 +806,38 @@ def fmod_measure_lag_s(freq_hz: float,
     return lag_filtro + lag_mediana
 
 
+def fmod_measure_gain(freq_hz: float) -> float:
+    """Fração da amplitude que SOBREVIVE ao pipeline de medida em `freq_hz`.
+
+    Companheira de fmod_measure_lag_s: aquela dá a fase, esta dá o módulo. O
+    One-Euro está travado em ONE_EURO_MAXCUTOFF_HZ (2 Hz) em repouso e perto
+    dele, e um passa-baixa de 1ª ordem nesse cutoff vale 1/√(1+(f/fc)²):
+
+        0,5 Hz → 97 %      2 Hz → 71 %      6,67 Hz → 29 %
+        1,0 Hz → 89 %      4 Hz → 45 %     10,0 Hz → 20 %
+
+    POR QUE ISTO EXISTE. Qualquer laço que se adapte pela amplitude MEDIDA
+    (o `fx_gain` por lock-in, e o ILC) fecha contra este ganho sem saber. A
+    10 Hz ele lê 20 % da onda, conclui que a onda está curta e manda cinco
+    vezes mais curso: simulado, o ILC sobre-excita para 149 % da amplitude
+    pedida e o pico vai a 2,62 N numa onda pedida até 2,00 N. O erro não é
+    de sintonia, é de premissa — a medida não existe naquela frequência.
+
+    Função pura — testável sem ROS e sem bancada.
+    """
+    f = max(float(freq_hz), 0.0)
+    return 1.0 / math.hypot(1.0, f / _ONE_EURO_MAXCUTOFF_HZ)
+
+
+# Ganho mínimo do pipeline de medida para uma correção por ciclo (ILC, e a
+# adaptação de amplitude) poder fechar contra ele. 0,70 é o ganho a 2 Hz, que
+# é onde o cutoff travado do One-Euro deixa de ser transparente: acima disso a
+# medida perde mais de 30 % e o laço passa a corrigir um erro que é do FILTRO,
+# não da onda. Enquanto a onda ler o Float32 filtrado, este é o teto real de
+# frequência para QUALQUER coisa adaptativa.
+_FMOD_ILC_MIN_MEAS_GAIN = 0.70
+
+
 class _WaveILC:
     """Correção de penetração aprendida POR FASE, um ciclo por vez.
 
@@ -829,6 +862,17 @@ class _WaveILC:
         i = int((phase01 % 1.0) * self.n) % self.n
         self._acc[i] += float(err_n) / max(float(k_nm), 1.0)
         self._cnt[i] += 1.0
+
+    def discard(self) -> None:
+        """Joga fora o ciclo observado SEM mover a correção.
+
+        Para o ciclo em que o limitador de excursão cortou: ali o comando não
+        foi o que o laço pediu, então o erro medido é em parte obra do corte.
+        Aprender com ele ensina o vetor a empurrar mais contra o limitador,
+        que corta mais — o windup clássico do par integrador+saturação.
+        """
+        self._acc[:] = 0.0
+        self._cnt[:] = 0.0
 
     def commit(self) -> float:
         """Fecha o ciclo. Devolve a norma da correção aplicada (m)."""
@@ -1522,6 +1566,24 @@ class TactileExplorer(Node):
         # Contador de amostras distintas — o debounce de contato precisa contar
         # LEITURAS, não iterações do loop (33 Hz de loop vs 10 Hz do HX711).
         self._lc_force_seq: int = 0
+        # ── sinal CRU da célula, para a onda ──────────────────────────
+        # O Float32 acima é filtrado (mediana + One-Euro travado em 2 Hz) e
+        # serve para tudo que é quase-estático, onde o filtro está certo. A
+        # ONDA não pode usá-lo: acima de 2 Hz ele come a amplitude que a
+        # correção por ciclo está justamente tentando medir (ver
+        # fmod_measure_gain). /load_cell/sample_net carrega `voltage_raw`,
+        # que é a mesma grandeza SEM filtro, e `t_us`, o relógio do firmware.
+        self._lc_raw_net: float | None = None
+        self._lc_raw_ts: float = 0.0
+        self._lc_raw_seq: int = 0
+        # N por unidade de `voltage_raw`. 1,0 na FA7155 (já entrega newtons);
+        # no HX711 é o N/V da calibração da ponte. Ver _cb_lc_sample_net.
+        self._lc_raw_scale: float = float(
+            self.declare_parameter('lc_raw_scale_n_per_unit', 1.0).value or 1.0)
+        # Acumuladores da regressão que CONFERE a escala acima.
+        self._lc_scale_sxy = 0.0
+        self._lc_scale_sxx = 0.0
+        self._lc_scale_n = 0
         self._q_lock = threading.Lock()
         self._current_q = _POINTING_SEED_Q.copy()
         self._stop_requested = threading.Event()
@@ -1545,6 +1607,9 @@ class TactileExplorer(Node):
                                   self._cb_set_force, 10, callback_group=cb)
         self.create_subscription(Float32, '/load_cell/force_net',
                                   self._cb_lc_force_net, _QOS_SENSOR, callback_group=cb)
+        self.create_subscription(LoadCellSample, '/load_cell/sample_net',
+                                  self._cb_lc_sample_net, _QOS_SENSOR,
+                                  callback_group=cb)
         self.create_subscription(JointState, '/joint_states',
                                   self._cb_joints, 50, callback_group=cb)
 
@@ -1587,6 +1652,61 @@ class TactileExplorer(Node):
             self._lc_force_net = val
             self._lc_force_ts = time.monotonic()
             self._lc_force_seq += 1
+
+    def _cb_lc_sample_net(self, msg: LoadCellSample) -> None:
+        """Recebe /load_cell/sample_net e extrai a força CRUA, tare-compensada.
+
+        A mensagem traz três grandezas do MESMO instante:
+
+            voltage_raw   sem filtro, SEM tare
+            voltage       filtrada,   SEM tare
+            force_net_n   filtrada,   COM tare  (N)
+
+        O tare não vem no fio, mas sai da diferença: `voltage - force_net_n` é
+        o tare expresso nas unidades do sensor. Somar a esse zero a distância
+        entre cru e filtrado devolve o cru tarado:
+
+            raw_net = force_net_n + (voltage_raw - voltage) * escala
+
+        A ESCALA existe porque os dois receivers discordam da unidade. A
+        FA7155 entrega NEWTONS em voltage_raw (`ft_receiver` comenta "N, não
+        V" nos dois campos), então a escala é 1,0. O HX711 entrega VOLTS da
+        ponte, e ali a escala é o N/V da calibração. Errar isso não degrada:
+        inverte o sinal da correção. Por isso a escala é parâmetro explícito e
+        o log de cada onda imprime a estimada por regressão ao lado dela.
+        """
+        if not msg.calibrated:
+            return
+        raw = float(msg.voltage_raw)
+        filt = float(msg.voltage)
+        net = float(msg.force_net_n)
+        if not (math.isfinite(raw) and math.isfinite(filt)
+                and math.isfinite(net)):
+            return
+        val = net + (raw - filt) * self._lc_raw_scale
+        if abs(val) > self._LC_MAX_PLAUSIBLE_N:
+            return
+        with self._lc_lock:
+            self._lc_raw_net = val
+            self._lc_raw_ts = time.monotonic()
+            self._lc_raw_seq += 1
+            # Pares (filtrado_sensor, filtrado_N) do MESMO filtro: a razão
+            # entre as duas excursões é a escala N/unidade, e o filtro se
+            # cancela por estar nos dois lados. É a conferência da escala
+            # acima, acumulada aqui e resolvida no fim da onda.
+            self._lc_scale_sxy += filt * net
+            self._lc_scale_sxx += filt * filt
+            self._lc_scale_n += 1
+
+    def _fz_raw(self) -> float | None:
+        """Força CRUA tare-compensada (N), ou None se ninguém publica
+        /load_cell/sample_net. É o sinal que a onda usa para se corrigir; a
+        segurança e as fases quase-estáticas seguem no filtrado."""
+        with self._lc_lock:
+            if (self._lc_raw_net is None
+                    or time.monotonic() - self._lc_raw_ts > _FORCE_STALE_S):
+                return None
+            return self._lc_raw_net
 
     def _cb_joints(self, msg: JointState):
         idx = {n: i for i, n in enumerate(msg.name)}
@@ -2441,7 +2561,8 @@ class TactileExplorer(Node):
     def _qs_step(self, approach_dir: np.ndarray, step_m: float,
                  v_lim: float, I6: np.ndarray,
                  q_from: np.ndarray | None = None,
-                 dt: float | None = None) -> np.ndarray | None:
+                 dt: float | None = None,
+                 deadline: float | None = None) -> np.ndarray | None:
         """Executa UM micro-passo ao longo do approach em 1 tick, partindo da
         posição COMANDADA `q_from` (ou da medida, se None). Devolve o novo q
         comandado — o chamador congela NELE até o próximo passo.
@@ -2449,11 +2570,30 @@ class TactileExplorer(Node):
         `dt` é o período do tick. Default `_CTRL_DT` (33 Hz), que é a cadência
         da regulação quase-estática; a onda trigonométrica passa o seu próprio,
         derivado da frequência pedida — a 33 Hz nem 5 Hz tem pontos suficientes
-        por período."""
+        por período.
+
+        `deadline` (time.monotonic absoluto) troca o sleep RELATIVO por espera
+        até um instante fixo. A diferença só importa na onda: dormir `dt`
+        DEPOIS do Jacobiano, da IK e do publish faz o período real ser
+        dt + trabalho, sempre. A 10 Hz o `dt` já está no piso de 20 ms do
+        ServoJ e não há folga nenhuma, então esse excedente derruba a onda
+        abaixo dos 5 pontos por período E faz a grade de fase escorregar
+        debaixo do ILC, que indexa a correção por fase. Com o deadline o erro
+        não acumula: cada tick corrige o atraso do anterior.
+        """
         dt = _CTRL_DT if dt is None else dt
+
+        def _wait() -> None:
+            if deadline is None:
+                time.sleep(dt)
+                return
+            rem = deadline - time.monotonic()
+            if rem > 0.0:
+                time.sleep(rem)
+
         q = self._q_now() if q_from is None else q_from
         if step_m == 0.0:
-            time.sleep(dt)
+            _wait()
             return q
         tw = np.zeros(6)
         tw[:3] = approach_dir * step_m
@@ -2465,7 +2605,7 @@ class TactileExplorer(Node):
         q_new = np.clip(q + dq, JOINT_MIN, JOINT_MAX)
         vel = np.clip((q_new - q) / dt, -v_lim, v_lim)
         self._stream_q(q_new, dt, velocities=vel)
-        time.sleep(dt)
+        _wait()
         return q_new
 
     @staticmethod
@@ -4445,7 +4585,24 @@ class TactileExplorer(Node):
         # pelo p-p é perseguir o alvo errado; a amplitude que caracteriza uma
         # senoide é a da fundamental.
         cyc_fi = cyc_fq = 0.0     # lock-in da FORÇA (in-phase, quadratura)
-        cyc_xi = cyc_xq = 0.0     # lock-in da PENETRAÇÃO
+        cyc_xi = cyc_xq = 0.0     # lock-in da PENETRAÇÃO ENTREGUE (FK)
+        # Lock-in da penetração COMANDADA. Parece redundante com o de cima e
+        # não é: os dois medem coisas diferentes e servem a consumidores
+        # diferentes.
+        #
+        #   entregue → adaptação de K.   K = ΔF/Δx REAL, e usar o comando ali
+        #                                daria a rigidez de um braço ideal.
+        #   comandada → atraso do ILC.   O ILC corrige o COMANDO, então a
+        #                                fase que ele precisa é a de
+        #                                comando→força. A fase contra a
+        #                                posição entregue mede só
+        #                                posição→força, que é o pedaço do
+        #                                material e deixa de fora o servo.
+        #
+        # Trocar um pelo outro não degrada de leve: simulado a 10 Hz, usar a
+        # entregue dá 168 % de fundamental e 34 % de THD (diverge), contra
+        # 99 % e 2,6 % com a comandada.
+        cyc_ci = cyc_cq = 0.0
         cyc_n = 0
         # Lock-in do ensaio INTEIRO, harmônicos 1..3 — dá a amplitude
         # entregue e a distorção no log de fim ("a senoide saiu senoide?").
@@ -4458,6 +4615,25 @@ class TactileExplorer(Node):
         k_adapts = 0
         band_clips = 0     # passos cortados por já estar fora da faixa
         vel_clips = 0      # passos cortados pelo teto de velocidade
+        # ── ETAPA 5: limites por ESCALA, não por corte ───────────────
+        # O corte de excursão é um guarda, mas ele deforma: zerar o passo no
+        # pico abre um entalhe, e o entalhe é o que derruba a fundamental sem
+        # derrubar o pico-a-pico (assinatura dos runs de 17/08/2026).
+        #
+        # Pior, ele interage mal com o ILC. Um ciclo cortado é um ciclo em
+        # que o comando NÃO foi o que o laço quis: o erro medido ali é em
+        # parte obra do próprio corte. Aprender com ele ensina o ILC a
+        # empurrar mais contra o limitador, que corta mais — windup.
+        #
+        # Duas respostas, nesta ordem:
+        #   1. ciclo que teve corte não é aprendido (o vetor não se move);
+        #   2. corte que se repete vira REDUÇÃO DE AMPLITUDE do ciclo
+        #      seguinte, proporcional ao estouro medido. A forma é
+        #      preservada — encolhe inteira, em vez de ser achatada na ponta.
+        band_clips_cycle = 0     # cortes DENTRO do ciclo corrente
+        limit_scale = 1.0        # fator de amplitude imposto pelos limites
+        limit_backoffs = 0
+        cyc_fz_min = cyc_fz_max = None   # extremos medidos no ciclo corrente
 
         # Contagem de cruzamentos da onda ENTREGUE, para medir a frequência
         # que o braço de fato percorreu. O laço de controle não serve de
@@ -4470,6 +4646,82 @@ class TactileExplorer(Node):
         # Banda morta do detector: abaixo dela o "cruzamento" seria ruído da
         # FK, não a onda.
         cross_band_m = max(0.25 * amp_m, _FMOD_QUIET_FLOOR_M)
+
+        # ── CONTROLE REPETITIVO (ILC) ────────────────────────────────
+        # A correção indexada por FASE que `fx_gain` não consegue fazer: ele é
+        # UM escalar ajustado pelo módulo do lock-in, então corrige amplitude e
+        # nada mais (ver o bloco _FMOD_ILC_*). Centro, fase e forma ficam onde
+        # estavam, e foi exatamente isso que o run TOUCH/20260828_154934
+        # mediu — amplitude certa com THD de 32 % e centro derivando.
+        #
+        # O teto da correção acompanha a amplitude em posição: corrigir mais
+        # que _FMOD_ILC_MAX_FRAC dela não é erro de execução, é outro problema
+        # (contato perdido, K absurda, tare errado), e insistir afunda a
+        # ponteira.
+        ilc = _WaveILC(clip_m=_FMOD_ILC_MAX_FRAC * amp_m)
+        with self._lc_lock:
+            self._lc_scale_sxy = self._lc_scale_sxx = 0.0
+            self._lc_scale_n = 0
+        # Atraso do pipeline de medida na frequência da onda. É o que separa o
+        # setpoint da leitura que ele causou; sem descontá-lo o erro entra no
+        # bin errado e o ILC aprende uma correção girada em fase.
+        ilc_lag_s = fmod_measure_lag_s(prof.freq_hz)
+        ilc_learning = False   # vira True depois do warmup (ver abaixo)
+        ilc_rms_m = 0.0
+        # ── o ILC pode CONFIAR na medida nesta frequência? ───────────
+        # Ele fecha contra a força lida, e a força lida passa pelo One-Euro
+        # travado em 2 Hz. Onde esse filtro come a onda, o ILC não corrige a
+        # onda: ele "corrige" o filtro, pedindo curso a mais sem limite útil.
+        # Simulado a 10 Hz lendo o filtrado, ele leva a amplitude a 149 % e o
+        # pico a 2,62 N numa onda pedida até 2,00 N — pior que não ter ILC.
+        # Enquanto a onda ler o Float32 filtrado, este portão é o que separa
+        # "correção" de "sobre-excitação".
+        # O sinal CRU, quando existe, não tem o One-Euro no caminho: o ganho
+        # da medida é 1 em qualquer frequência e o portão abre inteiro. É a
+        # diferença entre corrigir a onda até 2 Hz e até o teto do ServoJ.
+        ilc_raw = self._fz_raw() is not None
+        meas_gain = 1.0 if ilc_raw else fmod_measure_gain(prof.freq_hz)
+        # ATENÇÃO ao que o sinal cru resolve e ao que NÃO resolve. Ele tira o
+        # One-Euro do caminho, então o atraso do FILTRO deixa de existir. Não
+        # tira o transporte: executor, ServoJ e o próprio material continuam
+        # atrasando a força em relação ao comando, e a 10 Hz basta 5 ms disso
+        # para valer 18°.
+        #
+        # E o atraso é o parâmetro CRÍTICO desta malha, não um detalhe de
+        # sintonia. Simulado a 10 Hz com o resto perfeito:
+        #
+        #     erro de fase    fundamental entregue     THD
+        #         0°               100 %              2 %
+        #        50°               144 %             32 %
+        #       194°               169 %             35 %   (diverge)
+        #
+        # Um ILC indexado por fase que recebe a fase errada não corrige menos:
+        # ele realimenta positivamente. Por isso o atraso é MEDIDO no warmup
+        # (ver o bloco do lock-in) e não estimado por fórmula. Até a primeira
+        # medida sair, o valor analítico serve de semente.
+        if ilc_raw:
+            ilc_lag_s = 0.0
+        ilc_lag_measured = False
+        ilc_allowed = meas_gain >= _FMOD_ILC_MIN_MEAS_GAIN
+        if ilc_raw:
+            self.get_logger().info(
+                f'[FMOD] medida CRUA disponível (/load_cell/sample_net): o '
+                f'ILC fecha contra o sinal sem o One-Euro, então o ganho da '
+                f'medida é 1,00 em vez de {fmod_measure_gain(prof.freq_hz):.2f} '
+                f'a {prof.freq_hz:.2f} Hz. Escala em uso '
+                f'{self._lc_raw_scale:.3f} N por unidade de voltage_raw '
+                f'(1,0 = FA7155, que já entrega newtons).')
+        elif not ilc_allowed:
+            self.get_logger().warn(
+                f'[FMOD] ILC DESLIGADO: a {prof.freq_hz:.2f} Hz o pipeline de '
+                f'medida entrega {100*meas_gain:.0f} % da amplitude '
+                f'(One-Euro travado em {_ONE_EURO_MAXCUTOFF_HZ:.0f} Hz), '
+                f'abaixo dos {100*_FMOD_ILC_MIN_MEAS_GAIN:.0f} % que uma '
+                f'correção por ciclo exige. Aprender contra essa leitura faz '
+                f'a onda ser SOBRE-EXCITADA, não corrigida. A onda roda em '
+                f'malha aberta; para corrigir forma acima de '
+                f'{_ONE_EURO_MAXCUTOFF_HZ:.0f} Hz publique '
+                f'/load_cell/sample_net (o ft_receiver já publica).')
 
         # A fase ganha código próprio (MODULATING). Antes a onda herdava o
         # HOLD do assentamento inicial: no CSV o trecho em que o braço busca a
@@ -4584,6 +4836,10 @@ class TactileExplorer(Node):
                 f'abre nessa fração). Sem isto a onda abriria com um degrau.')
 
         t0 = time.time()
+        # Relógio SEPARADO do t0 de parede, e monotônico: é ele que fixa a
+        # grade de ticks da onda. Sem grade absoluta o período real é
+        # dt + trabalho e a fase escorrega — ver `deadline` em _qs_step.
+        t0_mono = time.monotonic()
         ticks = 0               # ticks efetivos — dá o dt MEDIDO do laço
         outcome = 'ok'
         while True:
@@ -4611,6 +4867,15 @@ class TactileExplorer(Node):
                     f'{_FORCE_ABORT_LIMIT_N:.0f} N) — modulação cancelada.')
                 outcome = 'force'
                 break
+            # DUAS leituras, de propósito. `fz` (filtrado) governa SEGURANÇA:
+            # o One-Euro tem ganho 1 em DC, então uma sobrecarga sustentada
+            # aparece nele inteira, e o filtro é justamente o que impede um
+            # glitch de uma amostra de abortar o ensaio. `fz_meas` (cru,
+            # quando existe) é o que MEDE a onda e alimenta as correções —
+            # ali o filtro seria o erro, não a proteção.
+            fz_meas = self._fz_raw()
+            if fz_meas is None:
+                fz_meas = fz
 
             t = time.time() - t0
             if t >= prof.duration_s:
@@ -4631,8 +4896,12 @@ class TactileExplorer(Node):
             # Excursão MEDIDA pela célula (independente de K) e cruzamentos da
             # onda ENTREGUE (dão a frequência que o braço percorreu). O `fz`
             # deste tick já foi lido acima para a checagem de segurança.
-            fz_min = fz if fz_min is None else min(fz_min, fz)
-            fz_max = fz if fz_max is None else max(fz_max, fz)
+            fz_min = fz_meas if fz_min is None else min(fz_min, fz_meas)
+            fz_max = fz_meas if fz_max is None else max(fz_max, fz_meas)
+            cyc_fz_min = (fz_meas if cyc_fz_min is None
+                          else min(cyc_fz_min, fz_meas))
+            cyc_fz_max = (fz_meas if cyc_fz_max is None
+                          else max(cyc_fz_max, fz_meas))
             if dx_exec > cross_band_m and cross_sign <= 0:
                 cross_sign = 1
                 cross_count += 1
@@ -4653,15 +4922,27 @@ class TactileExplorer(Node):
             # com EMA — ordens de grandeza mais lento que a onda.
             _w = 2.0 * math.pi * prof.freq_hz * t
             _s, _c = math.sin(_w), math.cos(_w)
-            cyc_fi += fz * _s
-            cyc_fq += fz * _c
+            cyc_fi += fz_meas * _s
+            cyc_fq += fz_meas * _c
             cyc_xi += dx_exec * _s
             cyc_xq += dx_exec * _c
             cyc_n += 1
+            # ── ILC: erro atribuído à fase que o CAUSOU ──────────────
+            # `fz` é a resposta ao comando de ilc_lag_s atrás, então tanto o
+            # alvo quanto o índice de fase saem de (t − atraso). O ILC só
+            # começa depois do warmup: durante a rampa a onda pedida NÃO é a
+            # onda final, e aprender ali é aprender a corrigir a rampa.
+            # Quando ele liga, amp_scale já vale 1,0 — por isso o alvo pode
+            # sair direto de setpoint_n, sem reconstruir a escala histórica.
+            if ilc_learning:
+                t_cause = t - ilc_lag_s
+                if t_cause >= 0.0:
+                    ilc.observe(t_cause * prof.freq_hz,
+                                prof.setpoint_n(t_cause) - fz_meas, k_nm)
             for _h in range(3):
                 _wh = (_h + 1) * _w
-                tot_h[_h][0] += fz * math.sin(_wh)
-                tot_h[_h][1] += fz * math.cos(_wh)
+                tot_h[_h][0] += fz_meas * math.sin(_wh)
+                tot_h[_h][1] += fz_meas * math.cos(_wh)
             tot_n += 1
             if int(t * prof.freq_hz) > cyc_idx:
                 # Amplitude de PICO da fundamental = 2·|Σ x·e^{-jωt}|/N. A
@@ -4671,7 +4952,39 @@ class TactileExplorer(Node):
                 # comparação instantânea comandado × medido.
                 df_pp = 4.0 * math.hypot(cyc_fi, cyc_fq) / max(cyc_n, 1)
                 dx_pp = 4.0 * math.hypot(cyc_xi, cyc_xq) / max(cyc_n, 1)
-                if df_pp >= _FMOD_K_ADAPT_MIN_DF_N and dx_pp > 1e-7:
+                # ── ATRASO MEDIDO (identificação do plano, de graça) ──
+                # Os dois lock-ins acima são os fasores da FORÇA e da
+                # PENETRAÇÃO no mesmo ciclo. A diferença de fase entre eles é
+                # ∠G(jω) — a fase do plano comandado→entregue, incluindo
+                # executor, ServoJ e material. O `hypot` de cada um a joga
+                # fora; ela é justamente o que o ILC precisa.
+                #
+                # Basta o valor MODULO um período: o ILC indexa a correção
+                # por fase, então distinguir 54 ms de 154 ms a 10 Hz não muda
+                # em que bin o erro cai. É por isso que medir aqui basta e
+                # não é preciso desenrolar o número de ciclos do atraso.
+                #
+                # Só durante o warmup: depois o ILC já está corrigindo e a
+                # fase que ele impõe contaminaria a medida do plano.
+                if (not ilc_learning and df_pp >= _FMOD_K_ADAPT_MIN_DF_N
+                        and math.hypot(cyc_ci, cyc_cq) > 1e-9):
+                    _ph = (math.atan2(cyc_fq, cyc_fi)
+                           - math.atan2(cyc_cq, cyc_ci))
+                    # para (-pi, pi]; a força ATRASA, então a fase é negativa
+                    _ph = (_ph + math.pi) % (2.0 * math.pi) - math.pi
+                    _lag = (-_ph / (2.0 * math.pi * prof.freq_hz)) % (
+                        1.0 / prof.freq_hz)
+                    ilc_lag_s = _lag
+                    ilc_lag_measured = True
+                # PASSAGEM DE BASTÃO: `fx_gain`/K e o ILC corrigem a MESMA
+                # grandeza (a amplitude da fundamental — o ILC pelo seu
+                # componente em h1). Deixar os dois adaptando ao mesmo tempo
+                # é pôr dois integradores no mesmo grau de liberdade, que
+                # disputam e oscilam. O escalar faz o trabalho grosso
+                # enquanto a rampa sobe; quando o ILC começa a aprender, ele
+                # congela e o vetor assume.
+                if (df_pp >= _FMOD_K_ADAPT_MIN_DF_N and dx_pp > 1e-7
+                        and not ilc_learning):
                     if use_curve:
                         # Com a curva, o que se adapta é um GANHO sobre ela,
                         # não uma rigidez: a forma da não-linearidade já está
@@ -4710,8 +5023,70 @@ class TactileExplorer(Node):
                             self._k_est.k = k_nm
                             self._k_est.estimated = True
                             k_adapts += 1
+                # ── ILC: fecha o ciclo ───────────────────────────────
+                # `commit` só depois do warmup, e o warmup cobre a rampa de
+                # amplitude inteira mais um ciclo — o primeiro ciclo em que a
+                # onda pedida é de fato a onda final.
+                # ── ETAPA 5: ciclo CORTADO não é ciclo aprendido ─────
+                # `_acc`/`_cnt` do ILC guardam o erro observado neste ciclo.
+                # Se houve corte, parte desse erro é do limitador e não do
+                # plano: descartar é mais barato (e muito mais seguro) do que
+                # tentar separar as duas contribuições.
+                if ilc_learning and band_clips_cycle:
+                    ilc.discard()
+                elif ilc_learning:
+                    ilc_rms_m = ilc.commit()
+                elif (ilc_allowed and ilc_lag_measured
+                        and t * prof.freq_hz >= _FMOD_ILC_WARMUP_CYCLES):
+                    ilc_learning = True
+                    # O teto sai do amp_m QUE VALE AGORA: durante o warmup o
+                    # escalar adaptou e a amplitude em posição mudou junto, e
+                    # um teto calculado antes disso seria de outra onda.
+                    ilc.clip_m = abs(_FMOD_ILC_MAX_FRAC * amp_m)
+                    _frozen = (f'ganho da curva congelado em {fx_gain:.2f}'
+                               if use_curve else
+                               f'K congelado em {k_nm / 1e3:.2f} N/mm')
+                    self.get_logger().info(
+                        f'[FMOD] ILC ligado no ciclo '
+                        f'{int(t * prof.freq_hz)} (warmup de '
+                        f'{_FMOD_ILC_WARMUP_CYCLES:.0f} ciclos cumprido). '
+                        f'Correção indexada por fase, {_FMOD_ILC_BINS} bins, '
+                        f'teto ±{_FMOD_ILC_MAX_FRAC * amp_m * 1e6:.0f} µm; '
+                        f'atraso MEDIDO no warmup '
+                        f'{ilc_lag_s * 1e3:.0f} ms '
+                        f'({360.0 * ilc_lag_s * prof.freq_hz:.0f}° a '
+                        f'{prof.freq_hz:.2f} Hz; a fórmula previa '
+                        f'{fmod_measure_lag_s(prof.freq_hz)*1e3:.0f} ms). '
+                        f'{_frozen} — daqui em diante quem corrige é o '
+                        f'vetor.')
+                # ── ETAPA 5: corte repetido vira recuo de AMPLITUDE ───
+                # O guarda corta a ponta; isto encolhe a onda INTEIRA para
+                # que a ponta pare de bater no limite. A razão vem do estouro
+                # MEDIDO no ciclo, então o recuo é proporcional à violação e
+                # não um passo arbitrário. `limit_scale` só desce: subir de
+                # volta seria um terceiro laço disputando amplitude com o ILC
+                # e com o `fx_gain`.
+                if band_clips_cycle and cyc_fz_max is not None:
+                    _over_hi = cyc_fz_max - prof.f_max_n
+                    _over_lo = prof.f_min_n - cyc_fz_min
+                    _over = max(_over_hi, _over_lo, 0.0)
+                    if _over > 0.0:
+                        _want = max(0.3, 1.0 - _over / max(prof.amp_n, 1e-9))
+                        if _want < limit_scale:
+                            limit_scale = _want
+                            limit_backoffs += 1
+                            self.get_logger().warn(
+                                f'[FMOD] limites: o ciclo estourou a faixa em '
+                                f'{_over:.2f} N ({band_clips_cycle} cortes). '
+                                f'Amplitude comandada recuada para '
+                                f'{100*limit_scale:.0f} % — a onda encolhe '
+                                f'INTEIRA, em vez de ser achatada na ponta. '
+                                f'O ciclo cortado não foi aprendido pelo ILC.')
+                band_clips_cycle = 0
+                cyc_fz_min = cyc_fz_max = None
                 cyc_idx = int(t * prof.freq_hz)
                 cyc_fi = cyc_fq = cyc_xi = cyc_xq = 0.0
+                cyc_ci = cyc_cq = 0.0
                 cyc_n = 0
                 cyc_amp_scale = amp_scale
 
@@ -4744,7 +5119,19 @@ class TactileExplorer(Node):
             # fundamental (sinc², ver _fmod_sampling_gain). É malha aberta e
             # constante, então entra AQUI e não na adaptação por ciclo — que
             # continua livre para corrigir o que é do material.
-            dx_target = _dx_of_sp(sp) * amp_scale * amp_pre
+            dx_target = _dx_of_sp(sp) * amp_scale * amp_pre * limit_scale
+            # Correção do ciclo ANTERIOR, na fase corrente. Somada ao
+            # feedforward, não realimentada: o vetor só muda no `commit`, uma
+            # vez por período. É por isso que o atraso de 154 ms que impede a
+            # malha fechada não desestabiliza isto — o ILC não corrige DENTRO
+            # do ciclo, corrige o ciclo seguinte.
+            dx_target += ilc.value(t * prof.freq_hz)
+            # Lock-in da penetração COMANDADA, com o MESMO `_s`/`_c` deste
+            # tick — o que fixa a fase é o `t` da amostra, não o ponto do
+            # corpo do laço em que ela é somada. Acumular aqui é o que
+            # permite usar `dx_target`, que só existe a partir desta linha.
+            cyc_ci += dx_target * _s
+            cyc_cq += dx_target * _c
             step_m = float(np.clip(dx_target - dx_applied,
                                    -step_cap_m, step_cap_m))
 
@@ -4792,11 +5179,12 @@ class TactileExplorer(Node):
             # regulador de ciclo.
             band_tol_n = max(_FMOD_BAND_TOL_FRAC * prof.amp_n,
                              _FMOD_BAND_TOL_MIN_N)
-            if (step_m > 0.0 and fz > prof.f_max_n + band_tol_n) or \
-                    (step_m < 0.0 and fz < prof.f_min_n - band_tol_n):
+            if (step_m > 0.0 and fz_meas > prof.f_max_n + band_tol_n) or \
+                    (step_m < 0.0 and fz_meas < prof.f_min_n - band_tol_n):
                 step_m = 0.0
                 dx_applied = dx_exec
                 band_clips += 1
+                band_clips_cycle += 1
 
             # ── teto de VELOCIDADE do TCP ───────────────────────────
             # Os tetos acima limitam FORÇA por passo. Com o tick caindo para
@@ -4823,7 +5211,8 @@ class TactileExplorer(Node):
             # a 1 Hz ainda é uma senoide a 1 Hz; uma senoide fina entregue a
             # 0,18 Hz é outro ensaio.
             q_new = self._qs_step(approach_dir, step_m, v_lim, I6, q_from=q_cmd,
-                                  dt=wave_dt)
+                                  dt=wave_dt,
+                                  deadline=t0_mono + (ticks + 1) * wave_dt)
             if q_new is None:
                 self.get_logger().error('[FMOD] Jacobiano singular — parando.')
                 outcome = 'error'
@@ -4885,6 +5274,66 @@ class TactileExplorer(Node):
                     f'[FMOD] {band_clips} passos cortados por já estar fora '
                     f'da faixa {prof.f_min_n:.2f}–{prof.f_max_n:.2f} N '
                     f'(de {ticks} emitidos).')
+            if limit_backoffs:
+                self.get_logger().warn(
+                    f'[FMOD] amplitude recuada {limit_backoffs}x pelos '
+                    f'limites, terminando em {100*limit_scale:.0f} % da '
+                    f'pedida. A onda entregue é uma senoide DE OUTRA '
+                    f'amplitude, não a pedida achatada — a forma vale, a '
+                    f'excursão não. Se isto se repete, a faixa de força '
+                    f'pedida não cabe neste material nesta frequência.')
+            # ── conferência da escala do sinal CRU ────────────────────
+            # A regressão usa os dois campos FILTRADOS da mesma mensagem, e o
+            # filtro se cancela na razão. Se ela discordar do parâmetro, a
+            # correção do ILC está sendo aplicada com o ganho errado — e no
+            # limite com o SINAL errado, que é a única forma de esta etapa
+            # piorar a onda em vez de melhorá-la.
+            with self._lc_lock:
+                _sxx, _sxy, _sn = (self._lc_scale_sxx, self._lc_scale_sxy,
+                                   self._lc_scale_n)
+            if ilc_raw and _sn > 20 and _sxx > 1e-12:
+                _scale_meas = _sxy / _sxx
+                _rel = abs(_scale_meas - self._lc_raw_scale) / max(
+                    abs(self._lc_raw_scale), 1e-9)
+                _sline = (f'[FMOD] escala do sinal cru: parâmetro '
+                          f'{self._lc_raw_scale:.3f}, regressão '
+                          f'{_scale_meas:.3f} N por unidade '
+                          f'({_sn} amostras).')
+                if _rel > 0.25:
+                    self.get_logger().warn(
+                        _sline + f' Discordância de {100*_rel:.0f} % — o ILC '
+                        f'corrigiu com o ganho errado. Ajuste '
+                        f'lc_raw_scale_n_per_unit:={_scale_meas:.3f} e '
+                        f'repita; a onda deste run não vale.')
+                else:
+                    self.get_logger().info(_sline)
+            if ilc.cycles:
+                self.get_logger().info(
+                    f'[FMOD] ILC aprendeu por {ilc.cycles} ciclos: correção '
+                    f'RMS de {ilc_rms_m*1e6:.0f} µm, pico '
+                    f'{np.abs(ilc.corr).max()*1e6:.0f} µm, contra uma '
+                    f'amplitude de {amp_m*1e6:.0f} µm '
+                    f'({100.0*np.abs(ilc.corr).max()/max(amp_m, 1e-9):.0f} % '
+                    f'dela; teto {100.0*_FMOD_ILC_MAX_FRAC:.0f} %). Uma '
+                    f'correção que ENCOSTA no teto não é erro de execução — '
+                    f'procure contato perdido, K absurda ou tare errado '
+                    f'antes de acreditar na onda.')
+            elif ilc_allowed and not ilc_lag_measured:
+                self.get_logger().warn(
+                    f'[FMOD] ILC não ligou: a fase do plano nunca pôde ser '
+                    f'medida (fundamental abaixo de '
+                    f'{_FMOD_K_ADAPT_MIN_DF_N:.2f} N ou penetração parada nos '
+                    f'ciclos de warmup). Ligar sem ela seria corrigir contra '
+                    f'uma fase chutada, que a 10 Hz DIVERGE em vez de '
+                    f'convergir. A onda rodou em malha aberta — confira a '
+                    f'amplitude e o contato.')
+            elif ilc_allowed:
+                self.get_logger().warn(
+                    f'[FMOD] ILC não fechou nenhum ciclo: a onda tem '
+                    f'{prof.cycles} ciclos e o warmup consome '
+                    f'{_FMOD_ILC_WARMUP_CYCLES:.0f}. Rode com pelo menos '
+                    f'{int(_FMOD_ILC_WARMUP_CYCLES) + 3} ciclos para ele '
+                    f'chegar a corrigir alguma coisa.')
             if vel_clips:
                 self.get_logger().warn(
                     f'[FMOD] {vel_clips} passos cortados pelo teto de '
