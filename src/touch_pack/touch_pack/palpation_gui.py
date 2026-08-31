@@ -210,6 +210,7 @@ except Exception:  # pragma: no cover
     _SCENE_BUDGET = 5000
     _URDF_SCENE_OK = False
 
+
 try:
     from .vtk_render import vtk_available as _manip_vtk_available
 except Exception:  # pragma: no cover
@@ -540,6 +541,20 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._cli_eci_realtime = None
         self._hand_powered = False
         self._eci_posn_after: str | None = None
+        # Teleoperação da mão por câmera (hand_camera_teleop.HandCameraTeleop,
+        # lazy). `_cam_teleop_after` é o poll Tk que vigia erro do loop.
+        self._cam_teleop = None
+        self._cam_teleop_after: str | None = None
+        self._cam_win: tk.Toplevel | None = None
+        self._cam_preview_after: str | None = None
+        # Checkbox "→ real" do cabeçalho: a câmera sempre move o sim (dedos
+        # + joint6); marcada, também vai pro hardware — mão COVVI real e
+        # joint6 no braço real (se em MIRROR). Criada em _build_header.
+        self._cam_mirror_var: tk.BooleanVar | None = None
+        # (mirror_bool, pose) da última trajetória de joint6 da câmera —
+        # `_cb_arm_trajectory` usa para não espelhar quando mirror_bool é False.
+        self._cam_arm_gate: tuple[bool, tuple] | None = None
+        self._camera_index = int(self.declare_parameter('camera_index', 0).value)
         # Versão B: mirror real→sim da mão (telemetria DigitPosnAll)
         # A mão simulada segue a POSIÇÃO MEDIDA da mão física (escala ECI
         # 0–200), de modo que o sim acompanhe a velocidade real, em vez de
@@ -718,6 +733,13 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             'force_sensor', 'load_cell').value).strip().lower()
         self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
             else 'load_cell'
+        # Real x simulado. A GUI não distingue as duas fontes pelo tópico —
+        # ambas publicam /load_cell/force_net —, então sem este parâmetro a
+        # tela mostra força de Gazebo com a mesma cara da força de bancada.
+        # Mesmo default do launch: desconhecido cai em 'real'.
+        _src = str(self.declare_parameter(
+            'force_source', 'real').value).strip().lower()
+        self._force_source = _src if _src in ('real', 'sim') else 'real'
         # Contadores de integridade do frame ADC republicado (ver
         # _publish_tactile_line). Frame truncado é DESCARTADO, não completado:
         # o CSV precisa distinguir "não medi" de "medi errado".
@@ -1715,6 +1737,29 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             conn, '⊙', 'PWR OFF', self._toggle_hand_power,
             bg=BTN_NEUTRAL, fg=TEXT, font=FONT_SMALL, padx=10, pady=5)
         self._pwr_btn.pack(side='left')
+        # Teleop por câmera: mapeia a mão do usuário (webcam + MediaPipe)
+        # para os sliders da mão COVVI. Funciona com o ECI OFF (só sim).
+        self._cam_btn = _hdr_btn(
+            conn, '📷', 'CAM OFF', self._toggle_camera_control,
+            bg=BTN_NEUTRAL, fg=TEXT, font=FONT_SMALL, padx=10, pady=5)
+        self._cam_btn.pack(side='left', padx=(6, 0))
+        # Ligar a câmera já move o SIM (dedos da mão + joint6). Esta
+        # checkbox só libera o HARDWARE: mão COVVI real (precisa do ECI) e,
+        # se o robô estiver em MIRROR, joint6 no braço real. Desmarcada:
+        # câmera fica só na simulação.
+        self._cam_mirror_var = tk.BooleanVar(value=False)
+        self._cam_mirror_chk = tk.Checkbutton(
+            conn, text='→ real', variable=self._cam_mirror_var,
+            bg=HEADER, fg='#cbd5e1', activebackground=HEADER,
+            activeforeground='white', selectcolor=HEADER, font=FONT_SMALL,
+            relief='flat', bd=0, highlightthickness=0, cursor='hand2')
+        self._cam_mirror_chk.pack(side='left', padx=(6, 0))
+        _Tooltip(self._cam_mirror_chk,
+                 'Turning the camera ON already moves the SIMULATION (hand '
+                 'fingers + joint6). This box only sends it to the REAL '
+                 'hardware: the COVVI hand mimics the fingers (needs ECI ON) '
+                 'and, when the robot is in MIRROR mode, joint6 moves the '
+                 'real arm. Unchecked: simulation only.')
         if self._end_effector == 'hand':
             _sep()
 
@@ -2867,6 +2912,14 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         """Captura trajetórias publicadas em /cr10_group_controller/joint_trajectory."""
         if self._robot_mode != 'MIRROR':
             return
+        # joint6 da teleop por câmera só espelha no braço real com a checkbox
+        # "→ real" marcada. Identifica a trajetória da câmera pela pose (igual
+        # à última que ela publicou) — jog manual/arrasto passam normalmente.
+        gate = self._cam_arm_gate
+        if gate is not None and not gate[0] and msg.points:
+            q = list(msg.points[-1].positions)[:6]
+            if len(q) == 6 and gate[1] == tuple(round(float(x), 4) for x in q):
+                return
         # Drag teach ativo → motores liberados, não enviar comandos de posição.
         if self._drag_enabled:
             return
@@ -3137,7 +3190,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # 1 de cada 25 quadros.
         self._ft_feed_processing(now, vals)
 
-    def _publish_hand_from_sliders(self):
+    def _publish_hand_from_sliders(self, *, allow_real: bool = True):
         if self._suppressing:
             return
         # No modo touch_tool a coluna da mão não é construída (sem sliders).
@@ -3162,22 +3215,23 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # _on_real_hand_posn) — assim o sim acompanha a velocidade física.
         if not self._hand_mirror_live():
             self._publish_sim_hand(primary_rad, duration_s)
-        # Envia para a mão real via ECI (SetDigitPosn) se ativo
-        if self._eci_enabled:
+        # Envia para a mão real via ECI (SetDigitPosn) se ativo. `allow_real`
+        # deixa o teleop por câmera comandar só o sim quando a checkbox
+        # "→ real" está desmarcada.
+        if self._eci_enabled and allow_real:
             self._schedule_eci_posn(primary_deg)
 
     def _publish_sim_hand(self, primary_rad: dict[str, float],
                            duration_s: float) -> None:
         """Publica a trajetória da mão no Gazebo a partir das 6 juntas
-        primárias (rad). Usado tanto pelo comando do slider (sim-only)
-        quanto pelo mirror real→sim (Versão B).
-
-        Só os 6 drivers vão no comando: na célula tátil (end_effector:=hand)
-        as juntas mimic são impostas em-sim pelo plugin mimic (PID com
-        força) — ver tactile_cell.launch.py / covvi_control.md. Mandar as
-        mimic aqui brigaria com esse PID e a preensão não seguraria."""
+        primárias (rad), expandindo as juntas mimic do URDF. Usado tanto pelo
+        comando do slider (sim-only) quanto pelo mirror real→sim (Versão B)."""
         names = list(HAND_JOINTS)
         positions = [primary_rad[j] for j in HAND_JOINTS]
+        # Expande as 26 juntas mimic com as razões do URDF.
+        for mimic_name, driver, mult in MIMIC_LIST:
+            names.append(mimic_name)
+            positions.append(primary_rad[driver] * mult)
         msg = JointTrajectory()
         # stamp=zero → controller starts immediately (sim-time-safe).
         msg.joint_names = names
@@ -5204,6 +5258,190 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             self.get_logger().error(
                 'Driver da mão ficou zumbi após SIGKILL.')
 
+    # ── Teleoperação da mão por câmera ───────────────────────────────
+    # A webcam + MediaPipe (hand_camera_teleop) devolve flexão 0–1 por
+    # junta; aqui isso vira grau (HAND_LIMITS_DEG) e entra nos
+    # `hand_sliders` — daí em diante é o MESMO caminho do slider manual.
+    # Ligar a câmera já move o SIM: dedos da mão + joint6 (pronação do
+    # punho, palma↔dorso, chave 'ArmJ6'). A checkbox "→ real" só libera o
+    # hardware: mão COVVI real (SetDigitPosn, precisa do ECI) e joint6 no
+    # braço real quando a checkbox está marcada E o robô está em MIRROR.
+    def _toggle_camera_control(self) -> None:
+        """Liga/desliga o controle da mão COVVI pela câmera."""
+        if self._cam_teleop is not None:
+            self._stop_camera_control('Camera hand control disabled.')
+            return
+        if not getattr(self, 'hand_sliders', None):
+            self._set_status(
+                'Camera control needs the hand end-effector.', WARN)
+            return
+        try:
+            from touch_pack.hand_camera_teleop import (
+                HandCameraTeleop, CameraUnavailable)
+        except ImportError as exc:
+            self._set_status(
+                f'Camera control unavailable — pip install mediapipe ({exc}).',
+                DANGER)
+            return
+        cam_idx = self._camera_index
+        try:
+            self._cam_teleop = HandCameraTeleop(
+                on_curl=self._on_camera_curl, camera_index=cam_idx,
+                logger=self.get_logger())
+            self._cam_teleop.start()
+        except (CameraUnavailable, ImportError) as exc:
+            self._cam_teleop = None
+            self._cam_btn.set_state('📷', 'CAM OFF', BTN_NEUTRAL, TEXT)
+            self._set_status(
+                f'Camera not available (index {cam_idx}): {exc}', DANGER)
+            return
+        self._cam_btn.set_state('📷', 'CAM ON', OK, 'white')
+        tail = '' if self._eci_enabled else '  (sim only — ECI is OFF)'
+        self._set_status(f'Camera hand control active.{tail}', OK)
+        self._cam_teleop_after = self.root.after(500, self._poll_camera_teleop)
+        self._open_camera_preview()
+
+    def _poll_camera_teleop(self) -> None:
+        """Vigia o loop da câmera; se ele morreu sozinho, encerra limpo."""
+        self._cam_teleop_after = None
+        cam = self._cam_teleop
+        if cam is None:
+            return
+        if cam.error:
+            self._stop_camera_control(
+                f'Camera hand control stopped: {cam.error}', color=DANGER)
+            return
+        self._cam_teleop_after = self.root.after(500, self._poll_camera_teleop)
+
+    def _on_camera_curl(self, curl: dict) -> None:
+        """Callback vindo da thread da câmera → volta ao thread Tk."""
+        self.root.after(0, self._apply_camera_curl, curl)
+
+    def _apply_camera_curl(self, curl: dict) -> None:
+        if self._cam_teleop is None or not getattr(self, 'hand_sliders', None):
+            return
+        self._suppressing = True
+        try:
+            for j in HAND_JOINTS:
+                c = curl.get(j)
+                if c is None:
+                    continue
+                lo, hi = HAND_LIMITS_DEG[j]
+                deg = lo + max(0.0, min(1.0, float(c))) * (hi - lo)
+                self.hand_sliders[j].set(round(deg, 1))
+        finally:
+            self._suppressing = False
+        # Ligar a câmera já move o SIM: dedos da mão + joint6. A checkbox
+        # "→ real" só libera o hardware — mão COVVI real (precisa do ECI) e,
+        # se o robô estiver em MIRROR, joint6 no braço real.
+        mirror_real = bool(self._cam_mirror_var and self._cam_mirror_var.get())
+        self._publish_hand_from_sliders(allow_real=mirror_real)
+        self._apply_camera_j6(curl, mirror_real=mirror_real)
+
+    def _apply_camera_j6(self, curl: dict, *, mirror_real: bool) -> None:
+        """joint6 ← pronação do punho, palma↔dorso (chave 'ArmJ6'). Sempre
+        move o sim; só espelha no CR10 real quando `mirror_real` E o robô
+        está em MIRROR. joint1-5 seguram o valor atual dos sliders."""
+        j6 = curl.get('ArmJ6')
+        if j6 is None or not getattr(self, 'arm_sliders', None):
+            return
+        with self._lock:
+            phase = self._latest_phase
+        if phase not in ('IDLE', 'DONE', 'ABORTED'):
+            return
+        q_deg: list[float] = []
+        self._suppressing = True
+        try:
+            for j in ARM_JOINTS:
+                lo, hi = ARM_LIMITS_DEG[j]
+                if j == 'joint6':
+                    v = max(lo, min(hi, float(j6)))
+                    self.arm_sliders[j].set(round(v, 1))
+                else:
+                    v = self._clamp_var(self.arm_sliders[j], lo, hi)
+                    if v is None:
+                        return
+                q_deg.append(v)
+        finally:
+            self._suppressing = False
+        q_rad = [_math.radians(d) for d in q_deg]
+        mirror = mirror_real and self._robot_mode == 'MIRROR'
+        # `_cb_arm_trajectory` lê isto para decidir se espelha no braço real.
+        self._cam_arm_gate = (mirror, tuple(round(float(x), 4) for x in q_rad))
+        self._publish_arm_q(q_rad, MANIP_TRAJ_DURATION_S)
+
+    def _open_camera_preview(self) -> None:
+        """Janela Tk com o vídeo anotado da câmera. Quem desenha é a GUI
+        (main thread) — `cv2.imshow` fora da main thread não funciona no Linux."""
+        if self._cam_win is not None:
+            return
+        try:
+            from PIL import Image, ImageTk  # noqa: F401
+        except ImportError:
+            self._set_status(
+                'Camera active (no video preview — pip install pillow).', WARN)
+            return
+        win = tk.Toplevel(self.root)
+        win.title('Camera Hand Control')
+        win.configure(bg=BG)
+        win.resizable(False, False)
+        lbl = tk.Label(win, bg='black', bd=0)
+        lbl.pack(padx=6, pady=6)
+        win.protocol(
+            'WM_DELETE_WINDOW',
+            lambda: self._stop_camera_control('Camera hand control disabled.'))
+        self._cam_win = win
+        self._cam_win_lbl = lbl
+        self._cam_preview_imgtk = None
+        self._cam_preview_after = self.root.after(60, self._pump_camera_preview)
+
+    def _pump_camera_preview(self) -> None:
+        """Puxa o último quadro do teleop e mostra na janela (loop Tk `after`)."""
+        self._cam_preview_after = None
+        cam = self._cam_teleop
+        if cam is None or self._cam_win is None:
+            return
+        frame = cam.get_latest_frame()
+        if frame is not None:
+            from PIL import Image, ImageTk
+            imgtk = ImageTk.PhotoImage(Image.fromarray(frame))
+            self._cam_win_lbl.configure(image=imgtk)
+            self._cam_preview_imgtk = imgtk        # segura a referência
+        self._cam_preview_after = self.root.after(60, self._pump_camera_preview)
+
+    def _stop_camera_control(self, msg: str, *, color: str = TEXT_DIM) -> None:
+        """Encerra o teleop por câmera: cancela o poll, para a thread,
+        libera a câmera e destrói a janela de vídeo. Idempotente."""
+        if self._cam_teleop_after is not None:
+            try:
+                self.root.after_cancel(self._cam_teleop_after)
+            except Exception:
+                pass
+            self._cam_teleop_after = None
+        if self._cam_preview_after is not None:
+            try:
+                self.root.after_cancel(self._cam_preview_after)
+            except Exception:
+                pass
+            self._cam_preview_after = None
+        if self._cam_win is not None:
+            try:
+                self._cam_win.destroy()
+            except Exception:
+                pass
+            self._cam_win = None
+            self._cam_preview_imgtk = None
+        cam = self._cam_teleop
+        self._cam_teleop = None
+        if cam is not None:
+            try:
+                cam.stop()
+            except Exception:
+                pass
+        if getattr(self, '_cam_btn', None) is not None:
+            self._cam_btn.set_state('📷', 'CAM OFF', BTN_NEUTRAL, TEXT)
+        self._set_status(msg, color)
+
     def _toggle_eci(self) -> None:
         """Liga/desliga o canal lógico ECI (cliente dos serviços COVVI)."""
         if self._eci_enabled:
@@ -6857,6 +7095,13 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
 
     def _on_close(self):
         self._stop_event.set()
+        # Teleop por câmera: solta a webcam e destrói a janela de vídeo
+        # antes do resto do shutdown.
+        if self._cam_teleop is not None:
+            try:
+                self._stop_camera_control('shutdown')
+            except Exception:
+                pass
         # Fecha a gravação CSV em andamento (flush + close) e o loop da aba.
         if self._rec_fh is not None:
             try:

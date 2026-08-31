@@ -208,7 +208,14 @@ class LcAxialMixin:
         self.root.after(100, self._refresh_lc_reading)
 
     def _build_lc_live_card(self, root: tk.Frame) -> None:
-        card = self._card(root, '100 kg axial cell — live', expand=False)
+        # Com force_source:=sim quem publica é o sim_force_bridge, e o número
+        # é o wrench do plugin FT do Gazebo — não a viga S. Sem esta marca a
+        # tela mostrava ~5,5 N (peso da pilha abaixo da célula) com a célula
+        # física desligada, indistinguível de uma leitura real.
+        titulo = '100 kg axial cell — live'
+        if self._force_source == 'sim':
+            titulo += '   ⚠ SIMULADA (Gazebo)'
+        card = self._card(root, titulo, expand=False)
 
         # O número grande é a força PÓS-TARE: é ela que o explorer regula e a
         # que o corte de 15 N observa. Os outros dois estágios ficam ao lado,

@@ -23,6 +23,13 @@ Argumentos (todos opcionais):
                        ft6       → célula FA7155 de 6 eixos, pela RS485
                                    (ft_receiver)
                        Os dois publicam /load_cell/force_net; SÓ UM sobe.
+    force_source     real | sim  (default: real)
+                       real → o driver acima, lendo a célula física. Sem
+                              célula no cabo o tópico fica mudo e o ensaio
+                              é recusado por "leitura velha".
+                       sim  → sim_force_bridge: força do plugin FT do
+                              Gazebo. Opt-in explícito, e a GUI marca a aba
+                              Load Cell como SIMULADA.
     lc_port          porta USB do XIAO (ex.: /dev/ttyACM0). Vazio (default) =
                        auto-detect pelo VID da Espressif.
     ft_port          porta do conversor USB-RS485 (ex.: COM5, /dev/ttyUSB0).
@@ -44,8 +51,6 @@ from ament_index_python.packages import get_package_share_directory
 from hand_pack.urdf_helpers import (
     clamp_hand_joint_limits,
     inject_visual_skin_layer,
-    inject_mimic_joint_plugins,
-    strip_mimic_joints_from_ros2_control,
     HAND_DRIVER_LOWER,
     INTER_FINGER_COLLISION_LINKS,
 )
@@ -80,18 +85,14 @@ def _stabilize_hand_joints(urdf_body: str) -> str:
         if 'type="revolute"' not in jxml:
             return jxml
         is_mimic = '<mimic' in jxml
-        # Mimic agora é seguida por um PID do plugin mimic (força até
-        # <maxEffort>) — damping alto brigaria com esse PID, então cai
-        # para o mesmo patamar dos drivers. Driver: effort ~1 N·m casa o
-        # manual COVVI (~10-20 N na ponta); 8 N·m esmagava o objeto.
-        damp, fric = (2.0, 0.1) if is_mimic else (5.0, 1.0)
+        damp, fric = (30.0, 10.0) if is_mimic else (5.0, 1.0)
         dyn = f'<dynamics damping="{damp}" friction="{fric}"/>'
         if '<dynamics' in jxml:
             jxml = re.sub(r'<dynamics[^/]*/>', dyn, jxml)
         else:
             jxml = jxml.replace('</joint>', f'      {dyn}\n    </joint>')
         if not is_mimic:
-            jxml = re.sub(r'effort="[\d.]+"', 'effort="1.0"', jxml)
+            jxml = re.sub(r'effort="[\d.]+"', 'effort="8.0"', jxml)
         return jxml
     return re.sub(r'<joint\b[^>]*>.*?</joint>', _patch,
                   urdf_body, flags=re.DOTALL)
@@ -133,12 +134,8 @@ def _build_robot_urdf(end_effector: str):
 
     # YAML de controllers
     if end_effector == 'hand':
-        # Local do touch_pack (não o de hand_pack): aqui o
-        # hand_position_controller comanda SÓ os 6 drivers com feedback
-        # (open_loop=false) — as mimic seguem pelo plugin. O de hand_pack
-        # lista as 31 juntas em malha aberta, que brigaria com o plugin.
         controllers_yaml = os.path.join(
-            touch_pack_share, 'config', 'tactile_hand_controllers.yaml')
+            hand_pack_share, 'config', 'cr10_covvi_controllers.yaml')
     else:  # touch_tool
         controllers_yaml = os.path.join(
             touch_pack_share, 'config', 'tactile_controllers.yaml')
@@ -218,13 +215,19 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
     hand_body = _fix_virtual_link_inertia(hand_body)
     hand_body = clamp_hand_joint_limits(hand_body)
     hand_body = _stabilize_hand_joints(hand_body)
-    # Preensão por física: as 25 juntas mimic saem do gazebo_ros2_control e
-    # passam a ser comandadas pelo plugin mimic (PID com força nas falanges
-    # de contato). O JTC também comanda só os 6 drivers — ver
-    # config/tactile_hand_controllers.yaml. Sem isto a mão fecha só
-    # cinematicamente e não segura nada por atrito.
-    hand_body = strip_mimic_joints_from_ros2_control(hand_body)
-    hand_body = inject_mimic_joint_plugins(hand_body)
+    # As 26 juntas mimic FICAM no <ros2_control>. A tentativa de tirá-las de
+    # lá e entregá-las ao libgazebo_mimic_joint_plugin.so (preensão por
+    # física) desestabiliza o modelo inteiro: os elos mimic são virtuais
+    # (mass 1e-3 / inertia 1e-9, ver _fix_virtual_link_inertia), e sem o
+    # ros2_control segurando-os nada os prende — o ODE diverge e o robô
+    # reaparece em 0 0 0, dentro do chão. Medido no Gazebo, com o modelo
+    # correto em 0.30/0/0.75 na pausa e em 0 0 0 assim que a física roda.
+    # Não adianta contornar: falha igual com inércia 1e-6 e 1e-5, com o
+    # damping antigo (30/10) e com hasPID nas 26 (não só nas 10 de contato).
+    # Para preensão por atrito, o caminho é dar inércia/massa REAIS às
+    # falanges antes de tirá-las do ros2_control — ver
+    # strip_mimic_joints_from_ros2_control() e inject_mimic_joint_plugins()
+    # em hand_pack/urdf_helpers.py, que seguem no pacote, sem uso.
     hand_body = _inject_hand_initial_values(hand_body)
     # Remove <gazebo reference="..."> estáticos com propriedades de física (mu1,
     # kd, etc.) para evitar "multiple inconsistent" do parser_urdf ao reduzir
@@ -240,19 +243,14 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
         is_grip = lname in fc
         sc = '1' if is_grip else '0'   # forma canônica — ver _build_robot_urdf
         mu = '2.5' if is_grip else '0.8'
-        # Falange de contato precisa de contato rígido: kp mole deixa o
-        # objeto afundar e escapar sob a preensão. 1e6/100 é o par usado
-        # nas amostras complacentes do research_lab.world.
-        kp, kd, min_depth = ('1e6', '100.0', '0.0001') if is_grip \
-            else ('5e4', '50.0', '0.0005')
         hand_body += (
             f'\n  <gazebo reference="{lname}">'
             f'<gravity>false</gravity>'
             f'<self_collide>{sc}</self_collide>'
             f'<mu1>{mu}</mu1><mu2>{mu}</mu2>'
-            f'<kp>{kp}</kp><kd>{kd}</kd>'
+            f'<kp>5e4</kp><kd>50.0</kd>'
             f'<maxContacts>8</maxContacts>'
-            f'<minDepth>{min_depth}</minDepth>'
+            f'<minDepth>0.0005</minDepth>'
             f'<maxVel>0.01</maxVel>'
             f'</gazebo>'
         )
@@ -392,6 +390,14 @@ def launch_setup(context, *args, **kwargs):
         force_sensor = 'load_cell'
     lc_port = LaunchConfiguration('lc_port').perform(context).strip()
     ft_port = LaunchConfiguration('ft_port').perform(context).strip()
+    # Real x simulado é decisão SEPARADA de qual célula está no cabo e de
+    # qual control_mode roda. Valor desconhecido cai em 'real': um erro de
+    # digitação não pode fazer a GUI mostrar força de Gazebo como se fosse
+    # da bancada.
+    force_source = LaunchConfiguration(
+        'force_source').perform(context).strip().lower()
+    if force_source not in ('real', 'sim'):
+        force_source = 'real'
 
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
@@ -466,6 +472,9 @@ def launch_setup(context, *args, **kwargs):
                      # escolheu o receiver acima, senão a tela mostraria os
                      # painéis de uma célula e o dado viria da outra.
                      'force_sensor': force_sensor,
+                     # Real x simulado, para a aba "Load Cell" dizer na tela
+                     # de onde vem o número — ver o comentário do force_rx.
+                     'force_source': force_source,
                      # URDF completo (com <visual>) que foi para o Gazebo —
                      # a aba "3D Manipulation" renderiza ESTE modelo.
                      'robot_description_path': urdf_spawn_path}],
@@ -482,14 +491,20 @@ def launch_setup(context, *args, **kwargs):
                      # trocam de unidade entre as duas.
                      'force_sensor': force_sensor}])
 
-    # Fonte de /load_cell/force_net:
-    #   SIM_ONLY  → sim_force_bridge (wrench do plugin FT em Gazebo). Sem ele
-    #              o tópico fica mudo (não há porta serial) e o explorer
-    #              recusa todo ensaio por "leitura velha".
-    #   MIRROR / REAL_FROM_SIM → o receiver real da célula que está no cabo.
+    # Fonte de /load_cell/force_net — escolhida por `force_source`, NUNCA
+    # pelo control_mode. Amarrar as duas coisas fazia o default (sim_only)
+    # subir o sim_force_bridge no lugar do driver: a aba "Load Cell" da GUI
+    # mostrava ~5,5 N (o peso estático da pilha abaixo da junta load_cell_attach,
+    # 0,5615 kg) com a célula física DESLIGADA, sem nada na tela dizendo que
+    # o número vinha do Gazebo.
+    #   real (default) → driver da célula que está no cabo. Sem célula, o
+    #                    tópico fica mudo e o explorer recusa o ensaio por
+    #                    "leitura velha" — falha honesta, que é o certo.
+    #   sim            → sim_force_bridge (wrench do plugin FT em Gazebo),
+    #                    para fechar a malha sem bancada. Opt-in explícito.
     # UM só publica por vez — os dois no ar fariam o explorer regular contra
     # a média de duas fontes.
-    if robot_mode == 'SIM_ONLY':
+    if force_source == 'sim':
         force_rx_node = Node(
             package='touch_pack', executable='sim_force_bridge',
             parameters=[{'use_sim_time': True}])
@@ -538,39 +553,15 @@ def launch_setup(context, *args, **kwargs):
             arguments=['hand_position_controller',
                        '--controller-manager', '/controller_manager'])
 
-        # Objeto para pegar POR FÍSICA (atrito real da preensão — sem
-        # attach cinemático). kp/kd/mu casados com as falanges de contato
-        # (ver _build_hand_suffix). Se ainda escapar, subir mu / iters do
-        # world — ver src/grasp_ml_pack/doc/covvi_control.md.
-        _pick_sdf = (
-            '<?xml version="1.0"?><sdf version="1.6">'
-            '<model name="pick_object"><link name="link">'
-            '<inertial><mass>0.06</mass><inertia>'
-            '<ixx>4.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>'
-            '<iyy>4.5e-5</iyy><iyz>0</iyz><izz>9.7e-6</izz></inertia></inertial>'
-            '<collision name="col"><geometry><cylinder><radius>0.018</radius>'
-            '<length>0.09</length></cylinder></geometry><surface>'
-            '<friction><ode><mu>1.4</mu><mu2>1.4</mu2></ode></friction>'
-            '<contact><ode><kp>1e6</kp><kd>100</kd><min_depth>0.0001</min_depth>'
-            '</ode></contact></surface></collision>'
-            '<visual name="vis"><geometry><cylinder><radius>0.018</radius>'
-            '<length>0.09</length></cylinder></geometry><material>'
-            '<ambient>0.70 0.18 0.18 1</ambient><diffuse>0.85 0.28 0.28 1</diffuse>'
-            '</material></visual></link></model></sdf>')
-        # spawn_entity.py não tem -string; grava tempfile e usa -file (igual
-        # ao spawn do robô acima).
-        _pfd, _pick_sdf_path = tempfile.mkstemp(
-            prefix='tactile_cell_pick_', suffix='.sdf')
-        with os.fdopen(_pfd, 'w') as _pf:
-            _pf.write(_pick_sdf)
-        spawn_pick = Node(
-            package='gazebo_ros', executable='spawn_entity.py',
-            arguments=['-file', _pick_sdf_path, '-entity', 'pick_object',
-                       '-x', '0.45', '-y', '0.15', '-z', '0.80'],
-            parameters=[{'use_sim_time': True}])
+        # O tampo fica LIMPO: nem o pick_object (cilindro de 60 g que
+        # nascia em 0,45/0,15/0,80) nem as amostras complacentes do
+        # research_lab.world. O pick_object existia para a preensão POR
+        # FÍSICA, que saiu junto com o plugin mimic (ver
+        # _build_hand_suffix) — sem ela ele só ficava parado na mesa.
         # kinematic_attacher continua no pacote (console_script) como
         # fallback para demo de pick-and-place em que a força de preensão
-        # não é o objeto de estudo — NÃO sobe por default. Para usá-lo:
+        # não é o objeto de estudo — NÃO sobe por default. Para usá-lo,
+        # spawnar um objeto à mão e:
         #   ros2 run touch_pack kinematic_attacher
         #   ros2 service call /kinematic_attach/attach std_srvs/srv/Trigger
 
@@ -579,8 +570,7 @@ def launch_setup(context, *args, **kwargs):
             OnProcessExit(target_action=load_arm,
                           on_exit=[load_hand, pose_sync]))
         after_last = RegisterEventHandler(
-            OnProcessExit(target_action=load_hand,
-                          on_exit=late_nodes + [spawn_pick]))
+            OnProcessExit(target_action=load_hand, on_exit=late_nodes))
         chain = [after_spawn, after_jsb, after_arm, after_last]
     else:  # touch_tool — sem hand controller
         after_arm = RegisterEventHandler(
@@ -618,6 +608,14 @@ def generate_launch_description():
                         'XIAO+HX711, DEFAULT — a montada na bancada) | ft6 '
                         '(FA7155 de 6 eixos por RS485). Só um driver sobe: '
                         'os dois publicam /load_cell/force_net.'),
+        DeclareLaunchArgument(
+            'force_source', default_value='real',
+            description='De onde vem /load_cell/force_net: real (DEFAULT — '
+                        'driver da célula no cabo; sem célula o tópico fica '
+                        'mudo e o ensaio é recusado) | sim (sim_force_bridge, '
+                        'wrench do plugin FT do Gazebo). Independente de '
+                        'control_mode e de force_sensor. Com sim a GUI marca '
+                        'a aba Load Cell como SIMULADA.'),
         DeclareLaunchArgument(
             'lc_port', default_value='',
             description='Porta USB do XIAO ESP32C6 (ex.: /dev/ttyACM0). '

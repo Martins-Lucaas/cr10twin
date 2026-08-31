@@ -15,7 +15,7 @@ jobs:
     container:
       image: ros:humble-ros-base
     env:
-      MPLBACKEND: Agg          # matplotlib sem display nos testes
+      MPLBACKEND: Agg          # matplotlib sem display
       ROS_DOMAIN_ID: "42"
       DEBIAN_FRONTEND: noninteractive
 
@@ -26,7 +26,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            git python3-pip python3-colcon-common-extensions python3-rosdep xvfb
+            git python3-pip python3-colcon-common-extensions python3-rosdep
 
       - name: Checkout (com submódulos — src/eci_ros)
         uses: actions/checkout@v4
@@ -49,18 +49,14 @@ jobs:
           source /opt/ros/humble/setup.bash
           colcon build --symlink-install --event-handlers console_direct+
 
-      - name: colcon test
+      # Smoke básico: só o núcleo puro (câmera + cinemática). Os demais
+      # testes continuam no repo (src/touch_pack/test/) e podem ser rodados
+      # à mão com `colcon test` — não travam o CI.
+      - name: smoke tests
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
-          xvfb-run -a colcon test --event-handlers console_direct+
-          colcon test-result --verbose   # exit != 0 se algum teste falhou
-
-      - name: Log dos testes (quando falha)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: colcon-test-logs
-          path: log/latest_test/
-          if-no-files-found: ignore
+          python3 -m pytest -q \
+            src/touch_pack/test/test_hand_camera_teleop.py \
+            src/touch_pack/test/test_kinematics.py

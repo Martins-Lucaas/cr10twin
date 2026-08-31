@@ -2,11 +2,13 @@
 #
 # Difere do hand_pack/config/cr10_covvi_controllers.yaml em UMA coisa: o
 # hand_position_controller comanda SÓ os 6 drivers, em malha FECHADA
-# (open_loop_control: false). As 25 juntas mimic são impostas pelo plugin
-# `libgazebo_mimic_joint_plugin.so` (PID com força nas falanges de
-# contato) injetado em tactile_cell.launch.py — se o JTC também as
-# comandasse, as duas malhas brigariam e a preensão não transmitiria
-# força. Ver src/grasp_ml_pack/doc/covvi_control.md.
+# (open_loop_control: false). As 26 juntas mimic NÃO entram na lista: o
+# gazebo_ros2_control lê o <mimic> do URDF e as move ele mesmo, expondo
+# apenas state_interface para elas. O arquivo de hand_pack lista as 32 e
+# por isso o switch é recusado inteiro —
+#   Not acceptable command interfaces combination
+#   Not existing: [_lisa_j01/position, …]
+# — deixando também os 6 drivers inativos, com a mão parada.
 #
 # O bloco cr10_group_controller é cópia fiel do arquivo de hand_pack.
 

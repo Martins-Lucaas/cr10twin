@@ -7,3 +7,13 @@ numpy<2
 # os STL já vão versionados em meshes/.
 #   python3 -m pip install cadquery-ocp
 # cadquery-ocp
+
+# Teleoperação da mão COVVI por câmera (palpation_gui → botão "CAM").
+# OPCIONAL: o recurso faz import lazy e a GUI degrada para uma mensagem
+# se faltar. NÃO fixado como dep dura porque `mediapipe` puxa
+# `opencv-contrib-python` (colide com o opencv-python do sistema) e uma
+# faixa de `protobuf` que pode brigar com a do ROS 2 Humble — instale
+# num venv ou valide o conflito antes de promover.
+#   python3 -m pip install "mediapipe>=0.10,<0.11"
+# opencv-python já vem com o cv_bridge/ROS; mediapipe traz o seu.
+# mediapipe>=0.10,<0.11

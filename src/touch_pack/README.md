@@ -276,7 +276,12 @@ Same gates as the joint jog: the drag is blocked during palpation (the explorer 
 **Frame budget.** The meshes are read and prepared once, in a background thread (≈1 s), while the skeleton stands in. On the GPU backend the exact mesh holds **~13 ms/frame** in both end-effector modes, so the drag runs at the full 33 Hz with nothing simplified. On the CPU backend two levels of detail are kept — the full budget when the view is still, a coarser one while you drag or orbit. Either way the IK and the JTC publish always run at 33 Hz regardless of what the picture costs: if a frame overruns, the renderer drops frames instead of slowing the arm.
 
 ### Header
-- Hand and CR10 arm IPs + Connect/Disconnect · SIM_ONLY ↔ MIRROR dropdown · ECI ON/OFF · PWR ON/OFF · E-STOP.
+- Hand and CR10 arm IPs + Connect/Disconnect · SIM_ONLY ↔ MIRROR dropdown · ECI ON/OFF · PWR ON/OFF · **CAM ON/OFF** · E-STOP.
+
+#### Camera hand control (`CAM`)
+Vision-based teleoperation of the COVVI hand. Toggling **CAM ON** (only in `hand` mode) opens the default USB camera (`camera_index`, default `0`), tracks one hand with **MediaPipe Hands** and maps per-finger flexion onto the 6 COVVI hand sliders in real time — so it drives the sim, and the real hand too when **ECI** is ON. A separate OpenCV window shows the tracked landmarks and the flexion bars; press `ESC` on it, toggle **CAM OFF**, or close the GUI to release the camera.
+
+Optional dependency, lazily imported: `python3 -m pip install "mediapipe>=0.10,<0.11"`. If it is missing the button reports it and does nothing else. The landmark→flexion math lives in `touch_pack/hand_camera_teleop.py` (`curls_from_landmarks`, unit-tested without a camera); the tuning constants at the top of that file usually need a pass on a new camera/lighting setup.
 
 ---
 

@@ -95,6 +95,9 @@ class _Host(LcAxialMixin):
         self._lc_tare_req_pub = _PubFalso()
         self._lc_rezero_pub = _PubFalso()
         self._lc_tab_frame = raiz
+        # 'real' = o default do launch; o caso 'sim' tem teste próprio.
+        self._force_source = 'real'
+        self.titulos = []
         self.status = []
 
     # Vem do FtAxesMixin no PalpationGUI real; aqui só o efeito que importa.
@@ -102,6 +105,10 @@ class _Host(LcAxialMixin):
         self._lc_tare_req_pub.publish(None)
 
     def _card(self, root, titulo, expand=False):
+        # O título fica registrado: no `_card` real ele vira um tk.Label
+        # dentro do cabeçalho, e sem guardá-lo aqui nenhum teste consegue
+        # afirmar o que o card anuncia.
+        self.titulos.append(titulo)
         f = tk.Frame(root, bg=PANEL)
         f.pack(fill='both', expand=expand)
         return f
@@ -245,6 +252,23 @@ def test_reading_sem_tare_avisa(leitura, raiz):
     raiz.update_idletasks()
     assert leitura._lc_net_status.cget('text') == 'tare not done'
     assert 'not done' in leitura._lc_tare_state_lbl.cget('text')
+
+
+def test_reading_marca_quando_a_forca_e_simulada(raiz):
+    """Com force_source:=sim quem publica /load_cell/force_net é o
+    sim_force_bridge, e o número é o wrench do plugin FT do Gazebo: ~5,5 N
+    do peso da pilha abaixo da célula, com a célula física DESLIGADA. Sem
+    marca no card isso tem a mesma cara de uma leitura de bancada."""
+    f_real, f_sim = tk.Frame(raiz), tk.Frame(raiz)
+    h_real = _Host(f_real)
+    h_real._build_lc_reading_tab(f_real)
+    h_sim = _Host(f_sim)
+    h_sim._force_source = 'sim'
+    h_sim._build_lc_reading_tab(f_sim)
+    raiz.update_idletasks()
+
+    assert not any('SIMULADA' in t for t in h_real.titulos)
+    assert any('SIMULADA' in t for t in h_sim.titulos)
 
 
 def test_os_dois_zeros_sao_botoes_diferentes(leitura):
