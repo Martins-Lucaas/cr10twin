@@ -545,8 +545,9 @@ def launch_setup(context, *args, **kwargs):
         _pick_sdf = (
             '<?xml version="1.0"?><sdf version="1.6">'
             '<model name="pick_object"><link name="link">'
-            '<inertial><mass>0.06</mass><inertia ixx="4.5e-5" ixy="0" ixz="0" '
-            'iyy="4.5e-5" iyz="0" izz="9.7e-6"/></inertial>'
+            '<inertial><mass>0.06</mass><inertia>'
+            '<ixx>4.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>'
+            '<iyy>4.5e-5</iyy><iyz>0</iyz><izz>9.7e-6</izz></inertia></inertial>'
             '<collision name="col"><geometry><cylinder><radius>0.018</radius>'
             '<length>0.09</length></cylinder></geometry><surface>'
             '<friction><ode><mu>1.4</mu><mu2>1.4</mu2></ode></friction>'
@@ -556,9 +557,15 @@ def launch_setup(context, *args, **kwargs):
             '<length>0.09</length></cylinder></geometry><material>'
             '<ambient>0.70 0.18 0.18 1</ambient><diffuse>0.85 0.28 0.28 1</diffuse>'
             '</material></visual></link></model></sdf>')
+        # spawn_entity.py não tem -string; grava tempfile e usa -file (igual
+        # ao spawn do robô acima).
+        _pfd, _pick_sdf_path = tempfile.mkstemp(
+            prefix='tactile_cell_pick_', suffix='.sdf')
+        with os.fdopen(_pfd, 'w') as _pf:
+            _pf.write(_pick_sdf)
         spawn_pick = Node(
             package='gazebo_ros', executable='spawn_entity.py',
-            arguments=['-string', _pick_sdf, '-entity', 'pick_object',
+            arguments=['-file', _pick_sdf_path, '-entity', 'pick_object',
                        '-x', '0.45', '-y', '0.15', '-z', '0.80'],
             parameters=[{'use_sim_time': True}])
         # kinematic_attacher continua no pacote (console_script) como

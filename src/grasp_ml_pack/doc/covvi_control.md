@@ -30,13 +30,15 @@ Sequência de preensão (manual, pela GUI — aba "Mão"):
 
 Ordem sugerida, uma variável por vez, observando `pick_object` no lift:
 
-1. **`libgazebo_mimic_joint_plugin.so` no `GAZEBO_PLUGIN_PATH`.** Se
-   `rosdep` não resolver `roboticsgroup_gazebo_plugins`, buildar de fonte
-   (`github.com/roboticsgroup/roboticsgroup_gazebo_plugins`, branch ROS 2)
-   ou instalar `ros-humble-roboticsgroup-upatras-gazebo-plugins`. Sem o
-   `.so`, Gazebo loga o erro e segue — a mão fecha mas não segura. Se a
-   sua versão rejeitar `<p>/<i>/<d>` dentro de `<hasPID>`, tirar esses
-   sub-elementos (deixa o PID no default do plugin) — `inject_mimic_joint_plugins`.
+1. **`libgazebo_mimic_joint_plugin.so`** vem do pacote **`gazebo_mimic_plugin`**
+   deste workspace (`src/gazebo_mimic_plugin/`) — reescrita ROS-free do
+   roboticsgroup (o upstream é catkin/ROS 1 e não builda no Humble). O
+   `colcon build` o compila e o hook do `gazebo_ros` põe `<prefix>/lib` no
+   `GAZEBO_PLUGIN_PATH`. Confirmar depois do build:
+   `ros2 pkg prefix gazebo_mimic_plugin` e
+   `find $(ros2 pkg prefix gazebo_mimic_plugin) -name 'libgazebo_mimic_joint_plugin.so'`.
+   Se sumir do path em runtime, Gazebo loga o erro e segue — a mão fecha
+   mas não segura.
 2. **`maxEffort` das mimic de contato** (`inject_mimic_joint_plugins`,
    default 1.0 N·m) e **`effort` dos drivers** (`_stabilize_hand_joints`,
    default 1.0): sobem juntos se a mão não aperta o bastante, descem se o

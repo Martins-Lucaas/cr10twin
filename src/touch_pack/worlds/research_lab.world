@@ -231,7 +231,7 @@
       <link name="base">
         <pose>0 0 0.010 0 0 0</pose>
         <inertial><mass>0.5</mass>
-          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+          <inertia><ixx>1e-4</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-4</iyy><iyz>0</iyz><izz>1e-4</izz></inertia></inertial>
         <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
         <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
           <material><ambient>0.15 0.30 0.15 1</ambient><diffuse>0.20 0.45 0.20 1</diffuse></material></visual>
@@ -239,7 +239,7 @@
       <link name="pad">
         <pose>0 0 0.0335 0 0 0</pose>
         <inertial><mass>0.05</mass>
-          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+          <inertia><ixx>9.0e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>9.0e-6</iyy><iyz>0</iyz><izz>1.7e-5</izz></inertia></inertial>
         <collision name="col">
           <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
           <surface>
@@ -266,7 +266,7 @@
       <link name="base">
         <pose>0 0 0.010 0 0 0</pose>
         <inertial><mass>0.5</mass>
-          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+          <inertia><ixx>1e-4</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-4</iyy><iyz>0</iyz><izz>1e-4</izz></inertia></inertial>
         <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
         <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
           <material><ambient>0.30 0.25 0.10 1</ambient><diffuse>0.55 0.42 0.18 1</diffuse></material></visual>
@@ -274,7 +274,7 @@
       <link name="pad">
         <pose>0 0 0.0335 0 0 0</pose>
         <inertial><mass>0.05</mass>
-          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+          <inertia><ixx>9.0e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>9.0e-6</iyy><iyz>0</iyz><izz>1.7e-5</izz></inertia></inertial>
         <collision name="col">
           <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
           <surface>
@@ -301,7 +301,7 @@
       <link name="base">
         <pose>0 0 0.010 0 0 0</pose>
         <inertial><mass>0.5</mass>
-          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+          <inertia><ixx>1e-4</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-4</iyy><iyz>0</iyz><izz>1e-4</izz></inertia></inertial>
         <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
         <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
           <material><ambient>0.10 0.20 0.35 1</ambient><diffuse>0.18 0.35 0.60 1</diffuse></material></visual>
@@ -309,7 +309,7 @@
       <link name="pad">
         <pose>0 0 0.0335 0 0 0</pose>
         <inertial><mass>0.05</mass>
-          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+          <inertia><ixx>9.0e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>9.0e-6</iyy><iyz>0</iyz><izz>1.7e-5</izz></inertia></inertial>
         <collision name="col">
           <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
           <surface>

@@ -12,8 +12,6 @@
   <maintainer email="lucaspmartins14@gmail.com">Lucas Martins</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
-
   <depend>rclpy</depend>
   <depend>touch_pack_msgs</depend>
   <depend>std_msgs</depend>
@@ -52,12 +50,10 @@
   <exec_depend>gazebo_ros</exec_depend>
   <!-- libgazebo_mimic_joint_plugin.so: transmite força pelas juntas mimic
        da mão COVVI (end_effector:=hand) — sem ele a preensão não segura o
-       objeto por atrito. Pode não estar no rosdistro; nesse caso buildar
-       de fonte (github.com/roboticsgroup/roboticsgroup_gazebo_plugins,
-       branch ROS 2) ou usar `ros-humble-roboticsgroup-upatras-gazebo-plugins`
-       se disponível. `rosdep install -r` só emite aviso se a chave não
-       resolver. Ver src/grasp_ml_pack/doc/covvi_control.md. -->
-  <exec_depend>roboticsgroup_gazebo_plugins</exec_depend>
+       objeto por atrito. Fornecido pelo pacote gazebo_mimic_plugin deste
+       mesmo workspace (reescrita ROS-free do roboticsgroup, porque o
+       upstream é catkin/ROS 1). Ver src/grasp_ml_pack/doc/covvi_control.md. -->
+  <exec_depend>gazebo_mimic_plugin</exec_depend>
   <!-- Viewport 3D da GUI. Sem PIL a aba cai para o desenho em esqueleto;
        sem VTK ela usa o rasterizador em software, que precisa decimar as
        malhas. Com os dois, a aba mostra a malha EXATA do URDF via GPU. -->

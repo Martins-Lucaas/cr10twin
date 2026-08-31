@@ -10,8 +10,6 @@
   <maintainer email="lucaspmartins14@gmail.com">Lucas Martins</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
-
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
@@ -45,7 +43,7 @@
   <exec_depend>touch_pack</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_pep8</test_depend>
+  <test_depend>ament_flake8</test_depend>
   <test_depend>ament_xmllint</test_depend>
 
   <export>

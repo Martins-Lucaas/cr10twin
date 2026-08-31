@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gazebo_mimic_plugin</name>
+  <version>0.1.0</version>
+  <description>
+    Plugin de modelo do Gazebo Classic que faz uma junta "mimic" seguir
+    uma junta mestre (multiplier/offset). Com &lt;hasPID&gt; a junta mimic
+    é seguida por um PID que aplica FORÇA (até &lt;maxEffort&gt;) — é o que
+    transmite a preensão nos dedos subatuados da mão COVVI. Sem &lt;hasPID&gt;
+    a junta é imposta cinematicamente (SetPosition), barato.
+
+    Reescrita ROS-free de roboticsgroup/roboticsgroup_gazebo_plugins
+    (BSD, Konstantinos Chatzilygeroudis): usa gazebo::common::PID em vez
+    de control_toolbox e lê os ganhos do SDF, sem dependência de roscpp.
+  </description>
+  <maintainer email="lucaspmartins14@gmail.com">Lucas Martins</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>gazebo_dev</depend>
+  <depend>gazebo_ros</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <gazebo_ros gazebo_plugin_path="${prefix}/lib" />
+  </export>
+</package>
