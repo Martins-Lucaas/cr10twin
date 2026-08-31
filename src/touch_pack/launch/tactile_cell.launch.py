@@ -44,6 +44,8 @@ from ament_index_python.packages import get_package_share_directory
 from hand_pack.urdf_helpers import (
     clamp_hand_joint_limits,
     inject_visual_skin_layer,
+    inject_mimic_joint_plugins,
+    strip_mimic_joints_from_ros2_control,
     HAND_DRIVER_LOWER,
     INTER_FINGER_COLLISION_LINKS,
 )
@@ -78,14 +80,18 @@ def _stabilize_hand_joints(urdf_body: str) -> str:
         if 'type="revolute"' not in jxml:
             return jxml
         is_mimic = '<mimic' in jxml
-        damp, fric = (30.0, 10.0) if is_mimic else (5.0, 1.0)
+        # Mimic agora é seguida por um PID do plugin mimic (força até
+        # <maxEffort>) — damping alto brigaria com esse PID, então cai
+        # para o mesmo patamar dos drivers. Driver: effort ~1 N·m casa o
+        # manual COVVI (~10-20 N na ponta); 8 N·m esmagava o objeto.
+        damp, fric = (2.0, 0.1) if is_mimic else (5.0, 1.0)
         dyn = f'<dynamics damping="{damp}" friction="{fric}"/>'
         if '<dynamics' in jxml:
             jxml = re.sub(r'<dynamics[^/]*/>', dyn, jxml)
         else:
             jxml = jxml.replace('</joint>', f'      {dyn}\n    </joint>')
         if not is_mimic:
-            jxml = re.sub(r'effort="[\d.]+"', 'effort="8.0"', jxml)
+            jxml = re.sub(r'effort="[\d.]+"', 'effort="1.0"', jxml)
         return jxml
     return re.sub(r'<joint\b[^>]*>.*?</joint>', _patch,
                   urdf_body, flags=re.DOTALL)
@@ -127,8 +133,12 @@ def _build_robot_urdf(end_effector: str):
 
     # YAML de controllers
     if end_effector == 'hand':
+        # Local do touch_pack (não o de hand_pack): aqui o
+        # hand_position_controller comanda SÓ os 6 drivers com feedback
+        # (open_loop=false) — as mimic seguem pelo plugin. O de hand_pack
+        # lista as 31 juntas em malha aberta, que brigaria com o plugin.
         controllers_yaml = os.path.join(
-            hand_pack_share, 'config', 'cr10_covvi_controllers.yaml')
+            touch_pack_share, 'config', 'tactile_hand_controllers.yaml')
     else:  # touch_tool
         controllers_yaml = os.path.join(
             touch_pack_share, 'config', 'tactile_controllers.yaml')
@@ -208,6 +218,13 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
     hand_body = _fix_virtual_link_inertia(hand_body)
     hand_body = clamp_hand_joint_limits(hand_body)
     hand_body = _stabilize_hand_joints(hand_body)
+    # Preensão por física: as 25 juntas mimic saem do gazebo_ros2_control e
+    # passam a ser comandadas pelo plugin mimic (PID com força nas falanges
+    # de contato). O JTC também comanda só os 6 drivers — ver
+    # config/tactile_hand_controllers.yaml. Sem isto a mão fecha só
+    # cinematicamente e não segura nada por atrito.
+    hand_body = strip_mimic_joints_from_ros2_control(hand_body)
+    hand_body = inject_mimic_joint_plugins(hand_body)
     hand_body = _inject_hand_initial_values(hand_body)
     # Remove <gazebo reference="..."> estáticos com propriedades de física (mu1,
     # kd, etc.) para evitar "multiple inconsistent" do parser_urdf ao reduzir
@@ -223,14 +240,19 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
         is_grip = lname in fc
         sc = '1' if is_grip else '0'   # forma canônica — ver _build_robot_urdf
         mu = '2.5' if is_grip else '0.8'
+        # Falange de contato precisa de contato rígido: kp mole deixa o
+        # objeto afundar e escapar sob a preensão. 1e6/100 é o par usado
+        # nas amostras complacentes do research_lab.world.
+        kp, kd, min_depth = ('1e6', '100.0', '0.0001') if is_grip \
+            else ('5e4', '50.0', '0.0005')
         hand_body += (
             f'\n  <gazebo reference="{lname}">'
             f'<gravity>false</gravity>'
             f'<self_collide>{sc}</self_collide>'
             f'<mu1>{mu}</mu1><mu2>{mu}</mu2>'
-            f'<kp>5e4</kp><kd>50.0</kd>'
+            f'<kp>{kp}</kp><kd>{kd}</kd>'
             f'<maxContacts>8</maxContacts>'
-            f'<minDepth>0.0005</minDepth>'
+            f'<minDepth>{min_depth}</minDepth>'
             f'<maxVel>0.01</maxVel>'
             f'</gazebo>'
         )
@@ -304,6 +326,16 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
 def _build_touch_tool_suffix(cr10_urdf: str, touch_pack_share: str,
                               arm_gz: str) -> str:
     """Injeta o TCP de palpação (urdf/touch_tool_tcp.urdf) no CR10."""
+    # Colisão dos elos 1–4 do braço: são a STL cheia do fabricante (sem
+    # decomposição convexa) e nesta célula o braço não encosta em nada por
+    # ali — só a ferramenta toca a amostra. Remover baixa o custo do solver
+    # ODE e o risco de instabilidade no contato de palpação. base_link,
+    # Link5 e Link6 (perto da ferramenta) mantêm a colisão.
+    for _ln in ('Link1', 'Link2', 'Link3', 'Link4'):
+        cr10_urdf = re.sub(
+            rf'(<link name="{_ln}"\s*>.*?)<collision\b.*?</collision>\s*',
+            r'\1', cr10_urdf, count=1, flags=re.DOTALL)
+
     tool_urdf_path = os.path.join(
         touch_pack_share, 'urdf', 'touch_tool_tcp.urdf')
     with open(tool_urdf_path, encoding='utf-8') as f:
@@ -450,10 +482,18 @@ def launch_setup(context, *args, **kwargs):
                      # trocam de unidade entre as duas.
                      'force_sensor': force_sensor}])
 
-    # Célula de carga: UM dos dois drivers, nunca os dois. Ambos são donos
-    # exclusivos da sua porta e ambos publicam /load_cell/force_net — com os
-    # dois no ar o explorer regularia contra a média de duas células.
-    if force_sensor == 'ft6':
+    # Fonte de /load_cell/force_net:
+    #   SIM_ONLY  → sim_force_bridge (wrench do plugin FT em Gazebo). Sem ele
+    #              o tópico fica mudo (não há porta serial) e o explorer
+    #              recusa todo ensaio por "leitura velha".
+    #   MIRROR / REAL_FROM_SIM → o receiver real da célula que está no cabo.
+    # UM só publica por vez — os dois no ar fariam o explorer regular contra
+    # a média de duas fontes.
+    if robot_mode == 'SIM_ONLY':
+        force_rx_node = Node(
+            package='touch_pack', executable='sim_force_bridge',
+            parameters=[{'use_sim_time': True}])
+    elif force_sensor == 'ft6':
         force_rx_node = Node(
             package='touch_pack', executable='ft_receiver',
             parameters=[{'ft_serial_port': ft_port}])
@@ -497,12 +537,43 @@ def launch_setup(context, *args, **kwargs):
             package='controller_manager', executable='spawner',
             arguments=['hand_position_controller',
                        '--controller-manager', '/controller_manager'])
+
+        # Objeto para pegar POR FÍSICA (atrito real da preensão — sem
+        # attach cinemático). kp/kd/mu casados com as falanges de contato
+        # (ver _build_hand_suffix). Se ainda escapar, subir mu / iters do
+        # world — ver src/grasp_ml_pack/doc/covvi_control.md.
+        _pick_sdf = (
+            '<?xml version="1.0"?><sdf version="1.6">'
+            '<model name="pick_object"><link name="link">'
+            '<inertial><mass>0.06</mass><inertia ixx="4.5e-5" ixy="0" ixz="0" '
+            'iyy="4.5e-5" iyz="0" izz="9.7e-6"/></inertial>'
+            '<collision name="col"><geometry><cylinder><radius>0.018</radius>'
+            '<length>0.09</length></cylinder></geometry><surface>'
+            '<friction><ode><mu>1.4</mu><mu2>1.4</mu2></ode></friction>'
+            '<contact><ode><kp>1e6</kp><kd>100</kd><min_depth>0.0001</min_depth>'
+            '</ode></contact></surface></collision>'
+            '<visual name="vis"><geometry><cylinder><radius>0.018</radius>'
+            '<length>0.09</length></cylinder></geometry><material>'
+            '<ambient>0.70 0.18 0.18 1</ambient><diffuse>0.85 0.28 0.28 1</diffuse>'
+            '</material></visual></link></model></sdf>')
+        spawn_pick = Node(
+            package='gazebo_ros', executable='spawn_entity.py',
+            arguments=['-string', _pick_sdf, '-entity', 'pick_object',
+                       '-x', '0.45', '-y', '0.15', '-z', '0.80'],
+            parameters=[{'use_sim_time': True}])
+        # kinematic_attacher continua no pacote (console_script) como
+        # fallback para demo de pick-and-place em que a força de preensão
+        # não é o objeto de estudo — NÃO sobe por default. Para usá-lo:
+        #   ros2 run touch_pack kinematic_attacher
+        #   ros2 service call /kinematic_attach/attach std_srvs/srv/Trigger
+
         # pose_sync só precisa do cr10_group_controller — paralelo ao load_hand.
         after_arm = RegisterEventHandler(
             OnProcessExit(target_action=load_arm,
                           on_exit=[load_hand, pose_sync]))
         after_last = RegisterEventHandler(
-            OnProcessExit(target_action=load_hand, on_exit=late_nodes))
+            OnProcessExit(target_action=load_hand,
+                          on_exit=late_nodes + [spawn_pick]))
         chain = [after_spawn, after_jsb, after_arm, after_last]
     else:  # touch_tool — sem hand controller
         after_arm = RegisterEventHandler(

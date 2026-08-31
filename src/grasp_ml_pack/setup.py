@@ -32,6 +32,7 @@ setup(
         'console_scripts': [
             'object_detector      = grasp_ml_pack.object_detector:main',
             'grasp_executor       = grasp_ml_pack.grasp_executor:main',
+            'grasp_sense          = grasp_ml_pack.grasp_sense:main',
             'conveyor_controller  = grasp_ml_pack.conveyor_controller:main',
             'gui_control          = grasp_ml_pack.gui_control_node:main',
             'manual_control       = grasp_ml_pack.manual_control_node:main',

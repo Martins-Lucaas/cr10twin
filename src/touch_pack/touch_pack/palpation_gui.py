@@ -1968,10 +1968,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 _f('force_sp', FORCE_SP_DEFAULT)), 3)))
         self.hold_stable_var  = tk.DoubleVar(value=_f('hold_stable', 5.0))
         self.hold_timeout_var = tk.DoubleVar(value=_f('hold_timeout', 8.0))
-        # Tetos do micro-passo quase-estático (defaults espelham o explorer:
-        # _QS_DX_MAX_M = 10 µm, _QS_DF_HARD_N = 0.3 N).
-        self.hold_dx_var      = tk.DoubleVar(value=_f('hold_dx_max', 100.0))
-        self.hold_df_var      = tk.DoubleVar(value=_f('hold_df_max', 0.3))
         # Inclinação da superfície na direção do deslize (graus). Compensada
         # por geometria no SLIDING; 0 = plano horizontal (comportamento
         # anterior a 06/08/2026).
@@ -2210,27 +2206,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                          vmin=2.0, vmax=60.0, step=1.0,
                          hint='Maximum wait for stabilization. On expiry '
                               'the experiment proceeds with a warning.')
-        self._param_row(adv, label='HOLD — Max Micro-step',
-                         unit='µm', var=self.hold_dx_var,
-                         vmin=1.0, vmax=500.0, step=5.0,
-                         hint='Absolute cap of each quasi-static correction '
-                              'step during HOLD/FINE (explorer default: '
-                              '100 µm). One step is executed per ~180 ms '
-                              'cycle, so 100 µm ≈ 0.5 mm/s effective. This '
-                              'is only a safety ceiling — what limits the '
-                              'step in practice is Max ΔF per Step divided '
-                              'by the measured stiffness. Raise it for soft '
-                              'tips (silicone ≈ 0.6 N/mm needs ~100 µm to '
-                              'move 0.06 N); on a stiff contact the ΔF cap '
-                              'bites first and this has no effect.')
-        self._param_row(adv, label='HOLD — Max ΔF per Step',
-                         unit='N', var=self.hold_df_var,
-                         vmin=0.05, vmax=1.0, step=0.05,
-                         hint='Hard cap of the projected force change per '
-                              'micro-step, boost included (explorer '
-                              'default: 0.3 N). This is what actually '
-                              'limits the step once the stiffness is '
-                              'estimated.')
         self._param_row(adv, label='Slide Slope (surface tilt)',
                          unit='°', var=self.slide_slope_var,
                          vmin=-10.0, vmax=10.0, step=0.1, snap=0.1,
@@ -3194,14 +3169,15 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
     def _publish_sim_hand(self, primary_rad: dict[str, float],
                            duration_s: float) -> None:
         """Publica a trajetória da mão no Gazebo a partir das 6 juntas
-        primárias (rad), expandindo as juntas mimic do URDF. Usado tanto pelo
-        comando do slider (sim-only) quanto pelo mirror real→sim (Versão B)."""
+        primárias (rad). Usado tanto pelo comando do slider (sim-only)
+        quanto pelo mirror real→sim (Versão B).
+
+        Só os 6 drivers vão no comando: na célula tátil (end_effector:=hand)
+        as juntas mimic são impostas em-sim pelo plugin mimic (PID com
+        força) — ver tactile_cell.launch.py / covvi_control.md. Mandar as
+        mimic aqui brigaria com esse PID e a preensão não seguraria."""
         names = list(HAND_JOINTS)
         positions = [primary_rad[j] for j in HAND_JOINTS]
-        # Expande as 26 juntas mimic com as razões do URDF.
-        for mimic_name, driver, mult in MIMIC_LIST:
-            names.append(mimic_name)
-            positions.append(primary_rad[driver] * mult)
         msg = JointTrajectory()
         # stamp=zero → controller starts immediately (sim-time-safe).
         msg.joint_names = names
@@ -6377,14 +6353,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                                             default=1.0)
             hold_timeout = self._clamp_var(self.hold_timeout_var, 2.0, 60.0,
                                             default=12.0)
-            # Faixa alargada de 50 para 500 µm: com ponteira de silicone
-            # (0,62 N/mm medidos) 50 µm valem 0,03 N por passo, e o hold
-            # rastejava. Ver _QS_DX_MAX_M no explorer — quem limita por
-            # física é o teto por ΔF, este é só o teto absoluto.
-            hold_dx      = self._clamp_var(self.hold_dx_var, 1.0, 500.0,
-                                            default=100.0)
-            hold_df      = self._clamp_var(self.hold_df_var, 0.05, 1.0,
-                                            default=0.3)
             slide_slope  = self._clamp_var(self.slide_slope_var, -10.0, 10.0,
                                             default=0.0)
             fmod_hz      = self._clamp_var(self.fmod_hz_var,
@@ -6574,7 +6542,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             'slide_dir': self.slide_dir_var.get(),
             'hold_tol': float(hold_tol), 'hold_stable': float(hold_stable),
             'hold_timeout': float(hold_timeout),
-            'hold_dx_max': float(hold_dx), 'hold_df_max': float(hold_df),
             'slide_slope_deg': float(slide_slope),
             'mode': self.mode_var.get(),
             'matrix_shape': self.matrix_shape_var.get(),
@@ -6619,8 +6586,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             'hold_tol_n':         float(hold_tol),
             'hold_stable_s':      float(hold_stable),
             'hold_timeout_s':     float(hold_timeout),
-            'hold_dx_max_um':     float(hold_dx),
-            'hold_df_max_n':      float(hold_df),
             # Descida em dois estágios (só o caminho MovL/robô real).
             'slide_slope_deg':    float(slide_slope),
             'mode':               self.mode_var.get(),
@@ -6737,8 +6702,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         msg.hold_tol_n         = float(payload['hold_tol_n'])
         msg.hold_stable_s      = float(payload['hold_stable_s'])
         msg.hold_timeout_s     = float(payload['hold_timeout_s'])
-        msg.hold_dx_max_um     = float(payload['hold_dx_max_um'])
-        msg.hold_df_max_n      = float(payload['hold_df_max_n'])
         msg.slide_slope_deg    = float(payload.get('slide_slope_deg', 0.0))
         msg.mode               = str(payload.get('mode', 'SLIDE'))
         # Força modulada — o explorer lê no _cb_start e, com shape não

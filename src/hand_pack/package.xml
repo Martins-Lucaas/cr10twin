@@ -16,6 +16,18 @@
   <depend>rviz2</depend>
   <depend>joint_state_publisher</depend>
 
+  <!-- Deps de runtime importadas e antes não declaradas (ver a nota
+       equivalente em touch_pack/package.xml). -->
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>covvi_interfaces</exec_depend>
+
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>gazebo_ros2_control</exec_depend>
   <exec_depend>ros2_control</exec_depend>

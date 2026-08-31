@@ -1,0 +1,63 @@
+# Controllers da célula tátil com end_effector:=hand.
+#
+# Difere do hand_pack/config/cr10_covvi_controllers.yaml em UMA coisa: o
+# hand_position_controller comanda SÓ os 6 drivers, em malha FECHADA
+# (open_loop_control: false). As 25 juntas mimic são impostas pelo plugin
+# `libgazebo_mimic_joint_plugin.so` (PID com força nas falanges de
+# contato) injetado em tactile_cell.launch.py — se o JTC também as
+# comandasse, as duas malhas brigariam e a preensão não transmitiria
+# força. Ver src/grasp_ml_pack/doc/covvi_control.md.
+#
+# O bloco cr10_group_controller é cópia fiel do arquivo de hand_pack.
+
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    cr10_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    hand_position_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+cr10_group_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    open_loop_control: true
+
+hand_position_controller:
+  ros__parameters:
+    joints:
+      - Thumb
+      - Index
+      - Middle
+      - Ring
+      - Little
+      - Rotate
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    # Malha fechada: um novo alvo parte do estado MEDIDO, então quando o
+    # contato empurra o dedo de volta o comando seguinte não dá salto.
+    open_loop_control: false
+    allow_partial_joints_goal: true
+    interpolation_method: splines
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 0.0

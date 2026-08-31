@@ -24,10 +24,40 @@
   <depend>control_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>builtin_interfaces</depend>
+
+  <!-- Deps de runtime que os nós/launch IMPORTAM e que faltavam na
+       declaração — sem elas `rosdep install` não resolve nada delas e a
+       build/execução quebra em máquina limpa. `covvi_interfaces` entra
+       porque vários nós fazem soft-import dos tipos mesmo em modo só-sim.
+       `hand_pack` NÃO entra de propósito: hand_pack já depende de
+       touch_pack, então declará-lo aqui fecharia um ciclo no colcon. -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+  <exec_depend>covvi_interfaces</exec_depend>
+
   <!-- Controlador opcional ativável via tactile_controllers.yaml -->
   <exec_depend>admittance_controller</exec_depend>
   <exec_depend>kinematics_interface_kdl</exec_depend>
   <exec_depend>force_torque_sensor_broadcaster</exec_depend>
+
+  <!-- Simulação Gazebo Classic: libgazebo_ros_ft_sensor.so (F/T simulada na
+       junta da célula) + libgazebo_ros_state.so (research_lab.world). -->
+  <exec_depend>gazebo_plugins</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <!-- libgazebo_mimic_joint_plugin.so: transmite força pelas juntas mimic
+       da mão COVVI (end_effector:=hand) — sem ele a preensão não segura o
+       objeto por atrito. Pode não estar no rosdistro; nesse caso buildar
+       de fonte (github.com/roboticsgroup/roboticsgroup_gazebo_plugins,
+       branch ROS 2) ou usar `ros-humble-roboticsgroup-upatras-gazebo-plugins`
+       se disponível. `rosdep install -r` só emite aviso se a chave não
+       resolver. Ver src/grasp_ml_pack/doc/covvi_control.md. -->
+  <exec_depend>roboticsgroup_gazebo_plugins</exec_depend>
   <!-- Viewport 3D da GUI. Sem PIL a aba cai para o desenho em esqueleto;
        sem VTK ela usa o rasterizador em software, que precisa decimar as
        malhas. Com os dois, a aba mostra a malha EXATA do URDF via GPU. -->

@@ -27,32 +27,32 @@ Arquitetura de controle:
 
 Fases:
   HOME         Interpolação linear no espaço de juntas a ≤ 0.3 rad/s.
-  DESCENDING   Aproxima rápido até o contato; então passo DEADBEAT
-               normalizado pela rigidez leva a compressão ao setpoint
-               (profundidade da GUI = curso máximo).
-  HOLD         Passo DEADBEAT mantém a compressão no setpoint, ESPERA a
-               janela estável e mantém um dwell de medição antes de liberar.
+  DESCENDING   Aproxima rápido até o contato; então RAMPA a velocidade
+               constante leva a compressão ao setpoint (profundidade da
+               GUI = curso máximo).
+  HOLD         Congela a posição no setpoint, defende o patamar contra a
+               relaxação viscoelástica e cumpre um dwell de medição.
   SLIDING      Streaming Jacobiano lateral com ALTURA TRAVADA em posição —
                a força fica livre para variar com a textura (sinal medido).
 
-Controle de força (DESCENDING/HOLD):
+Controle de força (DESCENDING/HOLD/ESCADA/MANUAL):
   Setpoint selecionável na GUI (force_n, máx. 10 N). A regulação é
-  QUASE-ESTÁTICA por micro-passos: Δx=relax·(setpoint−fz)/K_est, com
-  K_est=ΔF/Δx estimado online no DESCENDING e congelado para o HOLD
-  (ver _StiffnessEstimator e _qs_regulate). No SLIDING a força NÃO é
-  regulada — só monitorada por segurança. A medição é CANCELADA se a
-  compressão exceder 15 N (_FORCE_ABORT_LIMIT_N).
+  QUASE-ESTÁTICA por RAMPA A VELOCIDADE CONSTANTE (ver _qs_regulate): o TCP
+  desce ao longo do eixo de ataque a `hold_ramp_mms` mm/s até a força medida
+  CRUZAR o setpoint, e então congela; se a força relaxa para fora da banda,
+  a rampa é retomada sem reiniciar o relógio do patamar. Não há termo
+  proporcional nem estimativa de rigidez na decisão — a rigidez só entra num
+  clamp de segurança por tick (_QS_RAMP_DF_CAP_N). Overshoot = 1 tick de
+  curso; tempo de patamar = curso/v + janela estável.
 
-  O passo de EMPURRAR passa por três guardas de NÃO-ULTRAPASSAGEM, porque
-  Δx=relax·err/K_est só não passa do alvo se K_est estiver certa e o contato
-  desta bancada ENRIJECE 17× ao longo de um único toque (ver o bloco
-  NÃO-ULTRAPASSAGEM nas constantes):
-    cota superior de rigidez  k_push = margem·max(EMA, última secante)
-    não-ultrapassagem         Δx ≤ frac·(alvo − fz)/k_push  (mira no ALVO,
-                              não na borda da banda)
-    rampa                     Δx cresce no máximo ×_QS_STEP_GROWTH por tick
-  O alívio (err < 0) usa a MESMA cota superior: recuar demais larga o
-  contato e o passo livre seguinte volta batendo.
+  A lei ANTERIOR (Δx=relax·err/K_est com tetos por k_upper — ver o bloco
+  NÃO-ULTRAPASSAGEM nas constantes e _StiffnessEstimator) foi trocada: K_est
+  é uma EMA do trecho JÁ percorrido de um contato que enrijece, subestima a
+  inclinação seguinte e o passo err/K_est atravessava o alvo. O
+  _StiffnessEstimator permanece porque a onda SINE/COSINE do modo TOUCH
+  (feedforward Δx=ΔF/K, fora de _qs_regulate) ainda depende dele. No SLIDING
+  a força NÃO é regulada — só monitorada por segurança. A medição é
+  CANCELADA se a compressão exceder 15 N (_FORCE_ABORT_LIMIT_N).
 
 Interface ROS:
   sub /palpation/start    touch_pack_msgs/PalpationStart
@@ -527,8 +527,8 @@ _QS_DF_DEAD_N      = 0.05    # N: ΔF mínimo p/ considerar que o passo "pegou" 
 _QS_BOOST_MAX      = 6.0     # teto do multiplicador anti-stiction
 _QS_DF_HARD_N      = 0.3     # N: teto DURO de ΔF por passo (boost incluso); acima, estaciona e dá timeout
 # O teto acima é ABSOLUTO, e era esse o problema em setpoint baixo: contra o
-# alvo de 0,5 N do run MANUAL/20260817_142719 os 0,2 N que a GUI mandou
-# (hold_df_max_n) autorizam UM passo a varrer 40 % da faixa inteira. Nenhuma
+# alvo de 0,5 N do run MANUAL/20260817_142719 os 0,2 N de teto de ΔF
+# autorizam UM passo a varrer 40 % da faixa inteira. Nenhuma
 # estimativa de K sobrevive a isso: mesmo com K exata a descida chega em 3
 # passos, e cada erro de K vira overshoot direto, porque não há passo pequeno
 # o bastante para o laço se corrigir antes de cruzar o alvo.
@@ -559,8 +559,8 @@ _QS_FREE_STEP_MAX_M = 8.0e-6 # 8 µm: teto da re-aproximação sem contato mesmo
 # inteiro: nos 5 ciclos daquele run, 0,23 a 0,59 N acima de um alvo de 1,6 N
 # com banda de 0,05 N. Os tetos não seguravam porque TAMBÉM são calculados
 # com a K errada (hard_cap = ΔF_max/K_est), e quem acabava mordendo era o
-# teto ABSOLUTO (_QS_DX_MAX_M / hold_dx_max_um), que não conhece rigidez
-# nenhuma: 200 µm × 2,5 N/mm = 0,5 N de quantum por passo.
+# teto ABSOLUTO (_QS_DX_MAX_M), que não conhece rigidez nenhuma:
+# 200 µm × 2,5 N/mm = 0,5 N de quantum por passo.
 #
 # Três guardas, todas na direção de EMPURRAR (aliviar de menos custa um tick,
 # aliviar demais perde o contato e vira quique):
@@ -584,11 +584,45 @@ _QS_STEP_GROWTH    = 3.0     # crescimento máximo do passo de empurrar por tick
 _QS_DX_FLOOR_M     = 1.0e-6  # 1 µm: primeiro passo de empurrar (semente da rampa)
 _QS_FREE_RESET_TICKS = 3     # leituras seguidas fora do contato p/ reiniciar a rampa
 _QS_ARRIVE_S       = 0.35    # s: janela settled em banda p/ o DESCENDING declarar chegada
-_QS_TIMEOUT_S      = 20.0    # s: teto da convergência inicial no DESCENDING
+# Teto da convergência INICIAL (etapa A da rampa). NÃO é gate de desempenho —
+# é detector de "não chega" (contato quebrado, sentido errado, curso curto).
+# A rampa a v constante é mais lenta que a lei proporcional perto do alvo
+# (medida assentada ~1 s/tick dentro de 3 bandas), então tem de ser generoso:
+# 3 N em silício mole levam ~20-30 s de etapa A. Depois do 1º cruzamento não
+# há mais timeout — a etapa B roda por `stable_s` de relógio.
+_QS_TIMEOUT_S      = 45.0    # s: teto da convergência inicial no DESCENDING
+
+# ── RAMPA A VELOCIDADE CONSTANTE (a lei que _qs_regulate usa hoje) ─────
+# O bloco NÃO-ULTRAPASSAGEM acima e os _QS_* da lei proporcional
+# (Δx = relax·err/K_est, tetos por k_upper, boost, rampa geométrica,
+# passo de alívio) descrevem o regulador ANTERIOR. O overshoot dele era
+# estrutural: K_est é uma EMA do trecho JÁ percorrido de um contato que
+# enrijece, então subestima a inclinação seguinte e o passo err/K_est
+# atravessa o alvo. Os _QS_* daquela lei continuam definidos porque os
+# comentários documentam por que ela falhava; a lei ATIVA é a rampa abaixo.
+#
+# _qs_regulate agora move o TCP a VELOCIDADE CONSTANTE (passo v·dt fixo) ao
+# longo do eixo de ataque até a força medida cruzar o setpoint, e então
+# congela. A rigidez NÃO é ganho — só ENCURTA o passo fixo em dois clamps
+# de segurança (_QS_RAMP_DF_CAP_N e a não-ultrapassagem por k_upper). O
+# overshoot passa a ser ≤ 1 tick de curso, tendendo a zero perto do alvo, e
+# o tempo de cada patamar vira curso/v + stable_s: as duas coisas que a lei
+# proporcional não dava.
+_QS_RAMP_V_MS = 1.0e-3   # 1,0 mm/s NOMINAL da rampa até o setpoint. Efetivo
+                         # ≈ 1/6 disso: _qs_measure_fz congela o braço
+                         # _QS_SETTLE_TICKS por leitura. Auto-ajusta: contato
+                         # mole gasta o curso, rígido cruza o alvo em < 1
+                         # tick. Override ROS: hold_ramp_mms.
+# Clamp de SEGURANÇA por tick (NÃO é realimentação — o passo é v·dt fixo,
+# isto só o LIMITA): o passo nunca projeta mais que _QS_RAMP_DF_CAP_N de
+# força, dividindo por _StiffnessEstimator.value (a K já medida na descida,
+# que precede todo HOLD/ESCADA; _K_DEFAULT_NM antes disso). ≈ 2× a banda de
+# ruído: o passo cruza o alvo dentro de ~1 banda mesmo no contato mais
+# rígido. Mesma classe de guarda que crawl_v_ms é para a descida em ar livre.
+_QS_RAMP_DF_CAP_N = 0.1
 # Creep viscoelástico: a força a posição constante relaxa com o tempo, então
-# o hold não pode só congelar — dentro da banda, se |err| passar de meia-banda
-# aplica micro-passo SEM resetar a janela de estabilidade (banda é critério
-# de força, não de imobilidade).
+# a defesa do patamar (etapa B de _qs_regulate) retoma a rampa quando a
+# força cai abaixo de alvo−banda, SEM reiniciar o relógio de stable_s.
 
 # O HOLD só libera o SLIDING quando a compressão fica DENTRO da tolerância
 # em torno do setpoint por _HOLD_STABLE_S contínuos.
@@ -599,7 +633,12 @@ _QS_TIMEOUT_S      = 20.0    # s: teto da convergência inicial no DESCENDING
 # PalpationStart sobrescreve este default sempre que traz hold_tol_n > 0.
 # Os aliases privados ficam para não reindentar o arquivo inteiro.
 _HOLD_STABLE_S  = 5.0    # s contínuos dentro da tolerância (janela estável)
-_HOLD_TIMEOUT_S = 8.0    # s: teto de espera pela estabilização
+# Teto da etapa A do HOLD (antes do 1º cruzamento). Subiu de 8 → 25 s com a
+# rampa: normalmente o HOLD entra já no alvo (o DESCENDING trouxe a força até
+# lá) e cruza no tick 1, mas se sobrar um degrau de força para fechar, a
+# rampa a v constante leva mais que os 8 s calibrados para a lei proporcional
+# — e expirar aqui PULA o dwell de medição e entrega o SLIDING fora do alvo.
+_HOLD_TIMEOUT_S = 25.0   # s: teto de espera pela estabilização
 # Após estabilizar, mantém o setpoint por mais _HOLD_DWELL_S antes de liberar
 # SLIDING/recuo.
 _HOLD_DWELL_S   = 5.0
@@ -1402,6 +1441,9 @@ class TactileExplorer(Node):
         self.declare_parameter('learned_contact_persist', True)
         self.declare_parameter('learned_contact_max_age_h', 24.0)
         self.declare_parameter('descent_speed_mms', 5.0)
+        # Velocidade NOMINAL da rampa fina de _qs_regulate até o setpoint
+        # (mm/s). Efetivo ≈ 1/6 — ver _QS_RAMP_V_MS.
+        self.declare_parameter('hold_ramp_mms', _QS_RAMP_V_MS * 1e3)
         self.declare_parameter('home_speed_rad_s', _HOME_MAX_RAD_S)
         # Calibração dinâmica do ângulo de ataque — ver o bloco _ALIGN_*.
         # Desligada por padrão: ligá-la muda a aproximação de TODO run.
@@ -1557,9 +1599,6 @@ class TactileExplorer(Node):
         self._hold_tol_n: float | None = None
         self._hold_stable_s: float | None = None
         self._hold_timeout_s: float | None = None
-        # Overrides dos tetos do micro-passo quase-estático (GUI, Advanced).
-        self._qs_dx_max_m: float | None = None
-        self._qs_df_hard_n: float | None = None
         self._lc_lock = threading.Lock()
         self._lc_force_net: float = 0.0   # COM SINAL: + compressão, − tração
         self._lc_force_ts: float = 0.0    # time.monotonic() da última leitura
@@ -2245,10 +2284,6 @@ class TactileExplorer(Node):
                                    if msg.hold_stable_s > 0.0 else None)
             self._hold_timeout_s = (float(msg.hold_timeout_s)
                                     if msg.hold_timeout_s > 0.0 else None)
-            self._qs_dx_max_m = (float(msg.hold_dx_max_um) * 1e-6
-                                 if msg.hold_dx_max_um > 0.0 else None)
-            self._qs_df_hard_n = (float(msg.hold_df_max_n)
-                                  if msg.hold_df_max_n > 0.0 else None)
 
         # ── MATRIX_MAP: geometria da grade ───────────────────────────
         # A validação acontece AQUI, antes de qualquer movimento: uma matriz
@@ -2608,78 +2643,71 @@ class TactileExplorer(Node):
         _wait()
         return q_new
 
-    @staticmethod
-    def _qs_df_step_n(df_hard_n: float, target_f: float) -> float:
-        """Teto de ΔF de UM micro-passo: o menor entre o teto ABSOLUTO
-        (`df_hard_n`) e a fração do alvo, com piso no ΔF que ainda sai do
-        ruído da célula. Ver _QS_DF_TARGET_FRAC."""
-        return min(df_hard_n,
-                   max(_QS_DF_TARGET_FRAC * abs(target_f), _QS_DF_DEAD_N))
-
-    @staticmethod
-    def _qs_relief_step(raw_m: float, fz: float, k_push: float,
-                        df_step_n: float) -> float:
-        """Passo de ALIVIAR já saturado. Sempre ≤ 0 — nunca empurra.
-
-        Três limites, nesta ordem:
-          • ±df_step_n/k_push — o mesmo teto por ΔF do empurrar;
-          • piso de _QS_RELIEF_FLOOR_N — recuar DEMAIS larga o contato e o
-            passo livre seguinte volta batendo (assinatura QUIQUE);
-          • sinal — o alívio nunca vira avanço.
-
-        O terceiro é o que era implícito. Com `fz` ABAIXO do piso a expressão
-        do segundo fica POSITIVA e o `max()` transformava um passo de alívio
-        num de empurrar. Isso dependia de três limites que valiam 0,10 N por
-        coincidência; em 28/08/2026, quando _CONTACT_ON_N subiu para 0,12 N,
-        os três passaram a REFERENCIAR a constante (_QS_RELIEF_FLOOR_N e as
-        saturações de setpoint), então a igualdade agora vale por construção.
-        O `min(..., 0.0)` continua sendo a garantia dura de que alívio nunca
-        vira avanço.
-
-        Função pura, e é por isso que ela é uma função: a invariante "alívio
-        nunca empurra" precisa ser verificável sem rodar a FSM.
-        """
-        hard_cap = float(df_step_n) / max(float(k_push), 1e-9)
-        step_m = float(np.clip(float(raw_m), -hard_cap, hard_cap))
-        floor_m = -(float(fz) - _QS_RELIEF_FLOOR_N) / max(float(k_push), 1e-9)
-        return min(max(step_m, floor_m), 0.0)
-
     def _qs_regulate(self, target_f: float, tol_n: float,
                      approach_dir: np.ndarray, v_lim: float, I6: np.ndarray,
                      *, budget_m: float | None, stable_s: float,
                      timeout_s: float, phase: str,
                      dynamic: bool = False,
                      feed_curve: bool = False) -> tuple[str, float]:
-        """Regulação de força QUASE-ESTÁTICA (move-then-measure).
+        """Regulação de força por RAMPA A VELOCIDADE CONSTANTE (quase-estática).
 
-        `feed_curve` alimenta a curva F(x) com os pares (deepened_m, fz). Só
-        as chamadas da DESCIDA podem ligá-lo: `deepened_m` é relativo ao
-        início DESTA chamada, e o HOLD/DEGRAU começa a contar do zero de novo,
-        no meio do contato. Misturar as duas origens não corrompe um pouco a
-        curva — inverte a ordem dos pontos no topo, e o achatamento monotônico
-        transforma o trecho de cima numa reta plana, cuja inclinação (∞) é
-        justamente a que a onda usaria para extrapolar.
+        Substitui a lei proporcional Δx = relax·err/K_est (ver o bloco
+        NÃO-ULTRAPASSAGEM e os _QS_* daquela lei): o overshoot dela era
+        estrutural, porque K_est é uma EMA do trecho JÁ percorrido de um
+        contato que enrijece e o passo err/K_est atravessava o alvo.
+
+        Agora:
+          ETAPA A — move o TCP ao longo do eixo de ataque a velocidade
+            CONSTANTE (`hold_ramp_mms`, efetivo ≈ 1/6 pelo custo de medida),
+            no sentido de sinal(alvo − fz), até a força medida CRUZAR o
+            setpoint. O passo é v·dt FIXO; a rigidez NÃO é um ganho — entra
+            só em dois clamps que ENCURTAM esse passo: ΔF projetado ≤
+            _QS_RAMP_DF_CAP_N e NÃO-ULTRAPASSAGEM (o passo não cruza o alvo
+            nem na pior rigidez, _k_est.k_upper). Perto do alvo isso torna a
+            aproximação geométrica POR BAIXO — sem overshoot mesmo com K
+            errada.
+          ETAPA B — congela a posição por `stable_s` s de relógio. Se a força
+            sai da banda (relaxa para baixo num degrau de carga, RECUPERA
+            para cima depois de um degrau de descarga), retoma a rampa —
+            limitada pela não-ultrapassagem, minúscula perto do alvo — até
+            recruzar e recongela; o relógio de `stable_s` NÃO reinicia.
+            `dynamic=True` faz o mesmo mas NUNCA retorna sozinho: segue o
+            setpoint corrente (/palpation/set_force) até stop/force/stale/
+            target_lost.
+
+        Overshoot ≤ 1 tick de curso e tende a zero perto do alvo; tempo de
+        patamar = curso/v + stable_s. As duas coisas que a lei proporcional
+        não dava (lá o pico passava 0,2–0,6 N e o patamar durava de 16 a 53 s
+        para um dwell de 10 s).
+
+        `feed_curve` alimenta a curva F(x) (_fx_curve) com os pares
+        (deepened_m, fz) — só a DESCIDA liga isto, para a onda SINE/COSINE. O
+        estimador de rigidez (_k_est) é alimentado SEMPRE: não governa a
+        velocidade, mas os dois clamps de segurança o usam.
+
+        Retorna (status, fz): 'ok' | 'timeout' | 'budget' | 'force'
+                              | 'stale' | 'stop' | 'target_lost'.
         """
+        dt = _CTRL_DT
+        try:
+            v_ramp = max(1.0e-5,
+                         float(self.get_parameter('hold_ramp_mms').value) / 1e3)
+        except Exception:
+            v_ramp = _QS_RAMP_V_MS
+
         t_start = time.time()
-        t_stable0: float | None = None
+        t_cross: float | None = None   # instante em que a força cruzou o alvo
         self._qs_ever_contact = False
-        # Tetos do micro-passo — overrides da GUI (PalpationStart) ou defaults.
-        dx_max_m = (self._qs_dx_max_m if self._qs_dx_max_m is not None
-                    else _QS_DX_MAX_M)
-        df_hard_n = (self._qs_df_hard_n if self._qs_df_hard_n is not None
-                     else _QS_DF_HARD_N)
         deepened_m = 0.0
         fz_prev: float | None = None
         step_prev = 0.0
-        err_prev: float | None = None   # erro da volta anterior (ver `perto`)
-        boost = 1.0   # multiplicador anti-stiction (cresce se ΔF não responde)
-        # Último passo de EMPURRAR executado — referência da rampa. None = a
-        # próxima aproximação recomeça em _QS_DX_FLOOR_M.
-        step_up_prev: float | None = None
-        free_ticks = 0   # leituras CONSECUTIVAS fora do contato (reset da rampa)
-        # Vigia de ALVO RETIRADO (ver o bloco _TARGET_LOST_*): curso livre
-        # acumulado DEPOIS de o contato ter sido firmado, e o instante em que
-        # a força ainda estava carregada.
+        err_prev: float | None = None
+        # Sentido da rampa da ETAPA A: fixo para um alvo constante, recalculado
+        # a cada tick no MANUAL dinâmico. +1 = aprofundar, −1 = recuar.
+        sign0 = 0.0
+        # Vigia de ALVO RETIRADO (ver _TARGET_LOST_*): curso livre acumulado
+        # DEPOIS de o contato ter sido firmado, e o instante em que a força
+        # ainda estava carregada.
         free_since_contact_m = 0.0
         t_last_loaded: float | None = None
         q_cmd: np.ndarray | None = None   # última posição COMANDADA — congela
@@ -2695,19 +2723,16 @@ class TactileExplorer(Node):
             if self._force_stale_abort(phase):
                 return 'stale', 0.0
             if dynamic:
-                # Modo MANUAL: segue o setpoint atualizado on-the-fly
-                # (/palpation/set_force) — a transição vem pelos micro-passos,
-                # sem reiniciar a FSM. A tolerância acompanha o novo alvo.
+                # MANUAL: segue o setpoint atualizado on-the-fly, sem reiniciar
+                # a FSM. A tolerância acompanha o novo alvo.
                 with self._params_lock:
                     target_f = float(self._target_force_n)
                 tol_n = (self._hold_tol_n if self._hold_tol_n is not None
                          else max(_HOLD_TOL_N, _HOLD_TOL_PCT * target_f))
 
-            # PERTO DO ALVO a medida espera a força assentar; longe dele
-            # mede rápido. `err_prev` é o erro da volta ANTERIOR — decidir com
-            # o erro desta volta exigiria a medida que ainda não foi feita, e
-            # uma volta de atraso não muda nada: o que importa é estar no
-            # regime certo quando o passo encolher.
+            # Perto do alvo a medida ESPERA a força assentar (rejeita o creep
+            # que causava overshoot); longe dele mede rápido. `err_prev` é o
+            # erro da volta anterior — uma volta de atraso não muda o regime.
             perto = (err_prev is not None
                      and abs(err_prev) <= _QS_SETTLE_NEAR_MULT * tol_n)
             fz = self._qs_measure_fz(q_cmd, settle=perto)
@@ -2725,15 +2750,17 @@ class TactileExplorer(Node):
             # força" é a aproximação normal, não uma anomalia.
             if in_contact:
                 free_since_contact_m = 0.0
+                self._qs_ever_contact = True
                 if fz >= _TARGET_LOST_DROP_FRAC * target_f:
                     t_last_loaded = time.time()
+                # A curva F(x): `deepened_m` é a penetração COMANDADA desta
+                # fase e `fz` foi lida em REPOUSO logo acima — o par que o
+                # move-then-measure produz de graça. A onda o interpola no
+                # lugar do escalar K.
+                if feed_curve:
+                    self._fx_curve.add(deepened_m, fz)
             elif self._qs_ever_contact:
-                # Sem contato depois de ter havido: dois critérios, e basta um.
-                #  • CURSO — avançou este tanto sem a força reagir: rigidez
-                #    nula é o que sobra quando não há mais o que comprimir.
-                #  • TEMPO — estava carregado há pouquíssimo tempo e agora não
-                #    há nem contato: é a queda abrupta de uma retirada, não a
-                #    relaxação lenta de um viscoelástico.
+                # Sem contato depois de ter havido: dois critérios, basta um.
                 lost_by_travel = free_since_contact_m >= _TARGET_LOST_FREE_M
                 lost_by_drop = (t_last_loaded is not None
                                 and (time.time() - t_last_loaded)
@@ -2756,158 +2783,96 @@ class TactileExplorer(Node):
                         'continue descendo no vazio.')
                     self._relieve_contact(approach_dir, floor_n=_CONTACT_ON_N)
                     return 'target_lost', fz
-            if in_contact:
-                self._qs_ever_contact = True
-                # A curva F(x): `deepened_m` é a penetração COMANDADA desta
-                # fase e `fz` foi lida em REPOUSO logo acima — exatamente o
-                # par que o move-then-measure produz de graça a cada passo.
-                # É o que a onda vai interpolar no lugar do escalar K.
-                if feed_curve:
-                    self._fx_curve.add(deepened_m, fz)
-            if fz_prev is not None and step_prev != 0.0:
-                # O par vale com o contato ESTABELECIDO nas duas leituras ou
-                # quando o passo ATRAVESSOU a fronteira empurrando. Exigir as
-                # duas pontas em contato (o que se fazia antes) cegava o
-                # estimador justamente no contato rígido: lá o alívio larga a
-                # ponteira, todo passo seguinte parte de ar livre, e nenhum
-                # par se formava — k_push ficava no default para sempre.
-                # Atravessando, ΣΔF/Σx conta parte de curso livre e portanto
-                # SUBESTIMA K; como cota inferior da inclinação real ela entra
-                # em `k_upper` do mesmo jeito que `k_last` já entrava, e é
-                # ordens de grandeza melhor que o default.
-                # Fora do contato o par também vale, e é o RESULTADO NULO
-                # que ele carrega: percorreu-se step_prev e a força NÃO
-                # respondeu, logo K < _K_PAIR_MIN_DF_N/ΣΔx. É a cota que o
-                # `k_upper` promete afrouxar "conforme o curso sem resposta
-                # cresce" — sem alimentá-la aqui ela fica no teto do
-                # estimador (_K_MAX_NM) durante toda a aproximação livre, e
-                # o teto de não-ultrapassagem do passo livre
-                # (_QS_NO_CROSS_FRAC·folga/k_push) comanda 0,17 µm por tick:
-                # com _CONTACT_ON_N em 0,10 N a ponteira precisa cruzar
-                # ~0,22 mm de silicone antes do gatilho e a descida CONGELA.
-                if in_contact or step_prev > 0.0:
-                    self._k_est.update_pair(step_prev, fz - fz_prev)
-                boost = (min(boost * 1.5, _QS_BOOST_MAX)
-                         if abs(fz - fz_prev) < _QS_DF_DEAD_N else 1.0)
+
+            # Estimador de rigidez — alimentado SEMPRE (não governa o passo,
+            # mas o clamp de segurança abaixo o usa). Mesmo gate do regulador
+            # anterior: par válido com o contato estabelecido, ou passo que
+            # atravessou a fronteira empurrando.
+            if fz_prev is not None and step_prev != 0.0 \
+                    and (in_contact or step_prev > 0.0):
+                self._k_est.update_pair(step_prev, fz - fz_prev)
 
             err = target_f - fz
             err_prev = err
             now = time.time()
             in_band = abs(err) <= tol_n
-            if in_band:
-                if t_stable0 is None:
-                    t_stable0 = now
-                    self.get_logger().info(
-                        f'{phase}: em banda (fz={fz:.2f} N, alvo '
-                        f'{target_f:.2f} ± {tol_n:.2f}) — segurando '
-                        f'{stable_s:.1f} s.')
-                elif now - t_stable0 >= stable_s:
-                    return 'ok', fz
-                if abs(err) <= 0.5 * tol_n:
-                    # Centro da banda: congelado de verdade.
-                    fz_prev, step_prev, boost = fz, 0.0, 1.0
-                    continue
-                # Meia-banda até a borda: micro-passo de perseguição do
-                # creep SEM resetar a janela (banda é critério de força,
-                # não de imobilidade) — sem isso o hold acampava na borda
-                # inferior e a relaxação o arrastava para fora.
-            else:
-                if t_stable0 is not None:
-                    self.get_logger().info(
-                        f'{phase}: saiu da banda (fz={fz:.2f} N) — janela '
-                        'de estabilidade reiniciada.')
-                    t_stable0 = None
-                if now - t_start >= timeout_s:
-                    return 'timeout', fz
 
-            k = self._k_est.value
-            # Cota SUPERIOR da rigidez local — o K de TODO teto de passo (ver
-            # o bloco NÃO-ULTRAPASSAGEM nas constantes). Usar a EMA aqui é
-            # justamente o que deixava o passo entregar várias vezes o ΔF
-            # pedido num contato que enrijece.
-            k_push = self._k_est.k_upper
-            # Folga até o ALVO — não até a borda de cima da banda. É isto
-            # que o passo de empurrar não pode gastar por inteiro.
-            #
-            # Mirar em `alvo + tol` (como se fazia até 27/08/2026) tornava o
-            # overshoot ESTRUTURAL: a lei prometia não passar da BORDA, então
-            # parar uma tolerância inteira acima do setpoint era o
-            # comportamento correto dela. Contra um alvo de 0,5 N com banda
-            # de 0,092 N isso é +18 % de força na amostra, dentro da
-            # especificação e ainda assim errado — o ensaio pede 0,5 N.
-            #
-            # A assimetria é deliberada e é a certa: cruzar para cima mete
-            # força numa amostra que pode ser biológica; ficar abaixo custa
-            # um tick. Com a mira no alvo a aproximação vira geométrica POR
-            # BAIXO — a folga encolhe ~0,55 por passo quando k_push é a cota
-            # justa (2x a rigidez real), então a banda é alcançada em poucos
-            # ticks e a janela `stable_s` absorve a cauda assintótica.
-            #
-            # O que se perde: perto do alvo o passo agora encolhe com o ERRO
-            # em vez de estacionar no tamanho da banda, então o trecho final
-            # leva cerca do dobro de ticks. Passo abaixo do LSB da junta não
-            # se perde — `q_cmd` guarda a posição COMANDADA e os sub-LSB
-            # acumulam nela.
-            head_n = target_f - fz
-            # Rampa: o passo de empurrar parte de _QS_DX_FLOOR_M e só cresce
-            # por _QS_STEP_GROWTH a cada tick.
-            ramp_m = (_QS_DX_FLOOR_M if step_up_prev is None
-                      else _QS_STEP_GROWTH * step_up_prev)
-            if not in_contact:
-                step_m = min(_QS_FREE_STEP_M * boost, _QS_FREE_STEP_MAX_M)
-                # A re-aproximação respeita as MESMAS guardas: foi o passo
-                # livre de 8 µm reentrando num contato rígido que produzia o
-                # quique de 10 N na bancada. Contra contato mole o teto nem
-                # morde e o curso livre volta ao ritmo de antes em 3 ticks.
-                #
-                # A rampa só recomeça depois de _QS_FREE_RESET_TICKS leituras
-                # SEGUIDAS fora do contato. No PÉ da curva mole a força fica
-                # em 0,06–0,08 N com σ≈0,008 N: UMA leitura abaixo do limiar
-                # é ruído, não separação, e reiniciar nela travava a descida.
-                free_ticks += 1
-                if free_ticks == _QS_FREE_RESET_TICKS:
-                    # UMA vez, na transição para "solto de verdade". Zerar a
-                    # cada tick livre prenderia a re-aproximação em
-                    # _QS_DX_FLOOR_M para sempre, e o vigia de ALVO RETIRADO
-                    # (1,5 mm de curso livre) nunca chegaria a disparar.
-                    step_up_prev = None
-                    ramp_m = _QS_DX_FLOOR_M
-                if head_n > 0.0:
-                    step_m = min(step_m, _QS_NO_CROSS_FRAC * head_n / k_push,
-                                 ramp_m)
-                step_up_prev = max(step_m, _QS_DX_FLOOR_M)
-            elif err > 0.0:
-                # EMPURRAR — as três guardas.
-                free_ticks = 0
-                step_m = _QS_RELAX * err * boost / k
-                # Teto por ΔF: o menor entre o absoluto e a fração do alvo —
-                # ver _QS_DF_TARGET_FRAC. `target_f` é lido aqui (e não uma vez
-                # no topo) porque o modo MANUAL o troca on-the-fly.
-                df_step_n = self._qs_df_step_n(df_hard_n, target_f)
-                step_m = min(step_m, _QS_NO_CROSS_FRAC * head_n / k_push)
-                step_m = min(step_m, df_step_n / k_push)
-                step_m = min(step_m, ramp_m)
-                step_m = max(step_m, 0.0)
-                if not self._k_est.estimated:
-                    # K desconhecida: o teto por ΔF é PROJETADO por uma rigidez
-                    # que ainda não foi medida, e portanto não protege — o
-                    # passo-sonda usa teto ABSOLUTO, mesmo com boost.
-                    step_m = min(step_m,
-                                 min(_QS_DX_PROBE_M * boost,
-                                     _QS_DX_PROBE_MAX_M))
-                step_up_prev = max(step_m, _QS_DX_FLOOR_M)
+            # ── ETAPA B: a força já cruzou o alvo → defender o patamar ──
+            if t_cross is None and (in_band
+                                    or (sign0 != 0.0 and sign0 * err <= 0.0)):
+                t_cross = now
+                self.get_logger().info(
+                    f'{phase}: alvo cruzado (fz={fz:.2f} N, alvo '
+                    f'{target_f:.2f} ± {tol_n:.2f}) — defendendo '
+                    f'{stable_s:.1f} s.')
+            if t_cross is not None:
+                if not dynamic and now - t_cross >= stable_s:
+                    # A defesa mantém o relógio de stable_s correndo mesmo
+                    # re-rampando, então "chegou ao fim" não garante "em
+                    # banda AGORA". Devolver 'timeout' quando a última
+                    # leitura está fora preserva o aviso "trate com ressalva"
+                    # do chamador (escada/HOLD) sem reiniciar o relógio.
+                    return ('ok' if abs(err) <= tol_n else 'timeout'), fz
+                # Defesa DOS DOIS LADOS: a relaxação viscoelástica tira a
+                # força para baixo num degrau de carga e a RECUPERA para cima
+                # depois de um degrau de descarga — as duas precisam de
+                # correção. O passo continua limitado por _QS_NO_CROSS_FRAC·
+                # |err|/k_upper, que é minúsculo perto do alvo, então recuar
+                # aqui não larga o contato (o risco que a lei antiga tinha,
+                # com passo err/k_push grande). Relógio de stable_s NÃO
+                # reinicia.
+                if err > tol_n:
+                    sign_now = 1.0
+                elif err < -tol_n:
+                    sign_now = -1.0
+                else:
+                    sign_now = 0.0
             else:
-                # ALIVIAR — também pela cota superior: recuar de menos custa
-                # um tick, recuar DEMAIS larga o contato e o passo livre
-                # seguinte volta batendo (assinatura QUIQUE).
-                free_ticks = 0
-                step_m = self._qs_relief_step(
-                    _QS_RELAX * err * boost / k_push, fz, k_push,
-                    self._qs_df_step_n(df_hard_n, target_f))
-            step_m = float(np.clip(step_m, -dx_max_m, dx_max_m))
+                # ── ETAPA A: ainda não cruzou o alvo ──
+                if not dynamic and now - t_start >= timeout_s:
+                    return 'timeout', fz
+                if sign0 == 0.0:
+                    sign0 = 1.0 if err > 0.0 else -1.0
+                sign_now = (1.0 if err > 0.0 else -1.0) if dynamic else sign0
+
+            # ── passo de rampa a velocidade constante ──
+            if sign_now == 0.0:
+                step_m = 0.0
+            else:
+                # O passo é v·dt FIXO (velocidade constante). Dois clamps de
+                # SEGURANÇA — nenhum é ganho, só ENCURTAM o passo fixo:
+                #  (a) ΔF projetado ≤ _QS_RAMP_DF_CAP_N pela rigidez local. A
+                #      cota é CONSERVADORA até haver medida: `k_upper` vale
+                #      _K_MAX_NM enquanto nada foi percorrido, então o 1º tick
+                #      num contato de rigidez DESCONHECIDA projeta ≤
+                #      _QS_RAMP_DF_CAP_N mesmo que ele seja rígido; a cota do
+                #      "resultado nulo" em `k_upper` afrouxa sozinha conforme
+                #      o curso sem resposta cresce, então contato mole não
+                #      trava. Medida a rigidez, usa a EMA (`value`).
+                #  (b) NÃO-ULTRAPASSAGEM: o passo não cruza o alvo nem na pior
+                #      rigidez (`k_upper`). Perto do alvo (a) e (b) fazem a
+                #      aproximação virar geométrica POR BAIXO, sem overshoot
+                #      mesmo com K errada.
+                step_mag = v_ramp * dt
+                if in_contact:
+                    k_cap = (self._k_est.value if self._k_est.estimated
+                             else self._k_est.k_upper)
+                    step_mag = min(
+                        step_mag,
+                        _QS_RAMP_DF_CAP_N / max(k_cap, _K_MIN_NM),
+                        _QS_NO_CROSS_FRAC * abs(err)
+                        / max(self._k_est.k_upper, _K_MIN_NM))
+                else:
+                    # Fora do contato (re-aproximação após perda): passo curto,
+                    # senão reentrar num contato rígido a v·dt cheio bate —
+                    # o quique de ~10 N da bancada. O clamp em contato assume
+                    # no tick seguinte.
+                    step_mag = min(step_mag, _QS_FREE_STEP_MAX_M)
+                step_m = sign_now * step_mag
+
             if budget_m is not None and deepened_m + step_m > budget_m:
                 step_m = budget_m - deepened_m
-                if step_m <= 1e-7 and err > 0.0:
+                if step_m <= 1e-7 and sign_now > 0.0:
                     return 'budget', fz
             q_new = self._qs_step(approach_dir, step_m, v_lim, I6,
                                   q_from=q_cmd)
@@ -2917,8 +2882,7 @@ class TactileExplorer(Node):
                 fz_prev, step_prev = fz, step_m
                 if not in_contact and step_m > 0.0:
                     # Avanço em busca de contato: é ESTE curso que o vigia de
-                    # alvo retirado mede. Só o sentido de aprofundar conta —
-                    # recuar não é evidência de nada.
+                    # alvo retirado mede. Só aprofundar conta.
                     free_since_contact_m += step_m
 
     def _relieve_contact(self, approach_dir: np.ndarray,
@@ -4185,12 +4149,10 @@ class TactileExplorer(Node):
     _K_RIGID_REF_NM    = 28_000.0  # N/m (28 N/mm)
 
 
-    def _phase_hold(self, stable_s: float = _HOLD_STABLE_S,
-                    timeout_s: float = _HOLD_TIMEOUT_S,
+    def _phase_hold(self, timeout_s: float = _HOLD_TIMEOUT_S,
                     dwell_s: float = _HOLD_DWELL_S) -> str:
-        """HOLD — regulação QUASE-ESTÁTICA mantém a compressão no setpoint,
-        ESPERA a janela estável e MANTÉM por `dwell_s` (medição) antes de
-        liberar.
+        """HOLD — a rampa quase-estática leva a compressão ao setpoint, CONFIRMA
+        a chegada e MANTÉM por `dwell_s` (medição) antes de liberar.
 
         Retorna: 'ok' | 'force' (> 15 N) | 'stale' (célula sem dados)
                  | 'stop' (usuário).
@@ -4203,8 +4165,6 @@ class TactileExplorer(Node):
             target_f = float(self._target_force_n)
             # Overrides do PalpationStart (avançados da GUI); None = default.
             tol_override = self._hold_tol_n
-            if self._hold_stable_s is not None:
-                stable_s = self._hold_stable_s
             if self._hold_timeout_s is not None:
                 timeout_s = self._hold_timeout_s
 
@@ -4218,36 +4178,38 @@ class TactileExplorer(Node):
         self.get_logger().info(
             f'HOLD-QS: alvo {target_f:.2f} ± {tol_n:.2f} N  '
             f'K_est={self._k_est.value/1000:.0f} N/mm  '
-            f'estável por {stable_s:.1f} s + dwell {dwell_s:.1f} s '
-            f'(timeout {timeout_s:.0f} s)')
+            f'dwell {dwell_s:.1f} s (timeout {timeout_s:.0f} s)')
 
         t_start = time.time()
+        # Etapa 1: só CONFIRMAR a chegada (rampa monótona cruza limpo, não
+        # precisa da janela `stable_s` da lei antiga). A medição de verdade é
+        # o dwell abaixo. `stable_s` da GUI não some — o dwell continua sendo
+        # o que ela dimensiona.
         out, fz = self._qs_regulate(target_f, tol_n, approach_dir,
                                     v_lim, I6,
-                                    budget_m=None, stable_s=stable_s,
+                                    budget_m=None, stable_s=_QS_ARRIVE_S,
                                     timeout_s=timeout_s, phase='HOLD-QS')
         if out in ('force', 'stale', 'stop', 'target_lost'):
             return out
-        timed_out = out == 'timeout'
 
         # ── Dwell de medição: mantém o setpoint por dwell_s ──────────
-        # Mesma regulação quase-estática, agora exigindo dwell_s
-        # CONTÍNUOS em banda — a janela de medição sai garantidamente
-        # estável.
-        if not timed_out and dwell_s > 0.0:
+        # 'timeout' da etapa acima NÃO pula o dwell (é o que a escada já
+        # faz): pular entregava o SLIDING fora do alvo. Mede na mesma, e o
+        # aviso final sai do resultado DESTA janela.
+        if dwell_s > 0.0:
             self.get_logger().info(
-                f'HOLD-QS: estável — mantendo {dwell_s:.1f} s (medição).')
+                f'HOLD-QS: mantendo {dwell_s:.1f} s (medição).')
             out, fz = self._qs_regulate(
                 target_f, tol_n, approach_dir, v_lim, I6,
                 budget_m=None, stable_s=dwell_s,
                 timeout_s=dwell_s + timeout_s, phase='HOLD-QS-DWELL')
             if out in ('force', 'stale', 'stop', 'target_lost'):
                 return out
-            timed_out = out == 'timeout'
+        timed_out = out == 'timeout'
 
         if timed_out:
             self.get_logger().warn(
-                f'HOLD-QS: timeout ({timeout_s:.0f} s) sem estabilizar — '
+                f'HOLD-QS: janela de medição fechou FORA da banda — '
                 f'fz={self._fz_corrected():.2f} N '
                 f'(alvo {target_f:.2f} ± {tol_n:.2f} N). Prosseguindo: '
                 'o deadbeat do SLIDING continua corrigindo.')
@@ -4255,9 +4217,8 @@ class TactileExplorer(Node):
             self.get_logger().info(
                 f'HOLD-QS: medição concluída — '
                 f'fz={self._fz_corrected():.2f} N '
-                f'(alvo {target_f:.2f} ± {tol_n:.2f} N, estável '
-                f'{stable_s:.1f} s + dwell {dwell_s:.1f} s) em '
-                f'{time.time() - t_start:.1f} s.')
+                f'(alvo {target_f:.2f} ± {tol_n:.2f} N, dwell {dwell_s:.1f} s) '
+                f'em {time.time() - t_start:.1f} s.')
         return 'ok'
 
     def _fmod_configured(self) -> bool:
@@ -5522,8 +5483,6 @@ class TactileExplorer(Node):
         with self._params_lock:
             f_user = float(self._target_force_n)
             tol_override = self._hold_tol_n
-            stable_s = (self._hold_stable_s if self._hold_stable_s is not None
-                        else _HOLD_STABLE_S)
             timeout_s = (self._hold_timeout_s
                          if self._hold_timeout_s is not None
                          else _HOLD_TIMEOUT_S)
@@ -5561,21 +5520,23 @@ class TactileExplorer(Node):
                     f'[DEGRAU] {arrow} patamar {i}/{n}: {level:.2f} '
                     f'± {tol_n:.2f} N')
 
-                # 1) Assenta na banda do patamar.
+                # 1) Rampa até o patamar + confirmação curta da chegada. A
+                # medição é o dwell (etapa 2); a janela `stable_s` da lei
+                # antiga não é mais necessária — a rampa cruza monótona.
                 out, _ = self._qs_regulate(
                     level, tol_n, approach_dir, v_lim, I6,
-                    budget_m=None, stable_s=stable_s, timeout_s=timeout_s,
+                    budget_m=None, stable_s=_QS_ARRIVE_S, timeout_s=timeout_s,
                     phase=f'DEGRAU-{i}')
                 if out in ('force', 'stale', 'stop', 'target_lost'):
                     outcome = out
                     break
                 if out == 'timeout':
                     # Não aborta o ensaio: registra e segue. Um patamar que
-                    # não fecha a banda costuma ser o quantum de força do
+                    # não chega ao alvo costuma ser o quantum de força do
                     # atuador, não falha — e os demais degraus ainda valem.
                     self.get_logger().warn(
                         f'[DEGRAU] patamar {i}/{n} ({level:.2f} N) não '
-                        'estabilizou na banda; medindo assim mesmo.')
+                        f'chegou ao alvo em {timeout_s:.0f} s; medindo assim mesmo.')
 
                 # 2) Dwell de medição — é o patamar propriamente dito.
                 if dwell_s > 0.0:
@@ -5588,18 +5549,17 @@ class TactileExplorer(Node):
                         outcome = out
                         break
                     if out == 'timeout':
-                        # O dwell exige dwell_s CONTÍNUOS em banda, e a
-                        # relaxação viscoelástica tira a força de lá — em
-                        # silicone este é o caso comum, não o raro. Passar
-                        # adiante em silêncio carimbava no CSV um patamar
-                        # "medido" cuja janela de medição nunca fechou.
+                        # O dwell correu os `dwell_s` de relógio (a defesa
+                        # re-rampa sem reiniciá-lo), mas a força TERMINOU fora
+                        # da banda — a relaxação/recuperação viscoelástica
+                        # ganhou da rampa neste patamar. Passar adiante em
+                        # silêncio carimbava no CSV um patamar "medido" cuja
+                        # janela fechou fora do alvo.
                         self.get_logger().warn(
                             f'[DEGRAU] patamar {i}/{n} ({level:.2f} N): a '
-                            f'janela de {dwell_s:.1f} s contínuos em banda '
-                            f'NÃO fechou dentro de '
-                            f'{dwell_s + timeout_s:.1f} s. As amostras deste '
-                            'patamar existem, mas não têm a estabilidade que '
-                            'o dwell promete — trate-o com ressalva na '
+                            f'janela de {dwell_s:.1f} s fechou com a força '
+                            'FORA da banda. As amostras existem, mas o '
+                            'patamar não assentou — trate-o com ressalva na '
                             'análise.')
         finally:
             # Devolve o setpoint que esta fase recebeu (o _run_protocol o

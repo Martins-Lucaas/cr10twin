@@ -1,0 +1,22 @@
+# Fora da imagem: pesado, gerado, ou específico do host.
+.git/
+.venv/
+build/
+install/
+log/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.code-review-graph/
+.vscode/
+
+# Mídia e dados — bind-montados pelo compose quando precisam.
+sensors/Data/
+sensors/rp2040/
+images/
+Docs/
+docs/
+TCC/
+*.mp4
+*.pdf

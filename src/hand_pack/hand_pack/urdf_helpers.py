@@ -277,6 +277,88 @@ def inject_visual_skin_layer(urdf_body: str,
     return link_re.sub(_patch_link, urdf_body)
 
 
+# Transmissão de força pelos dedos subatuados (preensão por física)
+#
+# Gazebo Classic + `<mimic>` (seja pela tag nativa do gazebo_ros2_control,
+# seja pelo plugin sem `<hasPID>`) impõe a junta mimic por SetPosition —
+# CINEMÁTICO, não aplica torque. As falanges distais que abraçam o objeto
+# são arrastadas para um ângulo mas não empurram, então a mão não segura
+# nada por atrito. Isto reintroduz o roboticsgroup_gazebo_plugins
+# (`libgazebo_mimic_joint_plugin.so`, presente no `.urdf.bak`) com
+# `<hasPID>` nas juntas do caminho de contato: aí a mimic é seguida por um
+# PID que aplica força até `<maxEffort>`, transmitindo a preensão.
+#
+# `.so` ausente do GAZEBO_PLUGIN_PATH → Gazebo loga o erro e segue (a mão
+# some de força mas não quebra). Ver src/grasp_ml_pack/doc/covvi_control.md.
+
+# Juntas mimic cujo elo-filho toca o objeto: recebem <hasPID> (PID com
+# força). As demais (knuckle/follower/link/chassis) seguem cinemáticas.
+_MIMIC_FORCE_JOINT_RE = re.compile(
+    r'^_(?:thumb|index|middle|ring|little)_(?:proximal|distal)_j01$')
+
+
+def inject_mimic_joint_plugins(urdf_body: str, *,
+                               max_effort: float = 1.0,
+                               p: float = 40.0,
+                               i: float = 0.0,
+                               d: float = 0.2) -> str:
+    """Emite um <plugin libgazebo_mimic_joint_plugin.so> por junta <mimic>.
+
+    Para cada ``<joint name="X" type="revolute"> ... <mimic joint="D"
+    multiplier="M" offset="O"/>``, anexa um bloco <gazebo><plugin>. As
+    juntas do caminho de contato (``_MIMIC_FORCE_JOINT_RE``) ganham
+    ``<hasPID>`` com ganhos ``p/i/d`` e teto ``max_effort`` (N·m) — é o
+    que faz a preensão transmitir força. Idempotente por ``name=``.
+    """
+    joint_re = re.compile(
+        r'<joint\s+name="([^"]+)"\s+type="revolute">((?:(?!</joint>).)*?)'
+        r'<mimic\s+joint="([^"]+)"\s+multiplier="([-\d.eE+]+)"'
+        r'(?:\s+offset="([-\d.eE+]+)")?',
+        re.DOTALL)
+
+    blocks: list[str] = []
+    for m in joint_re.finditer(urdf_body):
+        jname, driver = m.group(1), m.group(3)
+        mult = m.group(4)
+        offset = m.group(5) or '0.0'
+        if f'name="mimic_{jname}"' in urdf_body:
+            continue                       # idempotência
+        pid = ''
+        if _MIMIC_FORCE_JOINT_RE.match(jname):
+            pid = (f'\n      <hasPID><p>{p}</p><i>{i}</i><d>{d}</d></hasPID>'
+                   f'\n      <maxEffort>{max_effort}</maxEffort>')
+        blocks.append(
+            f'  <gazebo>\n'
+            f'    <plugin name="mimic_{jname}" '
+            f'filename="libgazebo_mimic_joint_plugin.so">\n'
+            f'      <joint>{driver}</joint>\n'
+            f'      <mimicJoint>{jname}</mimicJoint>\n'
+            f'      <multiplier>{mult}</multiplier>\n'
+            f'      <offset>{offset}</offset>\n'
+            f'      <sensitiveness>0.0</sensitiveness>{pid}\n'
+            f'    </plugin>\n'
+            f'  </gazebo>')
+
+    if not blocks:
+        return urdf_body
+    block = '\n' + '\n'.join(blocks) + '\n'
+    if '</robot>' in urdf_body:
+        return urdf_body.replace('</robot>', block + '</robot>', 1)
+    return urdf_body + block
+
+
+def strip_mimic_joints_from_ros2_control(urdf_body: str) -> str:
+    """Remove as juntas mimic (``_..._j01``) do bloco <ros2_control>.
+
+    Com o plugin mimic acima no comando, o gazebo_ros2_control NÃO pode
+    também impor essas juntas (SetPosition cinemático) — as duas malhas
+    brigariam. Os 6 drivers permanecem.
+    """
+    return re.sub(
+        r'\s*<joint name="_[^"]+_j01">(?:(?!</joint>).)*?</joint>',
+        '', urdf_body, flags=re.DOTALL)
+
+
 def apply_all(urdf_body: str, *,
               skin_inflate_m: float = 0.002,
               visual_skin_scale: float = _SKIN_VISUAL_SCALE,

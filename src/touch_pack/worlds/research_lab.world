@@ -71,18 +71,29 @@
       <shadows>true</shadows>
     </scene>
 
-    <!-- ─────────────────── FÍSICA (ODE estável) ─────────────────────── -->
+    <!-- ─────────────────── FÍSICA (ODE — contato de palpação) ───────────
+      A célula mede indentação em µm–mm. Ajustes vs. a versão anterior:
+        iters 50→80→150     PGS converge o contato empurrado a mm/s; 150
+                            também estabiliza a preensão (end_effector:=hand,
+                            kp=1e6 nas falanges — ver tactile_cell.launch.py)
+        erp 0.25→0.20       menos "squish" na restrição
+        contact_max_correcting_vel 2.0→0.5   corta o quique no toque
+        contact_surface_layer 1.0→0.3 mm     a camada não pode ser da ordem
+                                             da própria indentação medida
+      max_step_size / rate mantidos em 0.004 / 250 (RTF≈1). Se o contato
+      ficar instável na sua máquina, baixar para 0.002 e subir o rate p/ 500.
+    -->
     <physics name="default_physics" default="0" type="ode">
       <gravity>0 0 -9.81</gravity>
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
       <real_time_update_rate>250</real_time_update_rate>
       <ode>
-        <solver><type>quick</type><iters>50</iters><sor>1.3</sor></solver>
+        <solver><type>quick</type><iters>150</iters><sor>1.3</sor></solver>
         <constraints>
-          <cfm>1.0e-5</cfm><erp>0.25</erp>
-          <contact_max_correcting_vel>2.0</contact_max_correcting_vel>
-          <contact_surface_layer>0.001</contact_surface_layer>
+          <cfm>1.0e-5</cfm><erp>0.20</erp>
+          <contact_max_correcting_vel>0.5</contact_max_correcting_vel>
+          <contact_surface_layer>0.0003</contact_surface_layer>
         </constraints>
       </ode>
     </physics>
@@ -163,6 +174,11 @@
           <geometry><box><size>0.60 1.10 0.05</size></box></geometry>
           <surface>
             <friction><ode><mu>0.8</mu><mu2>0.8</mu2></ode></friction>
+            <!-- Antes: sem kp/kd → rigidez ODE default (~1e12). Agora um
+                 contato firme mas finito, e min_depth pequeno: a amostra
+                 complacente abaixo é que dá a compliância, não a mesa. -->
+            <contact><ode><kp>1.0e6</kp><kd>1.0</kd>
+              <min_depth>0.00005</min_depth></ode></contact>
           </surface>
         </collision>
         <visual name="vis">
@@ -193,6 +209,126 @@
         <pose>0.55  0.50 0.375 0 0 0</pose>
         <visual name="v"><geometry><cylinder><radius>0.025</radius><length>0.75</length></cylinder></geometry><material><script><name>Gazebo/DarkGrey</name></script></material></visual>
       </link>
+    </model>
+
+    <!-- ────────── ESCADA DE RIGIDEZ — alvos complacentes de palpação ─────
+      Gazebo Classic/ODE não tem soft-body. Cada amostra é uma placa (`pad`)
+      ligada a uma base fixa ao mundo por um PRISMÁTICO em Z com MOLA:
+        F_reação = spring_stiffness · |indentação|   (linear, 1 GDL)
+      Isso dá uma rigidez de contato CONHECIDA e CONTROLÁVEL para validar a
+      malha de força — o que a mesa rígida sozinha não permitia. Não modela
+      relaxação viscoelástica (isso continua do lado do controlador/twin).
+
+      k escolhido para cobrir a faixa do silício real (0,3–3 N/mm):
+        sample_soft   400 N/mm⁻³ … 0,4 N/mm  → 5 mm de indentação ≈ 2 N
+        sample_med   1200          1,2 N/mm  → 5 mm ≈ 6 N
+        sample_stiff 4000          4,0 N/mm  → 2 mm ≈ 8 N
+      Amortecimento ≈ crítico p/ pad de 50 g. Topo do tampo em z=0,75 m;
+      as três ficam na faixa de trabalho (X 0–0,6 m, Y ±0,55 m).
+    -->
+    <model name="sample_soft">
+      <pose>0.30 -0.16 0.75 0 0 0</pose>
+      <link name="base">
+        <pose>0 0 0.010 0 0 0</pose>
+        <inertial><mass>0.5</mass>
+          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+        <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
+          <material><ambient>0.15 0.30 0.15 1</ambient><diffuse>0.20 0.45 0.20 1</diffuse></material></visual>
+      </link>
+      <link name="pad">
+        <pose>0 0 0.0335 0 0 0</pose>
+        <inertial><mass>0.05</mass>
+          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+        <collision name="col">
+          <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><kp>1.0e6</kp><kd>1.0</kd><min_depth>0.00005</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="vis"><geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <material><ambient>0.20 0.55 0.25 1</ambient><diffuse>0.30 0.75 0.35 1</diffuse></material></visual>
+      </link>
+      <joint name="base_fixed" type="fixed"><parent>world</parent><child>base</child></joint>
+      <joint name="indent" type="prismatic">
+        <parent>base</parent><child>pad</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit><lower>-0.009</lower><upper>0.001</upper><effort>500</effort><velocity>1.0</velocity></limit>
+          <dynamics><damping>9.0</damping><spring_stiffness>400.0</spring_stiffness><spring_reference>0.0</spring_reference></dynamics>
+        </axis>
+      </joint>
+    </model>
+
+    <model name="sample_med">
+      <pose>0.30 0.00 0.75 0 0 0</pose>
+      <link name="base">
+        <pose>0 0 0.010 0 0 0</pose>
+        <inertial><mass>0.5</mass>
+          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+        <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
+          <material><ambient>0.30 0.25 0.10 1</ambient><diffuse>0.55 0.42 0.18 1</diffuse></material></visual>
+      </link>
+      <link name="pad">
+        <pose>0 0 0.0335 0 0 0</pose>
+        <inertial><mass>0.05</mass>
+          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+        <collision name="col">
+          <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><kp>1.0e6</kp><kd>1.0</kd><min_depth>0.00005</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="vis"><geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <material><ambient>0.45 0.38 0.15 1</ambient><diffuse>0.80 0.62 0.28 1</diffuse></material></visual>
+      </link>
+      <joint name="base_fixed" type="fixed"><parent>world</parent><child>base</child></joint>
+      <joint name="indent" type="prismatic">
+        <parent>base</parent><child>pad</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit><lower>-0.009</lower><upper>0.001</upper><effort>500</effort><velocity>1.0</velocity></limit>
+          <dynamics><damping>16.0</damping><spring_stiffness>1200.0</spring_stiffness><spring_reference>0.0</spring_reference></dynamics>
+        </axis>
+      </joint>
+    </model>
+
+    <model name="sample_stiff">
+      <pose>0.30 0.16 0.75 0 0 0</pose>
+      <link name="base">
+        <pose>0 0 0.010 0 0 0</pose>
+        <inertial><mass>0.5</mass>
+          <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+        <collision name="col"><geometry><box><size>0.05 0.05 0.02</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.05 0.05 0.02</size></box></geometry>
+          <material><ambient>0.10 0.20 0.35 1</ambient><diffuse>0.18 0.35 0.60 1</diffuse></material></visual>
+      </link>
+      <link name="pad">
+        <pose>0 0 0.0335 0 0 0</pose>
+        <inertial><mass>0.05</mass>
+          <inertia ixx="9.0e-6" ixy="0" ixz="0" iyy="9.0e-6" iyz="0" izz="1.7e-5"/></inertial>
+        <collision name="col">
+          <geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><kp>1.0e6</kp><kd>1.0</kd><min_depth>0.00005</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="vis"><geometry><box><size>0.045 0.045 0.007</size></box></geometry>
+          <material><ambient>0.18 0.32 0.50 1</ambient><diffuse>0.30 0.55 0.85 1</diffuse></material></visual>
+      </link>
+      <joint name="base_fixed" type="fixed"><parent>world</parent><child>base</child></joint>
+      <joint name="indent" type="prismatic">
+        <parent>base</parent><child>pad</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit><lower>-0.009</lower><upper>0.001</upper><effort>500</effort><velocity>1.0</velocity></limit>
+          <dynamics><damping>28.0</damping><spring_stiffness>4000.0</spring_stiffness><spring_reference>0.0</spring_reference></dynamics>
+        </axis>
+      </joint>
     </model>
 
     <!-- ────────────────────── ARMÁRIOS DECORATIVOS ──────────────────── -->

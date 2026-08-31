@@ -659,8 +659,19 @@ def grasp_center_in_hand(hand_state: dict, grip_type: str) -> np.ndarray:
     return np.mean(pts, axis=0)
 
 
-def hand_ik(grasp_type: str, obj_diameter: float = 0.0) -> dict[str, float]:
-    """IK da mão COVVI: retorna driver joints (rad) para o tipo de grasp."""
+def hand_ik(grasp_type: str, obj_diameter: float = 0.0,
+            primitive: str | None = None) -> dict[str, float]:
+    """IK da mão COVVI: retorna driver joints (rad) para o tipo de grasp.
+
+    `primitive` ('cylinder' | 'box' | 'sphere' | None) vem do ajuste de
+    primitiva do `object_detector`. Quando informado, o fechamento deixa de
+    ser um escalar UNIFORME e passa a ser DIFERENCIAL por dedo, conforme a
+    oposição que a forma pede:
+      cylinder  dedos envolvem (escala cheia), polegar opõe (escala menor);
+      box       polegar + índice/médio prensam, anelar/mínimo curvam menos;
+      sphere    todos parecidos, curvatura levemente menor nos dedos externos.
+    `primitive=None` mantém EXATAMENTE o comportamento anterior (sem regressão).
+    """
     cfg = dict(HAND_CONFIGS[grasp_type])
     if obj_diameter <= 0.0 or grasp_type == 'open':
         return cfg
@@ -673,8 +684,30 @@ def hand_ik(grasp_type: str, obj_diameter: float = 0.0) -> dict[str, float]:
     if abs(d_nom) < 1e-9 or abs(obj_diameter - d_nom) < 5e-3:
         return cfg
 
-    scale = float(np.clip(obj_diameter / d_nom, 0.50, 1.30))
-    for j in ['Thumb', 'Index', 'Middle', 'Ring', 'Little']:
-        cfg[j] = float(np.clip(cfg[j] * scale, HAND_LOWER[j], HAND_LIMITS[j]))
+    s = float(np.clip(obj_diameter / d_nom, 0.50, 1.30))
+
+    if primitive is None:
+        per_joint = {j: s for j in ('Thumb', 'Index', 'Middle', 'Ring', 'Little')}
+    else:
+        # atenuação da escala em torno de 1.0 (0.6 → dedo segue 60 % do desvio)
+        def att(frac: float) -> float:
+            return float(np.clip(1.0 + frac * (s - 1.0), 0.50, 1.30))
+        p = primitive.lower()
+        if 'cyl' in p:
+            per_joint = {'Thumb': att(0.6), 'Index': s, 'Middle': s,
+                         'Ring': s, 'Little': s}
+            cfg['Rotate'] = float(np.clip(cfg.get('Rotate', 0.0) * att(0.5),
+                                          HAND_LOWER['Rotate'], HAND_LIMITS['Rotate']))
+        elif 'box' in p:
+            per_joint = {'Thumb': s, 'Index': s, 'Middle': s,
+                         'Ring': att(0.5), 'Little': att(0.5)}
+        else:  # sphere / desconhecido
+            per_joint = {'Thumb': s, 'Index': s, 'Middle': s,
+                         'Ring': att(0.8), 'Little': att(0.8)}
+            cfg['Rotate'] = float(np.clip(cfg.get('Rotate', 0.0) * att(0.5),
+                                          HAND_LOWER['Rotate'], HAND_LIMITS['Rotate']))
+
+    for j, sj in per_joint.items():
+        cfg[j] = float(np.clip(cfg[j] * sj, HAND_LOWER[j], HAND_LIMITS[j]))
 
     return cfg

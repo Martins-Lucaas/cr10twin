@@ -527,54 +527,66 @@
       <plugin>gazebo_ros2_control/GazeboSystem</plugin>
     </hardware>
     <joint name="joint1">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">-0.7854</param>
       </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint2">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">0.5236</param>
       </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint3">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">-2.0944</param>
       </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint4">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">0.0</param>
       </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint5">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">1.5708</param>
       </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="joint6">
-      <command_interface name="position">
-        <param name="min">-1</param><param name="max">1</param>
-      </command_interface>
+      <!-- min/max removidos: eram placeholders ±1 rad do fork Dobot e
+           CLAMPAVAM o comando — joint3 (home −2,094) e joint5 (home
+           +1,571) ficam fora de [−1,1]. Sem os params, o gazebo_ros2_control
+           usa os <limit> reais da junta (±6,27; joint3 ±2,861). -->
+      <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">0.0</param>
       </state_interface>

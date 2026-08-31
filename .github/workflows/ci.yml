@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# Um build por ref: um push novo cancela o anterior ainda rodando.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble-ros-base
+    env:
+      MPLBACKEND: Agg          # matplotlib sem display nos testes
+      ROS_DOMAIN_ID: "42"
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      # git precisa existir ANTES do checkout p/ o clone dos submódulos.
+      - name: Ferramentas de build
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git python3-pip python3-colcon-common-extensions python3-rosdep xvfb
+
+      - name: Checkout (com submódulos — src/eci_ros)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: pip — numpy<2 é obrigatório (ABI do cv_bridge do Humble)
+        run: pip install --no-cache-dir "numpy<2" pyserial matplotlib
+
+      - name: rosdep — resolve o que os package.xml declaram
+        shell: bash
+        run: |
+          rosdep init 2>/dev/null || true
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: colcon build
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --symlink-install --event-handlers console_direct+
+
+      - name: colcon test
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          xvfb-run -a colcon test --event-handlers console_direct+
+          colcon test-result --verbose   # exit != 0 se algum teste falhou
+
+      - name: Log dos testes (quando falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colcon-test-logs
+          path: log/latest_test/
+          if-no-files-found: ignore

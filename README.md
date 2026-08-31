@@ -3,6 +3,7 @@
 # cr10twin
 ### Digital Twin · CR10 + COVVI Hand · Biomedical Manufacturing Cell
 
+[![CI](https://github.com/Martins-Lucaas/cr10twin/actions/workflows/ci.yml/badge.svg)](https://github.com/Martins-Lucaas/cr10twin/actions/workflows/ci.yml)
 [![ROS 2 Humble](https://img.shields.io/badge/ROS%202-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
 [![Gazebo Classic 11](https://img.shields.io/badge/Gazebo-Classic%2011-FCBA28?style=for-the-badge)](http://classic.gazebosim.org/)
 [![Ubuntu 22.04](https://img.shields.io/badge/Ubuntu-22.04%20LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
@@ -59,17 +60,35 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 
 ## Installation
 
+### Option A — Docker (reproducible, one command)
+
 ```bash
-# 1. Clone the repository WITH the eci_ros submodule (COVVI hand driver)
 git clone --recursive https://github.com/Martins-Lucaas/cr10twin.git ~/cr10twin
 cd ~/cr10twin
+xhost +local:docker                       # once per session, for the GUI
+docker compose run --build cr10twin       # shell in a built workspace
+```
 
-#    Already cloned without --recursive? Pull the submodule:
-#    git submodule update --init --recursive
+The image (`Dockerfile`) pins ROS 2 Humble + every dependency and runs
+`colcon build`; `docker-compose.yml` bind-mounts your checkout so you edit on the
+host and re-run `colcon build` inside. Uncomment the `devices:` block for the
+real load cell / touch sensor. This is the same environment CI builds on every
+push.
 
-# 2. Install the dependencies (apt + Python — full list in the next section)
+### Option B — native
 
-# 3. Build the whole workspace and source it
+```bash
+# 1. Clone WITH the eci_ros submodule (COVVI hand driver)
+git clone --recursive https://github.com/Martins-Lucaas/cr10twin.git ~/cr10twin
+cd ~/cr10twin
+#    Already cloned without --recursive?  git submodule update --init --recursive
+
+# 2. Dependencies
+rosdep install --from-paths src --ignore-src -r -y      # apt + system deps
+pip install "numpy<2" pyserial matplotlib               # numpy<2 = cv_bridge ABI
+#    Optional extras (YOLO / model training / mesh regen): see "Full dependency list".
+
+# 3. Build and source
 colcon build --symlink-install
 source install/setup.bash
 ```
@@ -85,15 +104,15 @@ arrives through the submodule. Nothing beyond step 1 needs to be cloned.
 
 ## Full dependency list
 
-> **Known limitation — install from this list, not from `rosdep`.** The `apt` + `pip` blocks below are
-> the supported path and cover everything. `rosdep install --from-paths src` will **under-install**:
-> several `package.xml` files omit runtime dependencies the code actually imports — `covvi_interfaces`
-> (lazily imported by all three packages), `xacro`, `launch`/`launch_ros`, `ament_index_python`,
-> `python3-numpy`, `python3-opencv`, `python3-serial`, `python3-matplotlib` — and `hand_pack` also
-> omits `rclpy`, `sensor_msgs` and `trajectory_msgs`. Nothing is broken at build or run time; only the
-> rosdep metadata is incomplete. If you ever complete it, note that `hand_pack` **cannot** be declared as
-> a dependency of `touch_pack`/`grasp_ml_pack` (their launch files import `hand_pack.urdf_helpers`, but
-> `hand_pack` already depends on both) — colcon would reject the cycle.
+> `rosdep install --from-paths src --ignore-src -r -y` now resolves the build and
+> runtime dependencies — the `package.xml` files were completed (numpy, matplotlib,
+> pyserial, tk, xacro, `ament_index_python`, `covvi_interfaces`, and for `hand_pack`
+> also `rclpy` / `sensor_msgs` / `trajectory_msgs`). Two deliberate exceptions
+> remain: **`hand_pack` is not declared** as a dependency of
+> `touch_pack`/`grasp_ml_pack` (their launch files import `hand_pack.urdf_helpers`,
+> but `hand_pack` already depends on both — colcon would reject the cycle), and
+> the **optional** `scikit-learn` / `torch` / `ultralytics` (YOLO + model training)
+> and `cadquery-ocp` (TCP mesh regen) stay `pip`-only, listed below.
 
 ### Operating system
 

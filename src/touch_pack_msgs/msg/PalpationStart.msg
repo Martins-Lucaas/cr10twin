@@ -32,11 +32,6 @@ string mode
 # 0.0 (ou campo ausente em mensagens antigas) = comportamento anterior.
 float32 slide_slope_deg
 
-# Micro-passos do regulador quase-estático (DESCENDING/HOLD) —
-# 0.0 = usar o default do explorer.
-float32 hold_dx_max_um      # teto absoluto do micro-passo (µm, default 10)
-float32 hold_df_max_n       # teto DURO de ΔF projetado por passo (N, default 0.3)
-
 # ── Descida em dois estágios (PROBE) — 0.0 = default do explorer ──────
 # Com o contato aprendido para a home, o estágio rápido PARA por completo
 # `fine_approach_mm` antes do contato conhecido e só esse último trecho é

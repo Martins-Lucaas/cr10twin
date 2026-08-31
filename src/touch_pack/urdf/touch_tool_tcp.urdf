@@ -351,11 +351,13 @@
     </material></visual>
   </gazebo>
 
-  <!-- Ponteira: atrito mais alto — é a superfície que desliza sobre a peça. -->
+  <!-- Ponteira: atrito mais alto (desliza sobre a peça) e contato RÍGIDO
+       (kp 1e5→1e6, minDepth 0,2→0,05 mm): a compliância do ensaio vem da
+       mola da amostra (research_lab.world), não do contato ponteira↔peça. -->
   <gazebo reference="tool_tip_link">
     <self_collide>0</self_collide><gravity>true</gravity>
-    <mu1>0.60</mu1><mu2>0.60</mu2><kp>1.0e5</kp><kd>100.0</kd>
-    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
+    <mu1>0.60</mu1><mu2>0.60</mu2><kp>1.0e6</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.00005</minDepth><maxVel>0.05</maxVel>
     <visual><material>
       <ambient>0.06 0.20 0.45 1</ambient>
       <diffuse>0.11 0.35 0.78 1</diffuse>
@@ -363,9 +365,30 @@
     </material></visual>
   </gazebo>
 
-  <!-- Feedback de força/torque na junta onde a célula real está montada. -->
+  <!-- ══════════════════════════════════════════════════════════════════
+       F/T SIMULADA na junta onde a célula axial real está montada.
+       `disableFixedJointLumping` preserva a junta na conversão URDF→SDF
+       (sem isso ela some e o plugin não acha `load_cell_attach`).
+       `provideFeedback` liga o wrench de restrição da junta.
+       O plugin publica geometry_msgs/WrenchStamped em /sim/load_cell/wrench;
+       o nó `sim_force_bridge` converte force.z → /load_cell/force_net
+       (compressão positiva), fechando a malha de força NO SIM.
+  ══════════════════════════════════════════════════════════════════ -->
   <gazebo reference="load_cell_attach">
+    <disableFixedJointLumping>true</disableFixedJointLumping>
     <provideFeedback>true</provideFeedback>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="sim_load_cell_ft" filename="libgazebo_ros_ft_sensor.so">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>wrench:=/sim/load_cell/wrench</remapping>
+      </ros>
+      <joint_name>load_cell_attach</joint_name>
+      <update_rate>80.0</update_rate>
+      <gaussian_noise>0.02</gaussian_noise>
+    </plugin>
   </gazebo>
 
 </robot>

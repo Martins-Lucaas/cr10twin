@@ -24,6 +24,19 @@
   <depend>cv_bridge</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>builtin_interfaces</depend>
+
+  <!-- Deps de runtime importadas e antes não declaradas (ver a nota
+       equivalente em touch_pack/package.xml). sklearn / torch / ultralytics
+       ficam FORA: só o treino e o detector YOLO opcional os usam — pip
+       manual, ver README. -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>covvi_interfaces</exec_depend>
 
   <!-- braço CR10 + mesh do acoplador da prótese (PecasProtese.stl).
        hand_pack é resolvido em runtime (não declarado p/ evitar ciclo,

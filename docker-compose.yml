@@ -1,0 +1,39 @@
+# cr10twin — ambiente de desenvolvimento containerizado.
+#
+#   xhost +local:docker           # 1x por sessão, libera a GUI para o container
+#   docker compose run --build cr10twin      # shell no workspace já compilado
+#
+# O código é bind-montado (edita no host, recompila com `colcon build` dentro).
+# Para rodar só-sim não precisa de nenhum /dev; para o hardware real,
+# descomente o bloco `devices`.
+
+services:
+  cr10twin:
+    build: .
+    image: cr10twin:humble
+    container_name: cr10twin
+
+    # DDS do ROS 2 e memória compartilhada do Gazebo/rmw precisam do host.
+    network_mode: host
+    ipc: host
+
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - MPLBACKEND=${MPLBACKEND:-}
+
+    volumes:
+      - .:/ws/src/cr10twin                       # código ao vivo
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw         # GUI (Tk / rviz / Gazebo)
+      - ./sensors/Data:/ws/src/cr10twin/sensors/Data   # runs gravados no host
+
+    working_dir: /ws
+    stdin_open: true
+    tty: true
+    command: bash
+
+    # ── Hardware real: descomente e ajuste as portas ──────────────────
+    # devices:
+    #   - /dev/ttyACM0:/dev/ttyACM0    # célula de carga (XIAO ESP32S3)
+    #   - /dev/ttyACM1:/dev/ttyACM1    # sensor tátil (STM32)

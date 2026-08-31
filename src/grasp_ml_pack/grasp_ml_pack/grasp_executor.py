@@ -39,7 +39,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool, Int32
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.action import FollowJointTrajectory
@@ -47,11 +47,33 @@ from builtin_interfaces.msg import Duration
 from vision_msgs.msg import Detection2DArray
 
 try:
-    from gazebo_msgs.msg import ModelStates
+    from gazebo_msgs.msg import ModelStates, LinkStates
+    from gazebo_msgs.srv import SetEntityState
     _GAZEBO_OK = True
 except ImportError:
     _GAZEBO_OK = False
-    ModelStates = None
+    ModelStates = LinkStates = SetEntityState = None
+
+
+# ── quaternion helpers (x, y, z, w) — sem depender de scipy ──────────
+def _q_mul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return np.array([
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz], dtype=float)
+
+
+def _q_conj(q):
+    return np.array([-q[0], -q[1], -q[2], q[3]], dtype=float)
+
+
+def _q_rot(q, v):
+    """Rotaciona o vetor v pelo quaternion q."""
+    qv = np.array([v[0], v[1], v[2], 0.0], dtype=float)
+    return _q_mul(_q_mul(q, qv), _q_conj(q))[:3]
 
 from .kinematics import (
     inverse_kinematics,
@@ -407,10 +429,19 @@ class GraspExecutorNode(Node):
         self._current_q      = _HOME_Q.copy()
         self._last_detection: str | None = None
         self._last_pick_pos:  np.ndarray | None = None  # posição 3D da câmera
-        # Posição mundial do entity Gazebo `pick_object` (lida do
-        # /gazebo/model_states a cada tick).
+        # Posição/orientação mundial do entity Gazebo `pick_object`
+        # (lidas do /gazebo/model_states a cada tick).
         self._world_obj_pos: np.ndarray | None = None
+        self._world_obj_quat: np.ndarray | None = None
         self._world_obj_lock = threading.Lock()
+
+        # Attach cinemático: pose do elo da mão + estado do "objeto preso".
+        self._attach_link = str(self.declare_parameter(
+            'attach_hand_link', 'hand_base_link').value)
+        self._hand_link_pose: tuple | None = None
+        self._att_active = False
+        self._att_p_off = np.zeros(3)
+        self._att_q_off = np.array([0.0, 0.0, 0.0, 1.0])
         # Serializa o check-and-set de _busy entre os serviços (executados
         # concorrentemente sob ReentrantCallbackGroup +
         # MultiThreadedExecutor).
@@ -437,6 +468,34 @@ class GraspExecutorNode(Node):
             self.create_subscription(
                 ModelStates, '/gazebo/model_states',
                 self._cb_model_states, 10, callback_group=cb)
+        # Pose do elo da mão + cliente de set_entity_state para o attach.
+        self._set_state_cli = None
+        if LinkStates is not None:
+            self.create_subscription(
+                LinkStates, '/gazebo/link_states',
+                self._cb_link_states, 10, callback_group=cb)
+        if SetEntityState is not None:
+            self._set_state_cli = self.create_client(
+                SetEntityState, '/gazebo/set_entity_state', callback_group=cb)
+            if not self._set_state_cli.wait_for_service(timeout_sec=5.0):
+                self.get_logger().warn(
+                    '[ATTACH] /gazebo/set_entity_state ausente — objeto '
+                    'seguro só por atrito (mundo sem libgazebo_ros_state.so).')
+                self._set_state_cli = None
+        self.create_timer(0.01, self._attach_tick)   # 100 Hz enquanto preso
+                                                     # (snap de pose + twist 0)
+
+        # Sinais sentidos da preensão (nó grasp_sense — só leitura da COVVI).
+        # None = nunca recebido → cai na checagem geométrica de sempre.
+        self._sense_holding: bool | None = None
+        self._sense_slip: bool = False
+        self._sense_fault: bool = False
+        self.create_subscription(Bool, '/grasp/holding',
+                                 self._cb_holding, 10, callback_group=cb)
+        self.create_subscription(Bool, '/grasp/slip',
+                                 self._cb_slip, 10, callback_group=cb)
+        self.create_subscription(Bool, '/grasp/fault',
+                                 self._cb_fault, 10, callback_group=cb)
 
         self._pub_status = self.create_publisher(
             String, '/cell/status', 10)
@@ -462,20 +521,94 @@ class GraspExecutorNode(Node):
         # (necessário para o cálculo de lag durante close_until_contact).
         self._perfect_grasp.update_from_joint_state(msg)
 
+    def _cb_holding(self, msg: Bool) -> None:
+        self._sense_holding = bool(msg.data)
+
+    def _cb_slip(self, msg: Bool) -> None:
+        if msg.data:
+            self._sense_slip = True   # latch — limpo no início de cada ciclo
+
+    def _cb_fault(self, msg: Bool) -> None:
+        self._sense_fault = bool(msg.data)
+
     def _cb_model_states(self, msg) -> None:
-        """Atualiza a posição mundial do `pick_object` direto do Gazebo."""
+        """Atualiza pose mundial do `pick_object` direto do Gazebo."""
         try:
             names = list(msg.name)
             idx = names.index('pick_object')
         except (ValueError, AttributeError):
             with self._world_obj_lock:
                 self._world_obj_pos = None
+                self._world_obj_quat = None
             return
         pose = msg.pose[idx]
         with self._world_obj_lock:
             self._world_obj_pos = np.array([
                 pose.position.x, pose.position.y, pose.position.z],
                 dtype=float)
+            o = pose.orientation
+            self._world_obj_quat = np.array([o.x, o.y, o.z, o.w], dtype=float)
+
+    def _cb_link_states(self, msg) -> None:
+        """Cacheia a pose mundial do elo da mão usado no attach cinemático."""
+        suffix = '::' + self._attach_link
+        for name, pose in zip(msg.name, msg.pose):
+            if name.endswith(suffix):
+                p = pose.position
+                o = pose.orientation
+                self._hand_link_pose = (
+                    np.array([p.x, p.y, p.z], dtype=float),
+                    np.array([o.x, o.y, o.z, o.w], dtype=float))
+                return
+
+    # ── attach cinemático do objeto à mão (twin de visualização) ────────
+    # Gazebo Classic + mão com mimic falso não segura o objeto por atrito.
+    # Enquanto "preso", cola o pick_object à mão via /gazebo/set_entity_state
+    # (o plugin libgazebo_ros_state.so já está no conveyor_cell.world). Sem o
+    # serviço (outro mundo), vira no-op e o pipeline volta ao atrito puro.
+    def _attach_object(self) -> bool:
+        if self._set_state_cli is None or self._hand_link_pose is None:
+            return False
+        with self._world_obj_lock:
+            p_o = None if self._world_obj_pos is None else self._world_obj_pos.copy()
+            q_o = getattr(self, '_world_obj_quat', None)
+            q_o = None if q_o is None else q_o.copy()
+        if p_o is None or q_o is None:
+            self.get_logger().warn('[ATTACH] sem pose do pick_object — atrito puro.')
+            return False
+        p_h, q_h = self._hand_link_pose
+        qh_inv = _q_conj(q_h)
+        self._att_p_off = _q_rot(qh_inv, p_o - p_h)
+        self._att_q_off = _q_mul(qh_inv, q_o)
+        self._att_active = True
+        self.get_logger().info(
+            f'[ATTACH] pick_object colado a {self._attach_link} '
+            f'(offset {np.round(self._att_p_off, 3).tolist()} m).')
+        return True
+
+    def _release_object(self) -> None:
+        if self._att_active:
+            self._att_active = False
+            self.get_logger().info('[ATTACH] pick_object solto.')
+
+    def _attach_tick(self) -> None:
+        if not self._att_active or self._hand_link_pose is None:
+            return
+        p_h, q_h = self._hand_link_pose
+        p_o = p_h + _q_rot(q_h, self._att_p_off)
+        q_o = _q_mul(q_h, self._att_q_off)
+        req = SetEntityState.Request()
+        req.state.name = 'pick_object'
+        req.state.reference_frame = 'world'
+        req.state.pose.position.x = float(p_o[0])
+        req.state.pose.position.y = float(p_o[1])
+        req.state.pose.position.z = float(p_o[2])
+        req.state.pose.orientation.x = float(q_o[0])
+        req.state.pose.orientation.y = float(q_o[1])
+        req.state.pose.orientation.z = float(q_o[2])
+        req.state.pose.orientation.w = float(q_o[3])
+        # twist = 0 (o objeto não deve ter velocidade própria enquanto preso)
+        self._set_state_cli.call_async(req)
 
     def _get_world_obj_pos(self) -> np.ndarray | None:
         with self._world_obj_lock:
@@ -694,6 +827,8 @@ class GraspExecutorNode(Node):
         p_box  = _w2r(box_w)
 
         success = False
+        slipped = False
+        self._sense_slip = False          # limpa o latch do ciclo anterior
         self._status_msg = f'PICKING:{obj_class}'
         self.get_logger().info(
             f'[CICLO] {obj_class} → {grip_type} → {box_key} | '
@@ -857,6 +992,13 @@ class GraspExecutorNode(Node):
             else:
                 self.get_logger().info('[F2:CAGE] gaiola válida — fechando')
 
+            # Gate de fault da mão real (grasp_sense; só vale se o nó está no
+            # ar e recebeu DigitStatusAll). Fecha a mão e aborta o ciclo.
+            if self._sense_fault:
+                raise RuntimeError(
+                    'COVVI reporta fault em um dígito (grasp_sense) — '
+                    'ciclo abortado antes de fechar. Verifique a mão.')
+
             self.get_logger().info(
                 '[F2] Fechamento final sobre o objeto (PerfectGrasp + contato)')
             result = self._perfect_grasp.close_until_contact(
@@ -870,25 +1012,44 @@ class GraspExecutorNode(Node):
                     f'O objeto pode escorregar — prosseguindo mesmo assim.')
             time.sleep(0.15)   # estabiliza atrito antes de levantar
 
+            # Attach cinemático: cola o objeto à mão para o lift/trânsito.
+            # No-op se o serviço não existe (volta ao atrito puro).
+            self._attach_object()
+
             # FASE 3: Levantar com objeto
             self._status_msg = f'LIFTING:{obj_class}'
             self.get_logger().info('[F3] Levantando (objeto preso)')
             self._send_arm(q_lift)
+
+            # Confirmação de posse SENTIDA (grasp_sense). None = nó fora do ar
+            # → mantém o comportamento anterior (só geométrico).
+            time.sleep(0.3)
+            if self._sense_holding is False:
+                slipped = True
+                self.get_logger().warn(
+                    f'[F3] SLIP: {obj_class} sem contato após o lift '
+                    f'(grasp_sense holding=False) — ciclo marcado como falha.')
 
             # FASE 4: Trânsito lateral — pick area → via_box Caminho
             # Cartesiano: TCP percorre linha reta de lift_pos até via_box.
             self._status_msg = f'TRANSIT:{obj_class}→{box_key}'
             self.get_logger().info(f'[F4] Trânsito lateral → {box_key} (Cartesiano)')
             self._send_arm_cartesian(q_via)
+            if self._sense_slip and not slipped:
+                slipped = True
+                self.get_logger().warn(
+                    f'[F4] SLIP no trânsito: {obj_class} perdeu contato '
+                    '(grasp_sense) — ciclo marcado como falha.')
 
             # FASE 5: Descer para abordagem da caixa
             self.get_logger().info(f'[F5] Descida abordagem → {box_key} (Cartesiano)')
             self._send_arm_cartesian(q_ab)
 
-            # FASE 6: Soltar acima da caixa Sem detach cinemático: basta
-            # abrir a mão.
+            # FASE 6: Soltar acima da caixa — solta o attach ANTES de abrir a
+            # mão, e o objeto cai por gravidade dentro do bin.
             self._status_msg = f'PLACING:{obj_class}'
             self.get_logger().info(f'[F6] Soltando acima de {box_key}')
+            self._release_object()
             self._send_hand(cfg_open, 1.0)
             time.sleep(0.4)
             self._call_retreat()
@@ -897,11 +1058,18 @@ class GraspExecutorNode(Node):
             self._status_msg = 'HOMING'
             self.get_logger().info('[F7] Retorno → HOME (Cartesiano)')
             self._send_arm_cartesian(_HOME_Q)
-            success = True
-            self.get_logger().info(f'[SUCESSO] {obj_class} ({grip_type}) → {box_key}')
+            success = not slipped
+            if slipped:
+                self.get_logger().warn(
+                    f'[FALHA-SLIP] {obj_class} ({grip_type}) → {box_key} — '
+                    'ciclo concluído mas a posse não foi confirmada.')
+            else:
+                self.get_logger().info(
+                    f'[SUCESSO] {obj_class} ({grip_type}) → {box_key}')
 
         except Exception as exc:
             self.get_logger().error(f'[FALHA] {exc}')
+            self._release_object()   # não deixa o objeto colado num ciclo abortado
             self._send_hand(HAND_CONFIGS['open'], 1.0)
             self._do_home()
 
