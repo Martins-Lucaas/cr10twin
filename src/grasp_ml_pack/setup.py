@@ -7,7 +7,7 @@ package_name = 'grasp_ml_pack'
 setup(
     name=package_name,
     version='0.2.0',
-    packages=['grasp_ml_pack', 'grasp_ml_pack.scripts'],
+    packages=['grasp_ml_pack'],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -37,7 +37,6 @@ setup(
             'gui_control          = grasp_ml_pack.gui_control_node:main',
             'manual_control       = grasp_ml_pack.manual_control_node:main',
             'pipeline             = grasp_ml_pack.pipeline:main',
-            'test_kin             = grasp_ml_pack.scripts.test_kinematics:main',
         ],
     },
 )

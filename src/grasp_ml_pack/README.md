@@ -130,9 +130,9 @@ import numpy as np; q=np.array([.3,-.3,-1.3,-1.4,.4,.1]); T=forward_kinematics(q
 qs,ok=inverse_kinematics(T[:3,3],T[:3,2],q_seed=q); print('ok',ok)"
 ```
 
-> Note: the `test_kin` entry point (`scripts/test_kinematics.py`) is out of date
-> (it imports `DH_CR10`, which was removed in the refactor to the URDF
-> convention) and fails — use the round trip above until the script is fixed.
+> Note: `scripts/test_kinematics.py` is out of date (it imports `DH_CR10`, which
+> was removed in the refactor to the URDF convention) and fails — use the round
+> trip above until the script is fixed.
 
 ---
 
@@ -234,9 +234,6 @@ ros2 run grasp_ml_pack pipeline             # status orchestrator/aggregator onl
 # GUIs
 ros2 run grasp_ml_pack gui_control      # default GUI: conveyor + grasp
 ros2 run grasp_ml_pack manual_control   # per-joint sliders + ECI grips (CRStudio-style, 3 tabs)
-
-# Kinematics (unit test — currently broken, see "Checking the IK")
-ros2 run grasp_ml_pack test_kin
 ```
 
 ### Tuning and test scripts
