@@ -72,11 +72,30 @@
     </scene>
 
     <!-- ─────────────────── FÍSICA (ODE — contato de palpação) ───────────
-      A célula mede indentação em µm–mm, e é isso que dita estes valores:
-        erp 0.25→0.20       menos "squish" na restrição
-        contact_max_correcting_vel 2.0→0.5   corta o quique no toque
-        contact_surface_layer 1.0→0.3 mm     a camada não pode ser da ordem
-                                             da própria indentação medida
+      VALORES DA BASELINE. São os que produziram as descidas boas (MANUAL
+      4x3/4x4 de 31/08, TOUCH de 29–30/08): descida a 0,0° médios da vertical,
+      X/Y travados em 0,00/0,01 mm contra 16 mm de Z.
+
+      O bloco foi afrouxado em f934d4e ("ports", 31/08) e só METADE voltou em
+      70aabbf ("opencv"): `iters` foi revertido de 150 para 50, os três abaixo
+      não. A coleta 20260901_094646 — a primeira depois do rebuild — desceu a
+      24,3° médios da vertical (máx 65,7°), com J4 ultrapassando o home em
+      1,25° e ainda frenando quando o DESCENDING começou.
+
+        erp 0.20→0.25    ESTE é o que importa para a descida. No bloco
+                         <constraints> do ODE o erp é GLOBAL (dWorldSetERP):
+                         vale para JUNTA, não só para contato. Em 0,20 o
+                         solver corrige erro de restrição mais devagar, a
+                         articulação fica complacente e o punho ultrapassa e
+                         oscila — que é a assinatura medida em J4.
+        contact_max_correcting_vel 0.5→2.0
+        contact_surface_layer 0.3→1.0 mm
+
+      Os dois de contato voltam junto por serem do mesmo commit e da mesma
+      baseline. Se a indentação medida em µm–mm exigir a camada mais fina de
+      novo (0,3 mm), baixar SÓ ela e remedir a verticalidade da descida —
+      contact_surface_layer não toca junta, então deve sair de graça.
+
       iters fica em 50, o valor original. Chegou a ir a 150 para firmar o
       contato das amostras complacentes, mas era 3× o trabalho do solver por
       passo e as amostras saíram do mundo. Se voltarem, remedir antes de
@@ -94,9 +113,9 @@
       <ode>
         <solver><type>quick</type><iters>50</iters><sor>1.3</sor></solver>
         <constraints>
-          <cfm>1.0e-5</cfm><erp>0.20</erp>
-          <contact_max_correcting_vel>0.5</contact_max_correcting_vel>
-          <contact_surface_layer>0.0003</contact_surface_layer>
+          <cfm>1.0e-5</cfm><erp>0.25</erp>
+          <contact_max_correcting_vel>2.0</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
         </constraints>
       </ode>
     </physics>

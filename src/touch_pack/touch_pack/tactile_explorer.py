@@ -983,6 +983,19 @@ _Z_CORR_GAIN = 0.5   # ganho de correção perpendicular durante sliding
 _HOME_MAX_RAD_S = 0.05  # velocidade máxima do HOME (≈ 3°/s por junta);
                         # ajustável via parâmetro ROS home_speed_rad_s
 _SETTLE_TICKS   = 6     # ticks de espera entre fases (6 × 30 ms = 180 ms)
+# Parada VERIFICADA na entrada do DESCENDING (ver _settle_until_still). Os 180
+# ms fixos do _settle são malha aberta: freiam, mas não olham se pararam. Na
+# coleta 20260901_094646 o HOME entregou o braço com J4 ainda a 0,057 rad/s e
+# 1,25° passado do alvo; ao fim do settle sobravam 0,015 rad/s. Como o
+# DESCENDING só comanda Z, quem sobra manda no resto: os 5 primeiros ticks da
+# descida saíram a 24° médios (65° de pico) fora da vertical, contra 0,0° nas
+# coletas 4x3/4x4, onde o braço entrou parado.
+_SETTLE_STILL_TOL_RAD_S = 0.002   # ≈0,11°/s. No braço de ~0,32 m que J4 faz
+                                  # até o TCP dá < 0,6 mm/s de deriva lateral,
+                                  # ~4 % de um approach de 15 mm/s. O feedback
+                                  # das juntas é quantizado em 1e-5 rad, então
+                                  # a tolerância está 6x acima do piso de ruído.
+_SETTLE_STILL_MAX_TICKS = 40      # teto: 40 × 30 ms = 1,2 s
 
 # Velocidade máxima de referência (rad/s) por junta — equivale ao limite
 # físico do CR10 (≈ 180°/s).
@@ -1626,6 +1639,9 @@ class TactileExplorer(Node):
         self._lc_scale_n = 0
         self._q_lock = threading.Lock()
         self._current_q = _POINTING_SEED_Q.copy()
+        # Chegada da última /joint_states. Quem mede velocidade de junta mede
+        # entre LEITURAS NOVAS, não entre ticks do laço — ver _q_sample.
+        self._q_ts = 0.0
         self._stop_requested = threading.Event()
         # FREEZE (parada dura): congela no lugar SEM ir à HOME — distinto do
         # STOP normal, que recua à home (Regra de Ouro). Usado pelo E-STOP.
@@ -1756,6 +1772,7 @@ class TactileExplorer(Node):
             for i, j in enumerate(_ARM_JOINTS):
                 if j in idx:
                     self._current_q[i] = float(msg.position[idx[j]])
+            self._q_ts = time.monotonic()
 
     def _cb_set_force(self, msg: Float32) -> None:
         """Atualiza o setpoint de força ON-THE-FLY (modo MANUAL/dinâmico)."""
@@ -2516,6 +2533,14 @@ class TactileExplorer(Node):
         with self._q_lock:
             return self._current_q.copy()
 
+    def _q_sample(self) -> tuple[np.ndarray, float]:
+        """Posição E instante de chegada da leitura, atômicos. Quem mede
+        velocidade precisa do par: lidos separados, uma /joint_states que
+        chegue no meio casa a pose nova com o timestamp da anterior e a
+        velocidade sai errada."""
+        with self._q_lock:
+            return self._current_q.copy(), self._q_ts
+
     # _settle: publica posição atual por N ticks para zerar lookahead
     # e movimento residual antes de cada transição de fase.
     def _settle(self, ticks: int = _SETTLE_TICKS) -> None:
@@ -2524,6 +2549,45 @@ class TactileExplorer(Node):
         for _ in range(ticks):
             self._stream_q(q, _CTRL_LOOK + _CTRL_DT, velocities=zero_vel)
             time.sleep(_CTRL_DT)
+
+    def _settle_until_still(self, max_ticks: int = _SETTLE_STILL_MAX_TICKS,
+                            tol_rad_s: float = _SETTLE_STILL_TOL_RAD_S,
+                            quiet_ticks: int = 3) -> bool:
+        """Trava a posição atual (velocidade zero) e ESPERA o braço PARAR de
+        fato. Sai quando TODAS as juntas ficam abaixo de `tol_rad_s` por
+        `quiet_ticks` leituras consecutivas. Devolve True se parou, False se
+        estourou `max_ticks` (aí quem chamou decide o que fazer).
+
+        É o `_settle` com o critério que faltava. O `_settle` publica a pose
+        travada por 6 ticks fixos e volta — freia, mas não verifica. Enquanto
+        houver velocidade residual, quem manda no TCP não é o eixo comandado:
+        o DESCENDING só pede Z, então a junta que ainda freia empurra o TCP
+        para os lados. Foi o que aconteceu em 20260901_094646.
+
+        Mede entre LEITURAS NOVAS de /joint_states, não entre ticks: o tópico
+        chega a ~24 Hz contra os 33 Hz do laço, então reler a mesma pose daria
+        Δq = 0 e declararia parado um braço em movimento."""
+        q_hold, ts_prev = self._q_sample()
+        q_prev = q_hold
+        zero_vel = np.zeros(6)
+        quiet = 0
+        for _ in range(max_ticks):
+            # Segura SEMPRE a pose de entrada: é ela que freia. Re-travar na
+            # pose corrente a cada tick perseguiria a deriva em vez de parar.
+            self._stream_q(q_hold, _CTRL_LOOK + _CTRL_DT, velocities=zero_vel)
+            time.sleep(_CTRL_DT)
+            q_now, ts_now = self._q_sample()
+            if ts_now <= ts_prev:
+                continue                  # nada novo chegou: não é amostra
+            v_max = float(np.max(np.abs(q_now - q_prev))) / (ts_now - ts_prev)
+            q_prev, ts_prev = q_now, ts_now
+            if v_max < tol_rad_s:
+                quiet += 1
+                if quiet >= quiet_ticks:
+                    return True
+            else:
+                quiet = 0
+        return False
 
     def _settle_until_quiet(self, max_ticks: int = 20,
                             dfdt_tol_n: float = 0.05,
@@ -2899,6 +2963,40 @@ class TactileExplorer(Node):
                     # Avanço em busca de contato: é ESTE curso que o vigia de
                     # alvo retirado mede. Só aprofundar conta.
                     free_since_contact_m += step_m
+
+    @staticmethod
+    def _free_descent_v(descended_m: float,
+                        ramp_from_m: float | None,
+                        crawl_from_m: float | None,
+                        v_fast_ms: float, v_slow_ms: float,
+                        v_unlearned_ms: float) -> float:
+        """Velocidade do próximo passo em AR LIVRE — o perfil de três estágios.
+
+        `ramp_from_m is None` = home sem contato aprendido: a descida inteira
+        respeita o orçamento de impacto, porque o contato pode vir a qualquer
+        momento. Com contato aprendido:
+
+          descended < ramp_from   RÁPIDO   v_fast (slider da GUI)
+          até crawl_from          FRENAGEM rampa linear v_fast → v_slow
+          daí em diante           RASTEJO  v_slow (= crawl_v_ms)
+
+        A INVARIANTE que importa: de `crawl_from_m` em diante — a janela
+        `learned ± margem`, a única onde o contato pode estar — a velocidade é
+        exatamente `v_slow`, nunca mais que isso. É ela que mantém o pico do
+        primeiro toque em `v·T_halt·K = _CONTACT_ON_N`. A frenagem corre mais
+        rápido só porque está inteira ACIMA dessa janela.
+
+        Função pura, e é por isso que ela é uma função: essa invariante precisa
+        ser verificável sem rodar a FSM (mesma razão de `_qs_relief_step`)."""
+        if ramp_from_m is None or crawl_from_m is None:
+            return v_unlearned_ms
+        if descended_m < ramp_from_m:
+            return v_fast_ms
+        if descended_m >= crawl_from_m:
+            return v_slow_ms
+        frac = ((descended_m - ramp_from_m)
+                / max(crawl_from_m - ramp_from_m, 1e-9))
+        return v_fast_ms + (v_slow_ms - v_fast_ms) * min(max(frac, 0.0), 1.0)
 
     def _relieve_contact(self, approach_dir: np.ndarray,
                          max_ticks: int = 20, *,
@@ -3861,7 +3959,19 @@ class TactileExplorer(Node):
                  | 'stop' (usuário).
         """
         self._set_phase('DESCENDING')
-        self._settle()
+        # Parada VERIFICADA, não os 180 ms fixos do _settle: a descida comanda
+        # só Z, então qualquer velocidade residual do HOME sai como movimento
+        # lateral do TCP (ver _SETTLE_STILL_TOL_RAD_S). Com o braço já parado
+        # — o caso normal — isto sai em 3 ticks e não muda nada.
+        if not self._settle_until_still():
+            self.get_logger().warn(
+                f'[DESCENDING] o braço ainda não parou depois de '
+                f'{_SETTLE_STILL_MAX_TICKS * _CTRL_DT:.1f} s travado: alguma '
+                f'junta segue acima de {_SETTLE_STILL_TOL_RAD_S:.4f} rad/s. '
+                'Descendo assim mesmo, mas os primeiros passos vão sair fora '
+                'da vertical — a velocidade residual soma ao Z comandado. '
+                'Se repetir, o suspeito é o HOME não convergir (checar '
+                'home_speed_rad_s e o overshoot das juntas do punho).')
 
         # Aproximação ao longo do EIXO DE ATAQUE: a vertical do mundo (para
         # baixo) quando a calibração está desligada ou ainda não rodou, e a
@@ -3960,6 +4070,27 @@ class TactileExplorer(Node):
         # justamente na peça de contato raso; com o piso, contato raso rasteja
         # a descida inteira — o resultado seguro.
         zone_m = max(_DESCEND_DECEL_ZONE_M, brake_m + margin_m)
+        # A zona lenta tem DUAS partes com papéis diferentes, e só uma precisa
+        # da velocidade do orçamento de impacto:
+        #   FRENAGEM (zone_m − margin_m) — curso para largar v_fast. O contato
+        #     NÃO cabe aqui: ele mora em learned_m ± margin_m, e esta parte
+        #     está inteira ACIMA dessa janela. Rastejá-la não compra segurança
+        #     nenhuma, só tempo.
+        #   MARGEM (margin_m) — a janela onde o contato PODE estar. Aqui a
+        #     velocidade tem de ser crawl_v_ms, porque qualquer passo pode ser
+        #     o que toca.
+        # Até 01/09/2026 as duas rodavam a v_slow. Com approach de 15 mm/s a
+        # frenagem vale 4,5 mm, e a 50 µm/s são 90 s de rastejo em ar livre
+        # onde não há o que tocar: o run 20260901_103554 gastou 118 s de
+        # DESCENDING para 11,6 mm, dos quais ~90 s foram isso.
+        # Agora a frenagem é uma RAMPA v_fast→v_slow e só a margem rasteja.
+        # A rampa linear em distância leva
+        #   t = (frenagem/(v_fast−v_slow))·ln(v_fast/v_slow) ≈ 1,7 s
+        # nos valores default — folgadamente acima de _ZONE_REACTION_S, que é
+        # o que a frenagem precisa. Chega em crawl_from_m já em v_slow, então
+        # o orçamento do primeiro impacto não muda.
+        crawl_from_m = None if learned_m is None else learned_m - margin_m
+        ramp_from_m = None if learned_m is None else learned_m - zone_m
 
         if depth_m <= 0.0:
             self.get_logger().warn('DESCENDING: profundidade = 0 mm — pulando fase.')
@@ -3990,12 +4121,17 @@ class TactileExplorer(Node):
                       if _n_obs >= _CONTACT_MARGIN_MIN_PTS
                       else f'ainda no palpite conservador, {_n_obs} contato(s) '
                            f'de {_CONTACT_MARGIN_MIN_PTS}')
+            _t_crawl = margin_m / max(v_slow_ms, 1e-9)
             zona = (f'RÁPIDA a {v_fast_ms*1e3:.1f} mm/s até '
-                    f'{(learned_m - zone_m)*1e3:.1f} mm '
-                    f'(contato aprendido em {learned_m*1e3:.1f} mm), '
-                    f'depois rastejo a {v_slow_ms*1e3:.2f} mm/s. Zona lenta '
-                    f'{zone_m*1e3:.2f} mm = {brake_m*1e3:.2f} de frenagem + '
-                    f'{margin_m*1e3:.2f} de margem ({_fonte})')
+                    f'{ramp_from_m*1e3:.1f} mm, FRENAGEM em rampa '
+                    f'{v_fast_ms*1e3:.1f}→{v_slow_ms*1e3:.2f} mm/s até '
+                    f'{crawl_from_m*1e3:.1f} mm, depois RASTEJO a '
+                    f'{v_slow_ms*1e3:.2f} mm/s '
+                    f'(contato aprendido em {learned_m*1e3:.1f} mm). '
+                    f'Zona lenta {zone_m*1e3:.2f} mm = '
+                    f'{brake_m*1e3:.2f} de frenagem + {margin_m*1e3:.2f} de '
+                    f'margem ({_fonte}); o rastejo sozinho custa '
+                    f'~{_t_crawl:.0f} s')
         else:
             zona = (f'{v_unlearned_ms*1e3:.1f} mm/s até contato '
                     f'(home ainda não aprendida — descida inteira rasteja e aprende)')
@@ -4115,13 +4251,10 @@ class TactileExplorer(Node):
                     return 'no_contact'
                 return out   # 'force' | 'stale' | 'stop'
 
-            # Ar livre — dois estágios (ver perfil acima do loop).
-            if learned_m is None:
-                v_free = v_unlearned_ms
-            elif descended_m < learned_m - zone_m:
-                v_free = v_fast_ms
-            else:
-                v_free = v_slow_ms
+            # Ar livre — três estágios (ver o perfil acima do loop).
+            v_free = self._free_descent_v(
+                descended_m, ramp_from_m, crawl_from_m,
+                v_fast_ms, v_slow_ms, v_unlearned_ms)
             v_at_touch = v_free
             step_m = min(v_free * dt, depth_m - descended_m)
 

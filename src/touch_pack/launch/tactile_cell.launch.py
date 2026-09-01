@@ -127,7 +127,7 @@ def _inject_hand_initial_values(hand_body: str) -> str:
 
 
 # Construção do URDF combinado (roteado por end_effector)
-def _build_robot_urdf(end_effector: str):
+def _build_robot_urdf(end_effector: str, force_source: str = 'real'):
     hand_pack_share  = get_package_share_directory('hand_pack')
     cra_share        = get_package_share_directory('cra_description')
     touch_pack_share = get_package_share_directory('touch_pack')
@@ -169,7 +169,8 @@ def _build_robot_urdf(end_effector: str):
         full_urdf = _build_hand_suffix(
             cr10_urdf, hand_pack_share, arm_gz, touch_pack_share)
     else:
-        full_urdf = _build_touch_tool_suffix(cr10_urdf, touch_pack_share, arm_gz)
+        full_urdf = _build_touch_tool_suffix(cr10_urdf, touch_pack_share,
+                                             arm_gz, force_source)
 
     # URDF mínimo para o robot_state_publisher
     minimal = full_urdf
@@ -322,8 +323,15 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
 
 
 def _build_touch_tool_suffix(cr10_urdf: str, touch_pack_share: str,
-                              arm_gz: str) -> str:
-    """Injeta o TCP de palpação (urdf/touch_tool_tcp.urdf) no CR10."""
+                              arm_gz: str, force_source: str = 'real') -> str:
+    """Injeta o TCP de palpação (urdf/touch_tool_tcp.urdf) no CR10.
+
+    Com `force_source != 'sim'` remove a F/T simulada da junta
+    `load_cell_attach` — ver o bloco correspondente em touch_tool_tcp.urdf.
+    Ela custa o lumping da junta, e sem lumping os 561,5 g da pilha da
+    ferramenta viram corpo separado ligado por restrição elástica, pendurado
+    onde J4 trabalha. Com a célula física no cabo essa F/T não é usada por
+    ninguém, e o punho rígido é o que produziu as descidas verticais."""
     # Colisão dos elos 1–4 do braço: são a STL cheia do fabricante (sem
     # decomposição convexa) e nesta célula o braço não encosta em nada por
     # ali — só a ferramenta toca a amostra. Remover baixa o custo do solver
@@ -356,6 +364,23 @@ def _build_touch_tool_suffix(cr10_urdf: str, touch_pack_share: str,
     tool_body = re.sub(
         r'<gazebo\s+reference="Link6">.*?</gazebo>\s*', '',
         tool_body, flags=re.DOTALL)
+
+    if force_source != 'sim':
+        # Sai o <gazebo reference="load_cell_attach"> (disableFixedJointLumping
+        # + provideFeedback) e o plugin que o consome. Os dois juntos: sem o
+        # lumping desligado a junta some do SDF e o plugin ficaria apontando
+        # para uma junta inexistente.
+        #
+        # O comentário que documenta o par sai junto (grupo opcional na
+        # frente): deixá-lo no URDF gerado descreveria um bloco ausente.
+        # Casa só um comentário ADJACENTE ao <gazebo>, e o [\s\S] guardado
+        # por (?!-->) impede que a busca atravesse o fim de um comentário
+        # anterior e engula o que vem antes dele.
+        tool_body = re.sub(
+            r'(?:<!--(?:(?!-->)[\s\S])*?-->\s*)?'
+            r'<gazebo\s+reference="load_cell_attach">[\s\S]*?</gazebo>\s*'
+            r'|<gazebo>\s*<plugin\s+name="sim_load_cell_ft"[\s\S]*?</gazebo>\s*',
+            '', tool_body)
 
     full_urdf = cr10_urdf.replace('</robot>', tool_body + '</robot>')
     full_urdf = full_urdf.replace('</robot>', arm_gz + '\n</robot>')
@@ -405,7 +430,7 @@ def launch_setup(context, *args, **kwargs):
     pkg_gazebo = get_package_share_directory('gazebo_ros')
 
     # URDFs tempfile (não path fixo): duas sessões simultâneas não colidem.
-    full_urdf, minimal_urdf = _build_robot_urdf(end_effector)
+    full_urdf, minimal_urdf = _build_robot_urdf(end_effector, force_source)
     fd, urdf_spawn_path = tempfile.mkstemp(
         prefix='tactile_cell_robot_', suffix='.urdf')
     with os.fdopen(fd, 'w') as f:

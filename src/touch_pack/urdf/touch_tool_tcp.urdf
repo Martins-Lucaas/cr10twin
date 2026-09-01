@@ -351,13 +351,19 @@
     </material></visual>
   </gazebo>
 
-  <!-- Ponteira: atrito mais alto (desliza sobre a peça) e contato RÍGIDO
-       (kp 1e5→1e6, minDepth 0,2→0,05 mm): a compliância do ensaio vem da
-       mola da amostra (research_lab.world), não do contato ponteira↔peça. -->
+  <!-- Ponteira: atrito mais alto — é a superfície que desliza sobre a peça.
+       kp/minDepth são os VALORES DA BASELINE (as coletas boas de 29–31/08).
+       f934d4e ("ports") os endureceu para 1e6 / 0,05 mm com o argumento de
+       que a compliância do ensaio deve vir da mola da amostra, não do
+       contato — argumento correto, mas ele entrou no mesmo commit que
+       quebrou a descida e volta junto com o resto da baseline.
+       Ao re-endurecer: mexer NESTES dois isolado dos de research_lab.world,
+       e conferir o pico do primeiro impacto (impact_peak_n) — contato mais
+       rígido multiplica o pico à mesma velocidade de toque. -->
   <gazebo reference="tool_tip_link">
     <self_collide>0</self_collide><gravity>true</gravity>
-    <mu1>0.60</mu1><mu2>0.60</mu2><kp>1.0e6</kp><kd>100.0</kd>
-    <maxContacts>4</maxContacts><minDepth>0.00005</minDepth><maxVel>0.05</maxVel>
+    <mu1>0.60</mu1><mu2>0.60</mu2><kp>1.0e5</kp><kd>100.0</kd>
+    <maxContacts>4</maxContacts><minDepth>0.0002</minDepth><maxVel>0.05</maxVel>
     <visual><material>
       <ambient>0.06 0.20 0.45 1</ambient>
       <diffuse>0.11 0.35 0.78 1</diffuse>
@@ -373,6 +379,19 @@
        O plugin publica geometry_msgs/WrenchStamped em /sim/load_cell/wrench;
        o nó `sim_force_bridge` converte force.z → /load_cell/force_net
        (compressão positiva), fechando a malha de força NO SIM.
+
+       CUSTO, e por isso os dois blocos abaixo são REMOVIDOS pelo launch
+       quando force_source != 'sim' (ver _build_touch_tool_suffix):
+       preservar a junta tira do lumping os 561,5 g abaixo dela
+       (load_cell 474,8 + coupler_tool 44,4 + touch_tool 36,6 + tip 5,7),
+       com CoM a ~100 mm do punho. O que era UM corpo rígido vira dois
+       ligados por uma restrição que o ODE resolve iterativamente — ou seja,
+       elástica. É massa pendurada exatamente onde J4 trabalha, e a coleta
+       20260901_094646 mostrou J4 ultrapassando o home em 1,25° e oscilando
+       sozinha enquanto J2/J3 estavam congeladas.
+
+       Com force_source=real (o default, e o que os ensaios usam) nada se
+       perde: a força vem da célula física.
   ══════════════════════════════════════════════════════════════════ -->
   <gazebo reference="load_cell_attach">
     <disableFixedJointLumping>true</disableFixedJointLumping>
