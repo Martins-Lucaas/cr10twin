@@ -9,6 +9,15 @@ float32 force_net_n         # força tare-compensada (N, + compressão)
 float32 speed_mms
 bool paused                 # true enquanto o experimento está pausado
 
+# ── Contato aprendido POR HOME ───────────────────────────────────────
+# true  = a home corrente já tem contato aprendido → descida em DOIS
+#         ESTÁGIOS (estágio rápido no ritmo do slider até a zona lenta,
+#         rastejo só no trecho final).
+# false = home ainda não aprendida → a descida INTEIRA rasteja e re-aprende.
+# A GUI espelha isto na checkbox "Home conhecida"; desmarcá-la publica
+# /palpation/forget_contact e o explorer volta este campo a false.
+bool home_known
+
 # ── MATRIX_MAP ────────────────────────────────────────────────────────
 # Preenchidos apenas no modo MATRIX_MAP; zerados nos demais.
 int32 wp_index              # waypoint corrente (1-based; 0 = fora da matriz)

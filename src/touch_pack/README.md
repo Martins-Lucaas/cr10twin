@@ -415,7 +415,7 @@ A **typed** message (it replaces the old JSON inside `std_msgs/String`):
 | `grid_shape` | `'SQUARE'` · `'RECT'` · `'CUSTOM'` — label for the log/report |
 
 ### `/palpation/status` — `touch_pack_msgs/PalpationStatus`
-`phase`, `cycle`, `cycles_total`, `target_depth_mm`, `target_force_n`, `force_net_n`, `speed_mms`, `paused`, plus the MATRIX_MAP stamp: `wp_index`, `wp_total`, `wp_x_mm`, `wp_y_mm`, `origin_valid`, `origin_x/y/z_m`.
+`phase`, `cycle`, `cycles_total`, `target_depth_mm`, `target_force_n`, `force_net_n`, `speed_mms`, `paused`, `home_known` (current home has a learned contact ⇒ two-stage descent; the GUI mirrors it on the **Home conhecida** checkbox), plus the MATRIX_MAP stamp: `wp_index`, `wp_total`, `wp_x_mm`, `wp_y_mm`, `origin_valid`, `origin_x/y/z_m`.
 
 ### `/palpation/matrix_point` — `touch_pack_msgs/MatrixPoint`
 Published by the explorer at the end of **each** indentation of `MATRIX_MAP`; the logger turns it into `__matrix.csv` (columns above).
@@ -427,6 +427,7 @@ Published by the explorer at the end of **each** indentation of `MATRIX_MAP`; th
 | `/palpation/pause` | `std_msgs/Bool` | pauses (holds position) / resumes |
 | `/palpation/freeze` | `std_msgs/Empty` | freezes in place (no retreat) |
 | `/palpation/set_force` | `std_msgs/Float32` | live setpoint update during the `MANUAL` infinite HOLD |
+| `/palpation/forget_contact` | `std_msgs/Empty` | drops the learned contact for the current home (fired by unchecking **Home conhecida**); the next descent crawls from the start and re-learns |
 | `/load_cell/voltage` | `std_msgs/Float32` | raw load-cell voltage (V) |
 | `/load_cell/force` | `std_msgs/Float32` | calibrated force (N, compression +) |
 | `/load_cell/force_net` | `std_msgs/Float32` | **tare-compensated** force (published by the GUI; consumed by the explorer/logger) |

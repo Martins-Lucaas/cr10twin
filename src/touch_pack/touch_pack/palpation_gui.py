@@ -435,6 +435,14 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._set_force_pub = self.create_publisher(
             Float32, '/palpation/set_force', 10)
         self._set_force_after_id = None   # debounce do slider/spinbox
+        # "Home conhecida" desmarcada: o explorer descarta o contato aprendido
+        # da home corrente e a próxima descida rasteja do início e re-aprende.
+        self._forget_contact_pub = self.create_publisher(
+            Empty, '/palpation/forget_contact', 10)
+        # Estado da checkbox "Home conhecida": vem do status (home_known); a
+        # marcação é automática, o operador só desmarca.
+        self._home_known_reported = False   # último valor visto no status
+        self._home_known_suppress = False   # evita eco ao sincronizar do status
         self.create_subscription(
             PalpationStatus, '/palpation/status', self._cb_status, 10)
         # Leitura dos seis eixos para a aba "6 Axes" e para a planilha.
@@ -2178,6 +2186,12 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._matrix_group = tk.Frame(params_card, bg=PANEL)
         self._build_matrix_group(self._matrix_group)
 
+        # Contato aprendido por home (descida em 2 estágios). NÃO persiste:
+        # o valor real vem do explorer (status.home_known). A marcação é
+        # automática ao aprender; o operador só desmarca, e desmarcar manda
+        # o explorer esquecer o contato desta home.
+        self.home_known_var = tk.BooleanVar(value=False)
+
         # ── CALIBRAÇÃO DO ÂNGULO DE ATAQUE ───────────────────────────
         # Desligada por padrão: ligá-la muda a aproximação de TODO run, e a
         # sondagem custa N descidas extras antes da medição. Válida em todos
@@ -2225,6 +2239,24 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                               'Faster = more inertia spike to relieve; the '
                               'committed course cap keeps it under the 12 N '
                               'safety margin either way.')
+        # ── Home conhecida (descida em 2 estágios) ───────────────────
+        self._home_known_chk = tk.Checkbutton(
+            adv, text='Home conhecida (descida em 2 estágios)',
+            variable=self.home_known_var, command=self._on_home_known_toggle,
+            bg=PANEL, fg=TEXT, activebackground=PANEL, activeforeground=TEXT,
+            selectcolor=PANEL, font=FONT_LBL, anchor='w', relief='flat',
+            bd=0, highlightthickness=0, cursor='hand2')
+        self._home_known_chk.pack(fill='x', pady=(10, 2))
+        _Tooltip(self._home_known_chk,
+                 'Marca sozinha quando o explorer já aprendeu onde a '
+                 'superfície fica PARA A HOME ATUAL: a descida então corre no '
+                 'ritmo de "Descent Speed" até uma zona lenta antes do '
+                 'contato conhecido e só rasteja o trecho final. '
+                 'DESMARQUE quando trocar a amostra, o calço ou a fixação — '
+                 'isso manda o explorer esquecer o contato aprendido desta '
+                 'home (/palpation/forget_contact) e a próxima descida '
+                 'rasteja do início e re-aprende. Não dá para marcar à mão: '
+                 'a home só fica "conhecida" aprendendo numa descida real.')
         self._param_row(adv, label='HOLD — Band Tolerance',
                          unit='N', var=self.hold_tol_var,
                          vmin=round(_HOLD_TOL_N, 3), vmax=2.0, step=0.01,
@@ -3637,6 +3669,39 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
     #   on_drag     → arma/desarma o gate de espelhamento no braço real
 
 
+
+    def _on_home_known_toggle(self) -> None:
+        """Checkbox "Home conhecida". A marcação é AUTOMÁTICA (vem do status
+        home_known); o operador só desmarca. Desmarcar manda o explorer
+        esquecer o contato aprendido desta home. Marcar à mão não "ensina"
+        uma home, então é revertido com um aviso."""
+        if self._home_known_suppress:
+            return
+        if self.home_known_var.get():
+            if not self._home_known_reported:
+                self._home_known_suppress = True
+                try:
+                    self.home_known_var.set(False)
+                finally:
+                    self._home_known_suppress = False
+                self._set_status(
+                    'A home fica "conhecida" sozinha ao aprender o contato '
+                    'numa descida — não dá para marcar à mão.', WARN)
+            return
+        # Desmarcou: descarta o contato aprendido desta home no explorer.
+        self._forget_contact_pub.publish(Empty())
+        self._home_known_reported = False
+        self._set_status(
+            'Contato aprendido desta home descartado — a próxima descida '
+            'rasteja do início e re-aprende.', WARN)
+
+    def _sync_home_known_checkbox(self, known: bool) -> None:
+        """Espelha status.home_known na checkbox sem disparar o command."""
+        self._home_known_suppress = True
+        try:
+            self.home_known_var.set(bool(known))
+        finally:
+            self._home_known_suppress = False
 
     def _on_align_toggle(self) -> None:
         """Mostra/oculta os ajustes da calibração conforme o checkbox — os
@@ -6148,6 +6213,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             if msg.speed_mms > 0.0:
                 self._latest_speed_mms = float(msg.speed_mms)
             wp = int(getattr(msg, 'wp_index', 0) or 0)
+            hk = bool(getattr(msg, 'home_known', False))
         if ended:
             try:
                 self.root.after(0, self._stop_recording)
@@ -6163,6 +6229,15 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                     self.root.after(0, self._redraw_matrix_preview)
                 except (RuntimeError, tk.TclError):
                     pass   # janela fechando
+        # Checkbox "Home conhecida": espelha o estado do explorer. O operador
+        # pode ter acabado de desmarcar (forget) — não pisa nisso enquanto o
+        # status não confirmar a mudança.
+        if hk != self._home_known_reported:
+            self._home_known_reported = hk
+            try:
+                self.root.after(0, self._sync_home_known_checkbox, hk)
+            except (RuntimeError, tk.TclError):
+                pass   # janela fechando
 
     # Refresh do painel direito (Tk thread, 10 Hz)
     def _refresh_status_panel(self):

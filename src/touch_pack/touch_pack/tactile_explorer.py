@@ -60,6 +60,7 @@ Interface ROS:
   sub /palpation/pause    std_msgs/Bool     true=pausa (segura posição), false=retoma
   sub /palpation/freeze   std_msgs/Empty    parada DURA: congela no lugar, sem ir à HOME
   sub /palpation/set_force std_msgs/Float32  setpoint de força on-the-fly (modo MANUAL)
+  sub /palpation/forget_contact std_msgs/Empty  esquece o contato aprendido da home corrente (checkbox "Home conhecida" da GUI)
   sub /load_cell/force_net std_msgs/Float32
   sub /joint_states       sensor_msgs/JointState
   pub /palpation/status   touch_pack_msgs/PalpationStatus
@@ -1644,6 +1645,8 @@ class TactileExplorer(Node):
                                   self._cb_freeze, 10, callback_group=cb)
         self.create_subscription(Float32, '/palpation/set_force',
                                   self._cb_set_force, 10, callback_group=cb)
+        self.create_subscription(Empty, '/palpation/forget_contact',
+                                  self._cb_forget_contact, 10, callback_group=cb)
         self.create_subscription(Float32, '/load_cell/force_net',
                                   self._cb_lc_force_net, _QOS_SENSOR, callback_group=cb)
         self.create_subscription(LoadCellSample, '/load_cell/sample_net',
@@ -1780,6 +1783,14 @@ class TactileExplorer(Node):
             self._pause_requested.clear()
             self.get_logger().warn(
                 '[FREEZE] congelando no lugar (sem retorno à HOME).')
+
+    def _cb_forget_contact(self, msg: Empty) -> None:
+        """GUI desmarcou "Home conhecida": descarta o contato aprendido da
+        home corrente (e das vizinhas dentro da tolerância, no disco também).
+        A próxima descida rasteja do início e re-aprende. Pensado para ser
+        usado ENTRE runs; chamado durante um run só afeta a descida seguinte.
+        """
+        self._forget_contact('operador desmarcou "Home conhecida" na GUI')
 
     def _cb_pause(self, msg: Bool) -> None:
         """Pausa/retoma o experimento — as fases seguram a posição atual
@@ -2366,6 +2377,9 @@ class TactileExplorer(Node):
             # Sob modulação o alvo é o valor da onda NESTE instante.
             live = self._force_sp_live
             target_f  = float(self._target_force_n if live is None else live)
+            # A home corrente tem contato aprendido? (descida em 2 estágios).
+            # Espelhado pela checkbox "Home conhecida" da GUI.
+            home_known = self._learned_contact_m is not None
         msg = PalpationStatus()
         msg.phase = self._phase
         msg.cycle = int(self._cycle)
@@ -2375,6 +2389,7 @@ class TactileExplorer(Node):
         msg.force_net_n = float(force_net)
         msg.speed_mms = speed_mms
         msg.paused = self._pause_requested.is_set()
+        msg.home_known = home_known
         # MATRIX_MAP: waypoint corrente + origem descoberta. O logger usa
         # wp_index para carimbar cada amostra de força com o ponto da grade
         # que a produziu; a GUI usa para acender o ponto no preview.
