@@ -67,7 +67,8 @@ from .constants import (
     LC_SERIAL_BAUD,
     lc_force_n,
 )
-from .lc_filter import _LoadCellFilter, QOS_SENSOR
+from .lc_filter import (_BoxcarFilter, _LoadCellFilter, LC_SLOW_WIN_S,
+                        QOS_LATCHED, QOS_SENSOR)
 from .lc_serial import LoadCellSerialSource, detect_lc_serial_port
 
 
@@ -120,6 +121,14 @@ class ForceReceiverNode(Node):
             Float32, '/load_cell/force', QOS_SENSOR)
         self._force_net_pub = self.create_publisher(
             Float32, '/load_cell/force_net', QOS_SENSOR)
+        # Canal LENTO: mesma força, mesmo tare, média móvel larga no lugar do
+        # One-Euro. Ver o bloco do CANAL LENTO em lc_filter.py — é para a
+        # medida assentada do regulador, NÃO para segurança nem para a
+        # textura do SLIDING, que continuam no tópico rápido acima.
+        self._force_net_slow_pub = self.create_publisher(
+            Float32, '/load_cell/force_net_slow', QOS_SENSOR)
+        self._slow_win_pub = self.create_publisher(
+            Float32, '/load_cell/slow_win_s', QOS_LATCHED)
         self._sample_pub = self.create_publisher(
             LoadCellSample, '/load_cell/sample', QOS_SENSOR)
         self._sample_net_pub = self.create_publisher(
@@ -165,12 +174,24 @@ class ForceReceiverNode(Node):
 
         # ── Estado ────────────────────────────────────────────────────
         self._filter = _LoadCellFilter()
+        # A média móvel roda sobre a MESMA tensão CRUA do filtro rápido, em
+        # paralelo — nunca em cascata: encadear os dois somaria a latência do
+        # One-Euro à da janela sem ganho nenhum de σ.
+        self._slow_win_s = float(self.declare_parameter(
+            'lc_slow_win_s', LC_SLOW_WIN_S).value or LC_SLOW_WIN_S)
+        self._slow = _BoxcarFilter(self._slow_win_s)
         # Escala V/N do termo adaptativo. O default do lc_filter é 1,0 porque
         # ele nasceu para a FA7155, que já entrega newtons; aqui a entrada é
         # tensão de ponte, e sem a sensibilidade certa o beta do One-Euro
         # degenera num passa-baixa fixo. Vale o NOMINAL até a calibração
         # chegar, e o slope medido depois dela.
         self._filter.set_sensitivity(LC_NOMINAL_V_PER_N)
+        _w = Float32(); _w.data = float(self._slow.win_s)
+        self._slow_win_pub.publish(_w)
+        self.get_logger().info(
+            f'canal lento: media movel de {self._slow.win_s:.2f} s em '
+            f'/load_cell/force_net_slow (sigma esperado ~19 mN a 2,0 s '
+            f'contra ~33 mN do canal rapido).')
         self._last_t_us: int | None = None
 
         self._lock = threading.Lock()
@@ -508,6 +529,7 @@ class ForceReceiverNode(Node):
         self._last_t_us = t_us
 
         v_filt = self._filter.update(float(v_raw), dt)
+        v_slow = self._slow.update(float(v_raw), dt)
 
         m = Float32(); m.data = float(v_filt)
         self._voltage_pub.publish(m)
@@ -541,10 +563,11 @@ class ForceReceiverNode(Node):
             # comportamento certo: o explorer recusa o ensaio por leitura
             # ausente em vez de regular contra um zero que ninguém conferiu.
             return
-        self._publish_net(seq, t_us, v_raw, v_filt, f_raw)
+        self._publish_net(seq, t_us, v_raw, v_filt, f_raw, v_slow)
 
     def _publish_net(self, seq: int, t_us: int, v_raw: float,
-                     v_filt: float, f_raw: float) -> None:
+                     v_filt: float, f_raw: float,
+                     v_slow: float) -> None:
         """Força tare-compensada — a entrada da malha do explorer."""
         with self._lock:
             tare = self._tare
@@ -561,6 +584,13 @@ class ForceReceiverNode(Node):
 
         m = Float32(); m.data = float(f_net)
         self._force_net_pub.publish(m)
+
+        # MESMO tare do canal rápido, e lido DEPOIS do auto-zero acima: os
+        # dois canais têm de compartilhar o zero, senão diferem por um
+        # offset que se move sozinho e o regulador troca de referência ao
+        # passar de um para o outro.
+        m = Float32(); m.data = float(self._force_of(v_slow) - tare)
+        self._force_net_slow_pub.publish(m)
 
         sn = LoadCellSample()
         sn.seq = int(seq) & 0xFFFFFFFF

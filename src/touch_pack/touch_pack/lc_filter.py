@@ -5,6 +5,7 @@ HX711, em uso na bancada) e `ft_receiver` (FA7155 de 6 eixos) — porque a
 cadeia a jusante (`/load_cell/force_net`) tem de ter a mesma dinâmica
 qualquer que seja a célula, senão os ganhos do explorer mudam de sentido.
 """
+import collections
 import math
 
 from rclpy.qos import (QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy,
@@ -73,6 +74,100 @@ ONE_EURO_DCUTOFF   = 1.0      # Hz — cutoff do estimador de derivada
 # taxas baixas, onde 2 Hz seria alto demais para um passa-baixa de 1ª ordem.
 ONE_EURO_MAXCUTOFF_FRAC = 1.0 / 3.0
 ONE_EURO_MAXCUTOFF_HZ   = 2.0
+# ── CANAL LENTO (medida quase-estática) ───────────────────────────────
+# MEDIDO em 01/09/2026 sobre 32,6 s de ar livre do run MANUAL/20260901_162614
+# (797 amostras a 24,39 Hz), reprocessando `lc_voltage_raw_v` do CSV — a
+# reprodução offline do filtro rápido bateu com o log em σ (33,0 vs 33,2 mN),
+# então a bancada abaixo vale sobre o sinal real e não sobre um modelo.
+#
+#   σ do sinal CRU      = 115 mN  (densidade 23,6 mN/√Hz na banda 0–12,2 Hz)
+#   1 LSB do HX711      = 0,226 mN
+#   ruído do conversor  ≈ 0,057 mN  →  o ruído medido é ~2000× o piso do ADC.
+#
+# Ou seja: NÃO é o conversor, e nenhum filtro conserta a fonte. O σ cru é o
+# mesmo (110–135 mN) com o braço parado, em movimento, e sob 0,5 a 3,5 N de
+# carga — piso aditivo, não vibração nem acoplamento mecânico.
+#
+# O ruído é BRANCO na banda, e isto CORRIGE a nota de sintonia acima ("ruído
+# que não melhora com mais amostras é ruído 1/f"). Média móvel sobre o cru:
+#
+#   janela   0,12 s   0,49 s   2,01 s   4,02 s   8,00 s
+#   σ        69,8     38,8     19,0     12,1      9,4  mN
+#   1/√N     69,8     34,9     17,3     12,2      8,7  mN
+#
+# O escalonamento 1/√N vale até 8 s, e a inclinação log-log da PSD entre 0,05
+# e 10 Hz é −0,04 (branco = 0, 1/f = −1). A observação que gerou a conclusão
+# antiga (σ igual a 24,5 e 47,6 Hz) continua correta, mas a causa é outra: o
+# ruído do HX711 por amostra cresce com √taxa, então a DENSIDADE é constante.
+# A diferença importa — 1/f diz que alargar a média é inútil, e os dados
+# dizem que ela paga integralmente. Subir a taxa do firmware não ajuda;
+# alargar a janela ajuda na raiz quadrada.
+#
+# Daí os DOIS canais. Um filtro só atendia dois trabalhos incompatíveis:
+#   RÁPIDO (/load_cell/force_net) — segurança, detecção de contato e a
+#     textura do SLIDING, onde a variação de força É o sinal medido. Precisa
+#     de latência baixa e 3σ abaixo de CONTACT_ON_N. Fica como está.
+#   LENTO (/load_cell/force_net_slow) — a medida assentada do regulador
+#     quase-estático, que já congela o braço para medir. Ali a latência é de
+#     graça e o que falta é σ.
+#
+# Média móvel e não IIR: para ruído branco com janela de observação fixa a
+# média é o estimador ótimo, e ela DOMINA o passa-baixa de 1ª ordem nos dois
+# eixos ao mesmo tempo (σ 28,6 mN contra 33,0 no MESMO t95 de 0,9 s).
+#
+#   janela   σ      3σ      t95
+#   1,0 s    28,6   85,7    0,90 s
+#   2,0 s    19,0   56,9    1,89 s     ← default
+#   4,0 s    12,1   36,3    3,81 s
+#
+# 2 s é o default porque o assentamento MECÂNICO do contato é da ordem de
+# 4,5 s (mediana medida nos 6 runs de escada de 01/09): abaixo disso a
+# janela não custa tempo nenhum de ensaio. Ajustável em `lc_slow_win_s`.
+LC_SLOW_WIN_S = 2.0
+
+
+class _BoxcarFilter:
+    """Média móvel de janela fixa em SEGUNDOS (não em amostras).
+
+    Em segundos pelo mesmo motivo do `_TARE_WIN_S` do receiver: o mesmo
+    número tem de valer com o pino RATE do HX711 em GND (10 Hz) e em DVDD
+    (80 Hz), e o σ de saída depende da JANELA, não da contagem.
+
+    Enquanto a janela não encheu devolve a média do que há — o mesmo
+    aquecimento da bancada offline. Quem precisa saber se ela já está cheia
+    pergunta a `span_s`.
+    """
+
+    def __init__(self, win_s: float = LC_SLOW_WIN_S):
+        self._win_s = max(1e-3, float(win_s))
+        self._buf: collections.deque = collections.deque()   # (t_cum, v)
+        self._sum = 0.0
+        self._t = 0.0
+
+    @property
+    def win_s(self) -> float:
+        return self._win_s
+
+    @property
+    def span_s(self) -> float:
+        """Extensão temporal do que está na janela agora (s)."""
+        if len(self._buf) < 2:
+            return 0.0
+        return self._buf[-1][0] - self._buf[0][0]
+
+    def update(self, v: float, dt: float | None = None) -> float:
+        """``dt`` = intervalo real desde a amostra anterior (s); None usa a
+        taxa nominal."""
+        self._t += dt if dt else (1.0 / LC_NOMINAL_RATE_HZ)
+        self._buf.append((self._t, v))
+        self._sum += v
+        # Descarta pela ESQUERDA mantendo ao menos 1 amostra: a janela cobre
+        # `win_s` de sinal, e nunca esvazia num dt maior que ela.
+        while len(self._buf) > 1 and self._t - self._buf[0][0] > self._win_s:
+            self._sum -= self._buf.popleft()[1]
+        return self._sum / len(self._buf)
+
+
 # Escala do termo adaptativo: quantas unidades do sinal de entrada valem 1 N.
 # A FA7155 entrega NEWTONS, então é 1 N/N — o ft_receiver confirma chamando
 # set_sensitivity(1.0) logo após construir o filtro. O default anterior era
@@ -143,6 +238,15 @@ class _LoadCellFilter:
         self._x_prev = x_hat
         self._dx_prev = dx_hat
         return x_hat
+
+# Anúncio da janela do canal lento: quem consome precisa saber quanto tempo
+# congelar antes de a média estar limpa de amostras pré-movimento, e um
+# parâmetro duplicado nos dois nós silenciaria a divergência. TRANSIENT_LOCAL
+# porque o explorer sobe depois do receiver.
+QOS_LATCHED = QoSProfile(
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=QoSHistoryPolicy.KEEP_LAST, depth=1)
 
 QOS_SENSOR = QoSProfile(
     reliability=QoSReliabilityPolicy.BEST_EFFORT,

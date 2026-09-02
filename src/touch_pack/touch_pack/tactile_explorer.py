@@ -1629,6 +1629,17 @@ class TactileExplorer(Node):
         self._lc_raw_net: float | None = None
         self._lc_raw_ts: float = 0.0
         self._lc_raw_seq: int = 0
+        # ── canal LENTO da célula (média móvel larga) ─────────────────
+        # Mesma força e MESMO tare do Float32 rápido, com σ ~19 mN em vez de
+        # ~33 mN (ver o bloco CANAL LENTO em lc_filter.py). Usado SÓ na
+        # medida assentada de _qs_measure_fz: perto do alvo o que falta é
+        # resolução, e ali o braço já está congelado. Longe do alvo, e em
+        # tudo que é segurança/contato/SLIDING, continua valendo o rápido.
+        # `None` enquanto ninguém publicar — é o caso do ft_receiver, e o
+        # consumidor CAI no canal rápido em vez de parar.
+        self._lc_slow_net: float | None = None
+        self._lc_slow_ts: float = 0.0
+        self._lc_slow_win_s: float | None = None
         # N por unidade de `voltage_raw`. 1,0 na FA7155 (já entrega newtons);
         # no HX711 é o N/V da calibração da ponte. Ver _cb_lc_sample_net.
         self._lc_raw_scale: float = float(
@@ -1667,6 +1678,12 @@ class TactileExplorer(Node):
                                   self._cb_lc_force_net, _QOS_SENSOR, callback_group=cb)
         self.create_subscription(LoadCellSample, '/load_cell/sample_net',
                                   self._cb_lc_sample_net, _QOS_SENSOR,
+                                  callback_group=cb)
+        self.create_subscription(Float32, '/load_cell/force_net_slow',
+                                  self._cb_lc_force_net_slow, _QOS_SENSOR,
+                                  callback_group=cb)
+        self.create_subscription(Float32, '/load_cell/slow_win_s',
+                                  self._cb_lc_slow_win, _QOS_COMMAND,
                                   callback_group=cb)
         self.create_subscription(JointState, '/joint_states',
                                   self._cb_joints, 50, callback_group=cb)
@@ -1710,6 +1727,31 @@ class TactileExplorer(Node):
             self._lc_force_net = val
             self._lc_force_ts = time.monotonic()
             self._lc_force_seq += 1
+
+    def _cb_lc_force_net_slow(self, msg: Float32) -> None:
+        """Recebe /load_cell/force_net_slow — mesma convenção de sinal e o
+        MESMO tare do canal rápido, só com a média móvel larga."""
+        val = float(msg.data)
+        if not math.isfinite(val) or abs(val) > self._LC_MAX_PLAUSIBLE_N:
+            return
+        with self._lc_lock:
+            self._lc_slow_net = val
+            self._lc_slow_ts = time.monotonic()
+
+    def _cb_lc_slow_win(self, msg: Float32) -> None:
+        """Janela do canal lento, anunciada pelo receiver (latched).
+
+        Vem do fio e não de um parâmetro daqui de propósito: duplicar o
+        número nos dois nós faria uma divergência silenciosa congelar o braço
+        por menos tempo que a média precisa para se limpar das amostras de
+        ANTES do micro-passo — e a leitura sairia enviesada pela posição
+        anterior, que é exatamente o erro que este canal existe para não
+        cometer."""
+        win = float(msg.data)
+        if not math.isfinite(win) or not 0.0 < win <= 30.0:
+            return
+        with self._lc_lock:
+            self._lc_slow_win_s = win
 
     def _cb_lc_sample_net(self, msg: LoadCellSample) -> None:
         """Recebe /load_cell/sample_net e extrai a força CRUA, tare-compensada.
@@ -2428,6 +2470,21 @@ class TactileExplorer(Node):
         with self._lc_lock:
             return self._lc_force_net
 
+    def _fz_slow(self) -> tuple[float, float] | None:
+        """(força, janela_s) do canal LENTO, ou None se ele não está no ar.
+
+        None cobre três casos que dão no mesmo para quem chama — nenhum
+        publicador (ft_receiver), a janela ainda não anunciada, ou leitura
+        velha —, e todos caem no canal rápido."""
+        with self._lc_lock:
+            val, ts, win = (self._lc_slow_net, self._lc_slow_ts,
+                            self._lc_slow_win_s)
+        if val is None or win is None:
+            return None
+        if time.monotonic() - ts > _FORCE_STALE_S:
+            return None
+        return val, win
+
     def _force_over_limit(self, fz: float | None = None) -> bool:
         """True se a MAGNITUDE da força cruzou a margem de segurança."""
         v = self._fz_corrected() if fz is None else fz
@@ -2624,6 +2681,61 @@ class TactileExplorer(Node):
             return 0.0
         return abs(float(np.median(win[half:])) - float(np.median(win[:half])))
 
+    def _qs_measure_settled(self, q: np.ndarray) -> float | None:
+        """Medida assentada pelo CANAL LENTO. None se ele não está no ar.
+
+        Congela o braço pela janela INTEIRA da média móvel antes de ler: a
+        média que chega agora ainda contém amostras de ANTES do micro-passo,
+        e lê-la cedo devolveria a força da posição anterior. É o preço do σ
+        menor, e ele é de graça aqui — só o caminho `settle` chama (perto do
+        alvo), e o assentamento MECÂNICO do contato é da ordem de 4,5 s,
+        maior que a janela.
+
+        Depois da janela, mantém o teste de deriva do caminho antigo: encher
+        a média não garante que a FÍSICA parou, e é a deriva que diz isso.
+        """
+        got = self._fz_slow()
+        if got is None:
+            return None
+        _, win_s = got
+        zero_vel = np.zeros(6)
+
+        def _tick() -> tuple[float, bool] | None:
+            """Um tick congelado. Devolve (fz_lento, pare_agora) ou None se o
+            canal lento sumiu. `pare_agora` cobre o limite de força e o STOP
+            do usuário — sem ele a espera pela janela seguraria um pedido de
+            parada por até `win_s`, contra o ~1 s do caminho rápido. NÃO
+            limpa o evento: quem o consome é o _qs_regulate, na volta
+            seguinte."""
+            self._stream_q(q, _CTRL_LOOK + _CTRL_DT, velocities=zero_vel)
+            time.sleep(_CTRL_DT)
+            g = self._fz_slow()
+            if g is None:              # canal caiu no meio — quem chama
+                return None            # refaz pelo caminho rápido
+            return g[0], (self._force_over_limit(g[0])
+                          or self._stop_requested.is_set())
+
+        t_end = time.time() + win_s
+        while time.time() < t_end:
+            r = _tick()
+            if r is None:
+                return None
+            if r[1]:
+                return r[0]
+            got = (r[0], win_s)
+        reads: list[float] = [got[0]]
+        for _ in range(_QS_SETTLE_MAX_TICKS):
+            r = _tick()
+            if r is None:
+                return None
+            if r[1]:
+                return r[0]
+            reads.append(r[0])
+            if len(reads) >= 2 * _QS_MEDIAN_N and \
+                    self._deriva(reads) < _QS_SETTLE_DRIFT_N:
+                break
+        return reads[-1]
+
     def _qs_measure_fz(self, q_hold: np.ndarray | None = None,
                        settle: bool = False) -> float:
         """Mede a força em repouso (modo quase-estático): congela o braço por
@@ -2635,8 +2747,17 @@ class TactileExplorer(Node):
         janela devolve duas cópias do mesmo número. Uma mediana de 3 com uma
         repetição dentro é uma mediana de 2 — perde a rejeição de outlier
         exatamente onde ela importa. Ver _QS_MEASURE_MAX_TICKS.
+
+        `settle` (perto do alvo) prefere o CANAL LENTO, que troca latência —
+        de graça com o braço já congelado — por σ ~19 mN em vez de ~33 mN.
+        Sem esse canal no ar (ft_receiver), cai no caminho abaixo, que é o
+        comportamento de antes.
         """
         q = self._q_now() if q_hold is None else q_hold
+        if settle:
+            fz = self._qs_measure_settled(q)
+            if fz is not None:
+                return fz
         zero_vel = np.zeros(6)
         reads: list[float] = []
         with self._lc_lock:
