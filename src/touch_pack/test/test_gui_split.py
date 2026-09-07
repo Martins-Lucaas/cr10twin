@@ -16,9 +16,17 @@ import pytest
 _PKG = pathlib.Path(__file__).resolve().parents[1] / 'touch_pack'
 
 # (arquivo, classe) de cada fatia já extraída. Novas fatias entram aqui.
+# TODO mixin em `class PalpationGUI(...)` tem de estar aqui. Faltar um não é
+# só perder cobertura: as três checagens abaixo tratam a lista como o universo
+# de onde um `self.X` pode vir, então um mixin ausente vira falso positivo em
+# `test_every_self_reference_in_the_mixin_resolves` — foi o que aconteceu com
+# FtChartsMixin e FtArrowMixin, que faziam o FtAxesMixin parecer chamar sete
+# métodos inexistentes (_build_ft_chart_card, _refresh_ft_charts, …).
 MIXINS = [
     ('gui_loadcell.py', 'FtAxesMixin'),
     ('gui_lc_axial.py', 'LcAxialMixin'),
+    ('gui_ft_charts.py', 'FtChartsMixin'),
+    ('gui_ft_arrow.py', 'FtArrowMixin'),
     ('gui_matrix.py', 'MatrixMixin'),
 ]
 HOST = ('palpation_gui.py', 'PalpationGUI')

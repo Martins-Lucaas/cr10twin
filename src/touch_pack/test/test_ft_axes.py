@@ -47,13 +47,20 @@ def test_teto_do_link_bate_com_a_conta_do_baud():
 
 
 def test_baud_e_taxa_sao_os_do_exemplar_da_bancada():
-    """26/08/2026: a unidade montada no flange fala 1 Mbps e entrega 1 kHz,
-    e NÃO os 115200/250 Hz que o manual dá como default do caso geral. É fato
-    de bancada, como a plaqueta — fica fixado aqui."""
+    """26/08/2026: a unidade montada no flange fala 1 Mbps, e NÃO os 115200
+    que o manual dá como default do caso geral. É fato de bancada, como a
+    plaqueta — fica fixado aqui.
+
+    07/09/2026: a TAXA deixou de ser a do sensor (1 kHz) e passou a ser a que
+    a bancada SUSTENTA em modo polled. O sensor não ficou mais lento; é o
+    round-trip do USB que limita (458 Hz de roda-livre pelo CH343), e o
+    nominal fica ABAIXO desse teto de propósito — é ele que dá o passo do
+    laço, e passo com folga é o que torna o dt constante."""
     from touch_pack.constants import FT_NOMINAL_RATE_HZ
     assert FT_SERIAL_BAUD == 1_000_000
-    assert FT_NOMINAL_RATE_HZ == 1000.0
-    assert FT_NOMINAL_RATE_HZ < FT_MAX_RATE_HZ, '1 kHz tem de caber no link'
+    assert FT_NOMINAL_RATE_HZ == 400.0
+    assert FT_NOMINAL_RATE_HZ < 458.0, 'o passo do laço precisa de folga'
+    assert FT_NOMINAL_RATE_HZ < FT_MAX_RATE_HZ, 'a taxa tem de caber no link'
 
 
 # ── Callback do wrench ────────────────────────────────────────────────────

@@ -261,9 +261,9 @@ class PalpationLogger(Node):
         # célula axial e NEWTONS com a FA7155, e nada mais no diretório do run
         # diz qual. Dois anos de dados depois, ninguém reconstrói isso.
         _cell = str(self.declare_parameter(
-            'force_sensor', 'load_cell').value).strip().lower()
+            'force_sensor', 'ft6').value).strip().lower()
         self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
-            else 'load_cell'
+            else 'ft6'
 
         self._lock = threading.Lock()
         self._csv_fh: IO | None = None

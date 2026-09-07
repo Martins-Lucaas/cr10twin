@@ -17,7 +17,7 @@ Argumentos (todos opcionais):
     sensor           4 | 5  (default 4) — grade do sensor de toque
                        4 → sensor 4×4 (firmware com TOTAL/Ifinal)
                        5 → sensor 5×5 (sem TOTAL; ativação média por frame)
-    force_sensor     load_cell | ft6  (default: load_cell)
+    force_sensor     load_cell | ft6  (default: ft6)
                        load_cell → célula axial de 100 kg no XIAO ESP32C6 +
                                    HX711, pela USB (force_receiver)
                        ft6       → célula FA7155 de 6 eixos, pela RS485
@@ -34,6 +34,12 @@ Argumentos (todos opcionais):
                        auto-detect pelo VID da Espressif.
     ft_port          porta do conversor USB-RS485 (ex.: COM5, /dev/ttyUSB0).
                        Vazio (default) = auto-detect pelo VID.
+    ft_mode          polled (default, o que o exemplar responde) | stream
+    ft_baud          baud da RS485 do FA7155 (default: 1 Mbps, o do exemplar)
+    ft_autozero      false (default) = sinal contínuo em repouso | true =
+                       cancela deriva térmica, mas zera a leitura parada
+    ft_filter        true (default) = One-Euro (σ 10× menor, ~80 ms de atraso
+                       no gatilho de contato) | false = sinal cru, sem atraso
 
 Exemplos:
     ros2 launch touch_pack tactile_cell.launch.py
@@ -53,6 +59,11 @@ from hand_pack.urdf_helpers import (
     inject_visual_skin_layer,
     HAND_DRIVER_LOWER,
     INTER_FINGER_COLLISION_LINKS,
+)
+from touch_pack.constants import (
+    FT_MODE_CHOICES,
+    FT_MODE_POLLED,
+    FT_SERIAL_BAUD,
 )
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, OpaqueFunction,
@@ -406,15 +417,27 @@ def launch_setup(context, *args, **kwargs):
     sensor = LaunchConfiguration('sensor').perform(context).strip()
     if sensor not in ('4', '5'):
         sensor = '5'
-    # Qual célula está na bancada. A axial de 100 kg é a montada — valor
-    # desconhecido cai nela, não na de 6 eixos, para que um erro de digitação
+    # Qual célula está na bancada. Desde 07/09/2026 é a FA7155 de 6 eixos —
+    # valor desconhecido cai nela, não na axial, para que um erro de digitação
     # não suba silenciosamente o driver da célula que não está no cabo.
     force_sensor = LaunchConfiguration(
         'force_sensor').perform(context).strip().lower()
     if force_sensor not in ('load_cell', 'ft6'):
-        force_sensor = 'load_cell'
+        force_sensor = 'ft6'
     lc_port = LaunchConfiguration('lc_port').perform(context).strip()
     ft_port = LaunchConfiguration('ft_port').perform(context).strip()
+    # Modo e baud do FA7155. O default NÃO é o do nó ('stream'): o exemplar
+    # da bancada não fala sozinho no cabo — só responde a poll 0x03 a 1 Mbps
+    # (confirmado em 07/09/2026, ver o comentário de FT_SERIAL_BAUD). Deixar
+    # o default do nó aqui fazia a GUI subir muda com force_sensor:=ft6.
+    ft_mode = LaunchConfiguration('ft_mode').perform(context).strip().lower()
+    if ft_mode not in FT_MODE_CHOICES:
+        ft_mode = FT_MODE_POLLED
+    ft_baud = LaunchConfiguration('ft_baud').perform(context).strip()
+    ft_autozero = (LaunchConfiguration('ft_autozero').perform(context)
+                   .strip().lower() in ('1', 'true', 'yes'))
+    ft_filter = (LaunchConfiguration('ft_filter').perform(context)
+                 .strip().lower() in ('1', 'true', 'yes'))
     # Real x simulado é decisão SEPARADA de qual célula está no cabo e de
     # qual control_mode roda. Valor desconhecido cai em 'real': um erro de
     # digitação não pode fazer a GUI mostrar força de Gazebo como se fosse
@@ -536,7 +559,11 @@ def launch_setup(context, *args, **kwargs):
     elif force_sensor == 'ft6':
         force_rx_node = Node(
             package='touch_pack', executable='ft_receiver',
-            parameters=[{'ft_serial_port': ft_port}])
+            parameters=[{'ft_serial_port': ft_port,
+                         'ft_mode': ft_mode,
+                         'ft_baud': int(ft_baud),
+                         'ft_autozero': ft_autozero,
+                         'ft_filter': ft_filter}])
     else:
         force_rx_node = Node(
             package='touch_pack', executable='force_receiver',
@@ -628,11 +655,11 @@ def generate_launch_description():
             description="Sensor de toque: '5' (5×5, sem TOTAL — o montado na "
                         "bancada, DEFAULT) | '4' (4×4, com Ifinal)"),
         DeclareLaunchArgument(
-            'force_sensor', default_value='load_cell',
-            description='Célula de força: load_cell (axial de 100 kg no '
-                        'XIAO+HX711, DEFAULT — a montada na bancada) | ft6 '
-                        '(FA7155 de 6 eixos por RS485). Só um driver sobe: '
-                        'os dois publicam /load_cell/force_net.'),
+            'force_sensor', default_value='ft6',
+            description='Célula de força: ft6 (FA7155 de 6 eixos por RS485, '
+                        'DEFAULT — a montada na bancada) | load_cell (axial '
+                        'de 100 kg no XIAO+HX711). Só um driver sobe: os '
+                        'dois publicam /load_cell/force_net.'),
         DeclareLaunchArgument(
             'force_source', default_value='real',
             description='De onde vem /load_cell/force_net: real (DEFAULT — '
@@ -649,5 +676,27 @@ def generate_launch_description():
             'ft_port', default_value='',
             description='Porta do conversor USB-RS485 do FA7155 (ex.: COM5, '
                         '/dev/ttyUSB0). Vazio = auto-detect pelo VID.'),
+        DeclareLaunchArgument(
+            'ft_mode', default_value=FT_MODE_POLLED,
+            description='Como o FA7155 entrega os seis eixos: polled '
+                        '(DEFAULT — o host pergunta com 0x03; é o que o '
+                        'exemplar da bancada responde) | stream (o sensor '
+                        'fala sozinho; a unidade montada NÃO faz isso).'),
+        DeclareLaunchArgument(
+            'ft_baud', default_value=str(FT_SERIAL_BAUD),
+            description='Baud da linha RS485 do FA7155 (default: o do '
+                        'exemplar da bancada).'),
+        DeclareLaunchArgument(
+            'ft_filter', default_value='true',
+            description='One-Euro nos seis canais: true (DEFAULT) baixa o σ '
+                        'de 0,0219 para 0,0020 N | false entrega o sinal do '
+                        'sensor sem atraso nenhum. O filtro é adaptativo, mas '
+                        'custa ~80 ms no gatilho de contato a 2 N/s.'),
+        DeclareLaunchArgument(
+            'ft_autozero', default_value='false',
+            description='Auto-zero lento do FA7155: false (DEFAULT) mostra a '
+                        'força contínua, inclusive em repouso | true cancela '
+                        'deriva térmica, mas prende a leitura em zero exato '
+                        'dentro da banda de 0,30 N enquanto nada encosta.'),
         OpaqueFunction(function=launch_setup),
     ])

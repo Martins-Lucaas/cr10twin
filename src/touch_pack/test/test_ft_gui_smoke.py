@@ -68,7 +68,6 @@ def host(raiz):
     h = _Host(raiz)
     h._ft_charts_init()
     h._build_ft_chart_card(raiz)
-    h._build_ft_columns_card(raiz)
     h._build_ft_arrow_card(raiz)
     raiz.update_idletasks()
     return h
@@ -86,7 +85,7 @@ def _mostrado(f=(1.0, -2.0, 3.0, 0.1, -0.2, 0.3)):
 # ── Construção ────────────────────────────────────────────────────────
 
 def test_paineis_constroem_sem_estourar(host):
-    assert host._ft_chart_lines and host._ft_col_widgets
+    assert host._ft_chart_lines
     assert len(host._ft_arrow_items) > 0
 
 

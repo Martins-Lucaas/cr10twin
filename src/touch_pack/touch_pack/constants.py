@@ -64,13 +64,46 @@ CONTACT_OFF_FRAC = 0.7
 # ser mensurável.
 FORCE_NOISE_SIGMA_N = 0.023  # N: σ em repouso. HX711, 17/08/2026, 2390
                              # quadros de MANUAL/20260817_142719.
-                             # RE-MEDIR com a FA7155: é ELE que fixa o menor
-                             # setpoint perseguível.
-# 4σ e não 3σ: sair da banda RESETA a janela de estabilidade (165 leituras).
-# A 3σ seriam ~0,5 excursões por janela e o hold reiniciaria sozinho.
-HOLD_TOL_SIGMA = 4.0
-HOLD_TOL_N     = HOLD_TOL_SIGMA * FORCE_NOISE_SIGMA_N   # 0,092 N
-HOLD_TOL_PCT   = 0.05   # fração do setpoint (5 %)
+# RE-MEDIDO com a FA7155 em 07/09/2026, e o valor FICA: σ = 0,0219 N em
+# /load_cell/force_net com 2552 amostras em repouso, SEM filtro (ft_filter
+# false) — 5% abaixo do HX711, então 0,023 continua válido e conservador. Não
+# trocar por 0,0219: tudo que é derivado daqui (a banda 4σ do hold, o
+# _QS_SETTLE_DRIFT_N 2σ do explorer, a folga de CONTACT_ON_N) foi sintonizado
+# com este número, e as duas células cabem nele.
+#
+# Consequência para o CONTACT_ON_N: cru, a FA7155 dá 3σ = 66 mN, o que deixa
+# 54 mN de folga até os 0,12 N — MAIS folga que os 29 mN sobre os 91 mN do
+# HX711 filtrado, para os quais o limiar foi sintonizado em 28/08. Ou seja,
+# desligar o One-Euro não estreitou a margem de contato; ela cresceu.
+# (Com ft_filter true a mesma medida dá σ = 0,0020 N — o filtro compra isso
+# com atraso, que é o motivo de ele nascer desligado no launch.)
+# σ do sinal que a MALHA vê — que deixou de ser o do sensor cru quando o
+# One-Euro passou a nascer ligado. O explorer consome /load_cell/force_net,
+# que é filtrado; dimensionar a banda contra o ruído CRU a superestimava em
+# uma ordem de grandeza. MEDIDO na coleta MANUAL/20260907_113343: σ = 0,0015 N
+# (desvio da diferença amostra-a-amostra ÷ √2, sobre as 20 732 amostras de
+# HOLD, taxa de 399,7 Hz).
+#
+# ATENÇÃO ao acoplamento: este número só vale com `ft_filter` LIGADO. Com
+# ft_filter:=false o que chega à malha tem σ = 0,0219 N, e a banda de 0,02 N
+# abaixo fica DENTRO do ruído — o hold nunca fecharia. Mexeu num, confira o
+# outro.
+FORCE_CTRL_SIGMA_N = 0.0015
+
+# Meia-banda do HOLD: 0,02 N, pedido de bancada em 07/09/2026 depois da
+# coleta acima. Era 0,092 N (4σ do HX711 CRU), e a coleta mostrou por que
+# incomodava: com σ de 0,0015 N a banda valia ~60σ, larga a ponto de aceitar
+# como "estável" um patamar que ainda derivava 71 mN em 10 s.
+# 0,02 N são ~13σ do sinal filtrado — bem acima dos 4σ que o
+# test_setpoint_band exige para a janela de estabilidade não se resetar
+# sozinha, e ainda assim 4,6× mais estreita que a banda antiga.
+HOLD_TOL_N     = 0.02
+HOLD_TOL_SIGMA = HOLD_TOL_N / FORCE_CTRL_SIGMA_N   # ≈ 13,3σ
+# Fração do setpoint. Era 5 %, o que fazia a banda valer 0,10 N num alvo de
+# 2 N — o termo do ruído nem chegava a mandar na faixa usada na bancada.
+# A 1 % ela fica nos 0,02 N pedidos em TODO o intervalo de 0 a 2 N, e só
+# volta a abrir acima disso, onde 1 % do alvo já é maior que o piso.
+HOLD_TOL_PCT   = 0.01
 
 
 def hold_tol_n(target_f: float) -> float:
@@ -285,9 +318,30 @@ FT_FRAME_HEADER = b'\x53\x54'
 FT_FRAME_LEN    = 28          # 2 (cabeçalho) + 6×float32 + 2 (CRC-16/MODBUS)
 # Ordem dos seis canais dentro do quadro — é ela que dá nome às colunas.
 FT_AXES = ('fx', 'fy', 'fz', 'mx', 'my', 'mz')
-# Taxa do exemplar em uso (manual §3.1: a série aceita 500–1000 Hz sob
-# encomenda, e esta unidade veio no topo da faixa).
-FT_NOMINAL_RATE_HZ = 1000.0
+# Taxa que a bancada ENTREGA — não a que o sensor produz. O exemplar é de
+# 1 kHz (manual §3.1: a série aceita 500–1000 Hz sob encomenda, e esta unidade
+# veio no topo da faixa), mas ele é lido em modo POLLED, e aí cada amostra
+# custa um round-trip USB inteiro. Medido em 07/09/2026 pelo conversor CH343:
+# 458 Hz cravados por 12 s, 0 timeouts, 0 erros — o teto do FIO a 1 Mbps é
+# 2273 Hz, então quem limita é a latência do conversor, não a linha 485.
+# É dele que a aba "6 Axes" tira a faixa de "taxa saudável" e, desde
+# 07/09/2026, o PASSO do laço polled (`ft_poll_rate_hz`).
+#
+# Por que 400 e não os 458 medidos: 458 Hz é o teto de roda-livre, o que sobra
+# depois da latência do USB quando a máquina está ociosa. Pedir o teto não dá
+# taxa estável — dá a taxa que sobrar, e ela cai (405 Hz medidos com a GUI e
+# dois assinantes no ar) e volta conforme a carga. Como o dt é o que o
+# One-Euro e o explorer consomem, um dt CONSTANTE vale mais que um dt máximo:
+# com passo fixo abaixo do teto o laço absorve o pico em vez de repassá-lo.
+# Os ~13% de folga são o orçamento dessa absorção.
+# Volte para 1000.0 junto com o modo stream, se ele for destravado (ver
+# FT_MODBUS_MAP): lá não há round-trip e o teto é outro.
+FT_NOMINAL_RATE_HZ = 400.0
+# Taxa que o SENSOR produz, que é outra coisa: é o que está gravado na unidade
+# (Send_Frequency) e o que a GUI pré-seleciona no combo "Set rate (Hz)" — esse
+# botão escreve no DISPOSITIVO, então ele tem de oferecer um valor que o
+# dispositivo aceita (FT_RATE_CHOICES_HZ), não a taxa que o USB deixa passar.
+FT_SENSOR_RATE_HZ = 1000.0
 # Teto ABSOLUTO do link: 28 bytes × 10 bits / 1 Mbps ≈ 0,28 ms por quadro.
 # Um sensor acima disto NÃO cabe no baud em uso e vai chegar picotado.
 

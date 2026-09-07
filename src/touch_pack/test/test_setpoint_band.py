@@ -7,10 +7,12 @@ Num alvo de 0,1 N ele abria a banda [-0,05; +0,25] N — inclui força ZERO e
 """
 import os
 
+import pytest
+
 os.environ.setdefault('ROS_DOMAIN_ID', '77')
 
 from touch_pack.tactile_explorer import (
-    _CONTACT_ON_N, _FORCE_NOISE_SIGMA_N, _HOLD_TOL_N, _HOLD_TOL_PCT,
+    _CONTACT_ON_N, _FORCE_CTRL_SIGMA_N, _HOLD_TOL_N, _HOLD_TOL_PCT,
     _HOLD_TOL_SIGMA, _HOLD_STABLE_S, _CTRL_DT, setpoint_resolvable)
 
 
@@ -21,8 +23,12 @@ def _tol(target_f: float) -> float:
 
 def test_piso_da_banda_e_o_ruido_da_celula():
     """O piso não é arbitrário: é múltiplo de σ. Re-medir a célula tem de ser
-    mudar UM número e a banda seguir junto."""
-    assert _HOLD_TOL_N == _HOLD_TOL_SIGMA * _FORCE_NOISE_SIGMA_N
+    mudar UM número e a banda seguir junto.
+
+    O σ é o do sinal que a MALHA vê (FORCE_CTRL_SIGMA_N, pós One-Euro), e não
+    o do sensor cru: o explorer consome /load_cell/force_net, que é filtrado.
+    Enquanto os dois eram o mesmo número isto passava por coincidência."""
+    assert _HOLD_TOL_N == pytest.approx(_HOLD_TOL_SIGMA * _FORCE_CTRL_SIGMA_N)
 
 
 def test_banda_nunca_inclui_forca_zero():

@@ -78,9 +78,9 @@ def test_o_ramo_da_fa7155_nao_cai_no_da_axial(build_tab):
 
 def test_o_default_do_parametro_e_a_celula_da_bancada():
     """`palpation_gui` rodando solto (sem o launch) tem de assumir a célula
-    que está montada, não a outra."""
+    que está montada, não a outra. Desde 07/09/2026 a montada é a FA7155."""
     src = (_PKG / 'palpation_gui.py').read_text(encoding='utf-8')
-    assert "declare_parameter(\n            'force_sensor', 'load_cell')" in src
+    assert "declare_parameter(\n            'force_sensor', 'ft6')" in src
 
 
 def test_o_launch_manda_o_mesmo_valor_para_a_gui_e_para_o_driver():
@@ -99,5 +99,5 @@ def test_valor_desconhecido_cai_na_celula_da_bancada():
     cabo — nem mostrar a aba dela. Launch e GUI caem no mesmo default."""
     launch = _LAUNCH.read_text(encoding='utf-8')
     gui = (_PKG / 'palpation_gui.py').read_text(encoding='utf-8')
-    assert "force_sensor = 'load_cell'" in launch
-    assert "else 'load_cell'" in gui
+    assert "force_sensor = 'ft6'" in launch
+    assert "else 'ft6'" in gui

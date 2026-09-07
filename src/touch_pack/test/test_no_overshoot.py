@@ -322,7 +322,7 @@ def test_a_deriva_nao_quebra_com_janela_minuscula(m):
 def test_o_limiar_de_assentado_esta_acima_do_ruido_da_celula(m):
     """Abaixo do ruído, a força nunca seria declarada assentada e toda medida
     perto do alvo gastaria o teto de ticks."""
-    assert m._QS_SETTLE_DRIFT_N > m._FORCE_NOISE_SIGMA_N
+    assert m._QS_SETTLE_DRIFT_N > m._FORCE_CTRL_SIGMA_N
     assert m._QS_SETTLE_DRIFT_N < m._HOLD_TOL_N
 
 

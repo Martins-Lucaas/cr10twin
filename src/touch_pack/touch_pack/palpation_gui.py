@@ -96,11 +96,13 @@ from .constants import (
     CONTACT_ON_N as _CONTACT_ON_N,
     CONTACT_OFF_FRAC as _CONTACT_OFF_FRAC,
     FORCE_NOISE_SIGMA_N as _FORCE_NOISE_SIGMA_N,
+    FORCE_CTRL_SIGMA_N as _FORCE_CTRL_SIGMA_N,
     HOLD_TOL_N as _HOLD_TOL_N,
     HOLD_TOL_PCT as _HOLD_TOL_PCT,
     HOLD_TOL_SIGMA as _HOLD_TOL_SIGMA,
     hold_tol_n as _hold_tol_n_for,
     FORCE_SETPOINT_MAX_N,
+    FT_NOMINAL_RATE_HZ,
     HOME_POSE_FILE, ROBOT_CONFIG_FILE, POSES_FILE,
     tool_stamp, tool_stamp_mismatch,
     PALPATION_PARAMS_FILE, RUNS_DIR,
@@ -352,7 +354,7 @@ import math as _math   # alias para evitar sombrear `math` global do escopo
 # runtime por HOME_POSE_FILE quando existe ("✔ Salvar Home").
 ARM_HOME_DEG = dict(POINTING_SEED_DEG)
 ROBOT_CONFIG_DEFAULTS = {
-    'hand_ip':    '192.168.5.103',
+    'hand_ip':    '192.168.5.105',
     'robot_ip':   '192.168.5.2',
     'robot_mode': 'SIM_ONLY',
 }
@@ -455,6 +457,11 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # próprio, não para este.
         self.create_subscription(WrenchStamped, '/ft_sensor/wrench',
                                  self._cb_ft_wrench, QOS_SENSOR)
+        # Taxa MEDIDA pelo ft_receiver na própria thread de aquisição. É ela
+        # que a aba mostra; a estimativa local abaixo só cobre o caso de um
+        # receiver antigo, que não publica isto.
+        self.create_subscription(Float32, '/load_cell/rate_hz',
+                                 self._cb_ft_rate, 10)
         # Tópico latched que indica se o drag teach está activo.
         self._drag_pub = self.create_publisher(Bool, '/palpation/drag_mode', QOS_COMMAND)
         # /load_cell/force_net e /load_cell/sample_net NÃO saem mais daqui:
@@ -704,7 +711,16 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # ft_serial gera seq/t_us do relógio do PC — então esta é a única
         # cadência observável daqui, e é ela que responde "quantos Hz chegam".
         self._ft_rate_hz: float | None = None
-        self._ft_arrivals: collections.deque = collections.deque(maxlen=120)
+        # Último valor vindo de /load_cell/rate_hz, e o instante dele. Fica
+        # None enquanto o tópico não falar — é o que devolve a estimativa
+        # local ao comando sem precisar de flag de versão.
+        self._ft_rate_from_node: float | None = None
+        self._ft_rate_from_node_ts: float = 0.0
+        # ~1 s de amostras. Eram 120 (0,3 s a 400 Hz): janela curta demais
+        # para um número que se lê na tela — bastava o executor entregar em
+        # rajada para a estimativa balançar vários Hz entre repinturas.
+        self._ft_arrivals: collections.deque = collections.deque(
+            maxlen=int(FT_NOMINAL_RATE_HZ))
         # Subprocesso do force_receiver_node (gerenciado pelo botão Conectar)
         # Touch sensor (STM32 → PC plotter → UDP via touch_receiver)
         # Gerenciado junto com o force_receiver pelo mesmo botão Conectar.
@@ -738,9 +754,9 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # Calibration; 'ft6' (FA7155) → aba 6 Axes. Valor desconhecido cai no
         # default, como no launch.
         _cell = str(self.declare_parameter(
-            'force_sensor', 'load_cell').value).strip().lower()
+            'force_sensor', 'ft6').value).strip().lower()
         self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
-            else 'load_cell'
+            else 'ft6'
         # Real x simulado. A GUI não distingue as duas fontes pelo tópico —
         # ambas publicam /load_cell/force_net —, então sem este parâmetro a
         # tela mostra força de Gazebo com a mesma cara da força de bancada.
@@ -2262,16 +2278,20 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                          vmin=round(_HOLD_TOL_N, 3), vmax=2.0, step=0.01,
                          hint='Half-width of the band around the setpoint '
                               'within which the force is considered '
-                              'stabilized. The floor is the load cell noise '
-                              f'itself ({_HOLD_TOL_SIGMA:.0f}σ = '
-                              f'{_HOLD_TOL_N:.3f} N, σ='
-                              f'{_FORCE_NOISE_SIGMA_N:.3f} N): a band '
-                              'narrower than the measurement uncertainty is '
-                              'not a tighter criterion, it is one the cell '
-                              'cannot evaluate. The explorer also floors it '
-                              f'at {100*_HOLD_TOL_PCT:.0f}% of the setpoint; '
-                              'the default shown is that same law. Re-measure '
-                              'σ with the FA7155 to lower this floor.')
+                              'stabilized. The floor is the noise of the '
+                              'signal the LOOP sees — the filtered '
+                              f'/load_cell/force_net ({_HOLD_TOL_N:.3f} N = '
+                              f'{_HOLD_TOL_SIGMA:.0f}σ, σ='
+                              f'{_FORCE_CTRL_SIGMA_N:.4f} N measured on the '
+                              'FA7155): a band narrower than the measurement '
+                              'uncertainty is not a tighter criterion, it is '
+                              'one the cell cannot evaluate. The explorer '
+                              f'also floors it at {100*_HOLD_TOL_PCT:.0f}% of '
+                              'the setpoint; the default shown is that same '
+                              'law. NOTE: this floor assumes ft_filter is ON. '
+                              f'Unfiltered the cell shows σ='
+                              f'{_FORCE_NOISE_SIGMA_N:.4f} N and this band '
+                              'sits inside the noise.')
         self._param_row(adv, label='HOLD — Stable Window',
                          unit='s', var=self.hold_stable_var,
                          vmin=0.2, vmax=5.0, step=0.1,
@@ -3190,10 +3210,29 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             self._touch_value = float(msg.data)
             self._touch_last_ts = time.time()
 
+    def _cb_ft_rate(self, msg: Float32) -> None:
+        """Taxa medida pelo receiver. Substitui a estimativa local."""
+        v = float(msg.data)
+        with self._lock:
+            if math.isfinite(v) and v > 0.0:
+                self._ft_rate_from_node = v
+                self._ft_rate_from_node_ts = time.time()
+                self._ft_rate_hz = v
+
     def _cb_ft_wrench(self, msg: WrenchStamped) -> None:
         """Seis eixos do FA7155. Roda na thread do executor ROS — só guarda
         estado; quem desenha é _refresh_ft_axes, a 10 Hz."""
         now = time.time()
+        # Cadência pelo CARIMBO do ft_receiver, não pela hora em que esta
+        # callback rodou. O executor entrega várias mensagens de uma vez
+        # quando a thread do Tk segura a GIL, e medir a chegada aqui media o
+        # AGENDAMENTO da GUI, não a aquisição — era o que fazia a taxa dançar
+        # na tela com o laço de poll perfeitamente constante (σ = 0,34 Hz
+        # medido no driver). O carimbo é posto na publicação, uma vez por
+        # amostra, e não conhece esse enfileiramento.
+        st = msg.header.stamp
+        t_amostra = (st.sec + st.nanosec * 1e-9) if (st.sec or st.nanosec) \
+            else now
         f, t = msg.wrench.force, msg.wrench.torque
         vals = (f.x, f.y, f.z, t.x, t.y, t.z)
         # Quadro com NaN/inf é descartado e CONTADO: deixá-lo entrar
@@ -3209,11 +3248,21 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             self._ft_wrench['mz'] = t.z
             self._ft_last_ts = now
             self._ft_frames_ok += 1
-            self._ft_arrivals.append(now)
+            self._ft_arrivals.append(t_amostra)
             # Taxa pela JANELA inteira (n-1 intervalos), não pelo último dt:
             # o dt instantâneo de um link serial oscila demais para ser lido
             # como número na tela.
-            if len(self._ft_arrivals) >= 8:
+            # Só estima se o receiver não estiver publicando a dele. O prazo
+            # importa: sem ele, um receiver que morre deixaria a tela
+            # congelada no último valor que ele chegou a mandar.
+            # getattr e não acesso direto: o _cb_ft_wrench é exercitado por
+            # teste sobre uma GUI montada só com os campos que ele usa (ver
+            # test_ft_axes), e é o mesmo cuidado que o _ft_feed_processing já
+            # toma com o _ft_sg.
+            do_no = (getattr(self, '_ft_rate_from_node', None) is not None
+                     and (now - getattr(self, '_ft_rate_from_node_ts', 0.0))
+                     < 5.0)
+            if not do_no and len(self._ft_arrivals) >= 8:
                 span = self._ft_arrivals[-1] - self._ft_arrivals[0]
                 self._ft_rate_hz = ((len(self._ft_arrivals) - 1) / span
                                     if span > 0 else None)
@@ -3411,8 +3460,8 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         """Move o braço para a Home customizada do usuário."""
         self._suppressing = True
         try:
-            for j, deg in self._arm_home_deg.items():
-                self.arm_sliders[j].set(deg)
+            for j in ARM_JOINTS:
+                self.arm_sliders[j].set(self._arm_home_deg[j])
         finally:
             self._suppressing = False
         self._publish_arm_from_sliders()
@@ -3527,7 +3576,9 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         except Exception as exc:    # pragma: no cover
             self._set_status(f'Failed to save home: {exc}', DANGER)
             return
-        self._arm_home_deg = new_home
+        # Só as juntas: `new_home` leva também o carimbo tool_stamp() para o
+        # JSON, e `tool_tcp_mm` não tem slider correspondente.
+        self._arm_home_deg = {j: new_home[j] for j in ARM_JOINTS}
         summary = ' / '.join(f'{j[-1]}={new_home[j]:+.0f}°'
                               for j in ARM_JOINTS)
         self._set_status(f'Home saved ({summary}).', OK)
@@ -6465,7 +6516,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
 
     # Versão do formato persistido. Sobe quando um default salvo deixa de ser
     # válido e precisa ser DESCARTADO em vez de recarregado.
-    _PALP_PARAMS_VERSION = 2
+    _PALP_PARAMS_VERSION = 3
 
     def _migrate_palp_params(self, data: dict) -> dict:
         """Poda de um arquivo antigo os campos cujo default mudou.
@@ -6473,9 +6524,16 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         `hold_tol` (v1 → v2): o arquivo guarda o valor do último start, e o
         último start de toda sessão anterior mandou o default STALE de
         0,15 N — que a partir daí passava a ser reescrito para sempre. Sem
-        podá-lo, o conserto da banda (constants.HOLD_TOL_N, 4σ do ruído
-        medido) não teria efeito nenhum em quem já usou a GUI uma vez.
+        podá-lo, o conserto da banda (constants.HOLD_TOL_N) não teria efeito
+        nenhum em quem já usou a GUI uma vez.
         Um valor escolhido de propósito volta com um start.
+
+        (v2 → v3): a mesma coisa aconteceu de novo em 07/09/2026, quando a
+        banda passou de 0,092 para 0,02 N. Só que agora a poda é SELETIVA:
+        descarta apenas se o valor for exatamente o default anterior, porque
+        depois da v2 o campo também pode guardar uma escolha deliberada — e
+        jogar fora um número que o operador ajustou à mão seria pior que
+        manter um default velho.
         """
         try:
             version = int(data.get('params_version', 1))
@@ -6483,14 +6541,23 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             version = 1
         if version >= self._PALP_PARAMS_VERSION:
             return data
+        # Defaults que já foram o valor gravado por um start. Podar QUALQUER
+        # hold_tol aqui apagaria um ajuste feito de propósito.
+        _DEFAULTS_VELHOS = (0.15, 0.092)
         if 'hold_tol' in data:
-            velho = data.pop('hold_tol')
-            self.get_logger().info(
-                f'[PARAMS] hold_tol={velho} descartado do arquivo de '
-                f'preferências (formato v{version}): era o default antigo de '
-                f'0,15 N, que sobrescrevia a banda derivada do ruído da '
-                f'célula ({_HOLD_TOL_SIGMA:.0f}σ = {_HOLD_TOL_N:.3f} N). '
-                'Reajuste em Advanced se o valor era intencional.')
+            try:
+                atual = float(data['hold_tol'])
+            except (TypeError, ValueError):
+                atual = None
+            if atual is not None and any(abs(atual - d) < 1e-6
+                                         for d in _DEFAULTS_VELHOS):
+                data.pop('hold_tol')
+                self.get_logger().info(
+                    f'[PARAMS] hold_tol={atual} descartado do arquivo de '
+                    f'preferências (formato v{version}): era um default '
+                    f'antigo, que sobrescrevia a banda derivada do ruído da '
+                    f'célula ({_HOLD_TOL_SIGMA:.0f}σ = {_HOLD_TOL_N:.3f} N). '
+                    'Reajuste em Advanced se o valor era intencional.')
         return data
 
     def _save_palp_params(self, vals: dict) -> None:

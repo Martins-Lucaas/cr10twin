@@ -131,13 +131,26 @@ class FtPolledDriver:
 
     # ── Laço ──────────────────────────────────────────────────────────
     def _worker(self) -> None:
+        # Prazo ABSOLUTO, não "dorme o que sobrou". Dormir a folga medida
+        # repete a cada volta o quanto o time.sleep passou do pedido, e esse
+        # erro nunca é devolvido: medido em 07/09/2026, 2,557 ms de período
+        # para 2,500 pedidos — 391 Hz onde se pediu 400. Com prazo absoluto o
+        # atraso de uma volta é descontado na seguinte, e a média cai no alvo.
+        proximo = time.monotonic()
         while self._running:
-            t0 = time.monotonic()
             self._poll_once()
-            if self._interval:
-                folga = self._interval - (time.monotonic() - t0)
-                if folga > 0:
-                    time.sleep(folga)
+            if not self._interval:
+                continue
+            proximo += self._interval
+            folga = proximo - time.monotonic()
+            if folga > 0:
+                time.sleep(folga)
+            elif folga < -self._interval:
+                # Mais de um período atrasado (transação lenta, GC, replug):
+                # re-ancora. Sem isto o laço dispararia uma RAJADA de
+                # transações tentando recuperar o tempo perdido, que é o
+                # oposto de taxa constante.
+                proximo = time.monotonic()
 
     def _poll_once(self) -> None:
         if self._yield_req.is_set():

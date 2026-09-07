@@ -53,12 +53,14 @@ import math
 import os
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 
 from std_msgs.msg import Bool, Empty, Float32, String
 from .constants import (
     FT_AXES, FT_AXIS_LABELS, FT_BAUD_CHOICES, FT_MODBUS_MAP_CONFIRMED,
-    FT_MODBUS_SLAVE_ID, FT_NOMINAL_RATE_HZ, FT_MAX_RATE_HZ, FT_MIN_RATE_HZ,
+    FT_MODBUS_SLAVE_ID, FT_NOMINAL_RATE_HZ, FT_SENSOR_RATE_HZ,
+    FT_MAX_RATE_HZ, FT_MIN_RATE_HZ,
     FT_RATE_CHOICES_HZ, FT_RATED_FORCE_N, FT_RATED_TORQUE_NM,
     FT_SAFE_OVERLOAD_PCT, FT_SERIAL_BAUD, FT_SG_ORDER_DEFAULT,
     FT_SG_WINDOW_DEFAULT, FT_STATS_WINDOW_DEFAULT, RUNS_DIR, ft_axis_rated,
@@ -66,9 +68,9 @@ from .constants import (
 )
 from .ft_stats import RollingStats, StreamingSavGol, validate_savgol
 from .ui_helpers import (
-    PANEL, TEXT, TEXT_MUTED, TEXT_DIM,
+    BG, PANEL, TEXT, TEXT_MUTED, TEXT_DIM,
     PRIMARY, PRIMARY_HV, OK, WARN, DANGER, BORDER,
-    FONT_BIG, FONT_HEAD, FONT_LBL, FONT_SMALL, FONT_MONO, FONT_MONO_S,
+    FONT_BIG, FONT_LBL, FONT_SMALL, FONT_MONO_S,
     _shade,
 )
 
@@ -80,8 +82,8 @@ from .ui_helpers import (
 # Geometria da barra bipolar. O zero fica no MEIO: força de compressão e de
 # tração ocupam metades opostas, então o sinal é lido pela direção, não pelo
 # rótulo.
-_BAR_W = 260
-_BAR_H = 16
+# Corpo do valor numérico da aba de seis eixos, em pontos.
+_FT_VALUE_PT = 22
 
 # Carimbo do CSV, igual ao do cliente de fábrica — para as duas planilhas
 # poderem ser comparadas linha a linha sem conversão.
@@ -309,17 +311,29 @@ class FtAxesMixin:
         self._ft_axis_widgets = {}
         self._ft_processing_init()
 
-        self._build_ft_link_card(root)
-        self._build_ft_mode_card(root)
-        self._build_ft_axes_card(root)
-        self._build_ft_chart_card(root)
-        self._build_ft_columns_card(root)
-        self._build_ft_arrow_card(root)
-        self._build_ft_command_card(root)
-        self._build_ft_filter_card(root)
-        self._build_ft_stats_card(root)
-        self._build_ft_record_card(root)
-        self._build_ft_capacity_card(root)
+        # DUAS COLUNAS. Empilhado, o readout dos seis eixos e os gráficos não
+        # cabiam juntos na tela: acompanhar o número e a forma de onda ao mesmo
+        # tempo exigia rolar, que é o oposto de monitorar. À esquerda fica o
+        # que se olha AO VIVO (valores, gráficos, seta); à direita o que se
+        # ajusta e se confere de vez em quando.
+        cols = tk.Frame(root, bg=BG)
+        cols.pack(fill='both', expand=True)
+        esq = tk.Frame(cols, bg=BG)
+        esq.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        dir_ = tk.Frame(cols, bg=BG)
+        dir_.pack(side='left', fill='both', expand=True, padx=(5, 0))
+
+        self._build_ft_axes_card(esq)
+        self._build_ft_chart_card(esq)
+        self._build_ft_arrow_card(esq)
+
+        self._build_ft_link_card(dir_)
+        self._build_ft_mode_card(dir_)
+        self._build_ft_command_card(dir_)
+        self._build_ft_filter_card(dir_)
+        self._build_ft_stats_card(dir_)
+        self._build_ft_record_card(dir_)
+        self._build_ft_capacity_card(dir_)
 
     # ── Saúde do link ─────────────────────────────────────────────────
     def _build_ft_link_card(self, root: tk.Frame) -> None:
@@ -345,12 +359,6 @@ class FtAxesMixin:
             lbl.pack(fill='x')
             self._ft_stat_lbls[key] = lbl
 
-        self._ft_link_note = tk.Label(
-            card_link,
-            text=(f'Nominal {FT_NOMINAL_RATE_HZ:.0f} Hz  ·  '
-                  f'link ceiling {FT_MAX_RATE_HZ:.0f} Hz @ {FT_SERIAL_BAUD} baud'),
-            font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w', justify='left')
-        self._ft_link_note.pack(fill='x', pady=(6, 0))
 
     # ── Modo de aquisição (stream x polled) ─────────────────
     def _build_ft_mode_card(self, root: tk.Frame) -> None:
@@ -401,27 +409,34 @@ class FtAxesMixin:
 
     # ── Os seis eixos ─────────────────────────────────────────────────
     def _build_ft_axes_card(self, root: tk.Frame) -> None:
-        card_ax = self._card(root, 'Six Axes — live')
+        """Os seis canais como TEXTO grande, em grade 3x2.
 
-        hdr = tk.Frame(card_ax, bg=PANEL)
-        hdr.pack(fill='x', pady=(4, 2))
-        tk.Label(hdr, text='axis', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
-                 width=5, anchor='w').pack(side='left')
-        tk.Label(hdr, text='value', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
-                 width=14, anchor='e').pack(side='left', padx=(0, 10))
-        tk.Label(hdr, text='0 centred  ·  ends = ±full scale',
-                 font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
-                 anchor='w').pack(side='left')
+        As barras bipolares por eixo saíram em 07/09/2026. Elas ocupavam
+        260 px de largura cada para dizer o que o número ao lado já dizia, e
+        forçavam a leitura a converter comprimento em valor — numa bancada em
+        que se anota Fx/Fy/Fz, o número É a informação. Ficou o que a barra
+        tinha de útil e o número não carrega: o % do fundo de escala e a cor
+        de aviso perto dele.
+        """
+        # expand=False: com True este card absorvia TODA a sobra vertical da
+        # coluna (é o único assim aqui), e a folga aparecia como um vão morto
+        # entre o botão de tare e os gráficos logo abaixo. Sem expandir, ele
+        # ocupa o que precisa e os gráficos sobem até encostar nele.
+        card_ax = self._card(root, 'Six Axes — live', expand=False)
+
+        grade = tk.Frame(card_ax, bg=PANEL)
+        grade.pack(fill='x', pady=(6, 2))
+        for c in range(3):
+            grade.columnconfigure(c, weight=1, uniform='ft_ax')
 
         for i, (axis, label, unit) in enumerate(FT_AXIS_LABELS):
-            if i == 3:
-                # Separador força/torque: são grandezas diferentes e escalas
-                # diferentes; juntá-las sem marca convida a leitura errada.
-                tk.Frame(card_ax, bg=BORDER, height=1).pack(fill='x', pady=6)
-            self._ft_axis_widgets[axis] = self._build_ft_axis_row(
-                card_ax, axis, label, unit)
+            cel = tk.Frame(grade, bg=PANEL)
+            cel.grid(row=i // 3, column=i % 3, sticky='ew',
+                     padx=(0, 12), pady=(2, 8))
+            self._ft_axis_widgets[axis] = self._build_ft_axis_cell(
+                cel, axis, label, unit)
 
-        tk.Frame(card_ax, bg=BORDER, height=1).pack(fill='x', pady=(8, 6))
+        tk.Frame(card_ax, bg=BORDER, height=1).pack(fill='x', pady=(4, 6))
 
         mag = tk.Frame(card_ax, bg=PANEL)
         mag.pack(fill='x')
@@ -488,7 +503,7 @@ class FtAxesMixin:
 
         # Taxa de saída.
         r1 = tk.Frame(card, bg=PANEL); r1.pack(fill='x', pady=3)
-        self._ft_rate_var = tk.StringVar(value=str(int(FT_NOMINAL_RATE_HZ)))
+        self._ft_rate_var = tk.StringVar(value=str(int(FT_SENSOR_RATE_HZ)))
         ttk.Combobox(r1, textvariable=self._ft_rate_var, width=8,
                      state='readonly',
                      values=[str(v) for v in FT_RATE_CHOICES_HZ]).pack(
@@ -526,15 +541,12 @@ class FtAxesMixin:
                  font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM).pack(
             side='left', padx=(10, 0))
 
-        # Stream on/off.
-        r4 = tk.Frame(card, bg=PANEL); r4.pack(fill='x', pady=3)
-        self._ft_btn(r4, '▶  Start stream',
-                     lambda: self._ft_send_cmd('stream_start'), st)
-        self._ft_btn(r4, '■  Stop stream',
-                     lambda: self._ft_send_cmd('stream_stop'), st)
-        tk.Label(r4, text='Stopping the stream also stops /ft_sensor/wrench.',
-                 font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM).pack(
-            side='left', padx=(10, 0))
+        # Os botões "Start/Stop stream" saíram daqui em 07/09/2026. Eles
+        # dependiam dos mesmos opcodes não confirmados do FT_MODBUS_MAP, então
+        # nasciam desabilitados e nunca fizeram nada — mas sugeriam que a
+        # aquisição precisava ser LIGADA à mão, quando em polled o driver já
+        # sobe com o nó. O comando continua em ft_modbus.start_stream/
+        # stop_stream e no ft_receiver; o que saiu foi só a isca na tela.
 
         # ── Varredura de registradores ────────────────────
         # É a saída para a trava acima sem sniffer e sem segundo adaptador:
@@ -813,37 +825,36 @@ class FtAxesMixin:
                  anchor='w', justify='left', wraplength=760).pack(
             fill='x', pady=(0, 4))
 
-    def _build_ft_axis_row(self, parent, axis: str, label: str, unit: str):
-        """Uma linha: rótulo, valor numérico, barra bipolar, % do fundo."""
-        row = tk.Frame(parent, bg=PANEL)
-        row.pack(fill='x', pady=3)
+    def _ft_value_font(self):
+        """Fonte do readout: a mono do TEMA, ampliada — não uma família
+        cravada. Copiar a nomeada é o que mantém a aba legível se o usuário
+        mudar o tamanho base do Tk."""
+        f = getattr(self, '_ft_big_font', None)
+        if f is None:
+            f = tkfont.nametofont('TkFixedFont').copy()
+            f.configure(size=_FT_VALUE_PT, weight='bold')
+            self._ft_big_font = f
+        return f
 
-        tk.Label(row, text=label, font=FONT_HEAD, bg=PANEL, fg=TEXT,
-                 width=5, anchor='w').pack(side='left')
+    def _build_ft_axis_cell(self, parent, axis: str, label: str, unit: str):
+        """`Fx=  +0.123 N` em corpo grande, com o % do fundo de escala abaixo."""
+        linha = tk.Frame(parent, bg=PANEL)
+        linha.pack(fill='x')
 
-        val = tk.Label(row, text=f'—  {unit}', font=FONT_MONO, bg=PANEL,
-                       fg=TEXT_DIM, width=14, anchor='e')
-        val.pack(side='left', padx=(0, 10))
+        tk.Label(linha, text=f'{label}=', font=self._ft_value_font(),
+                 bg=PANEL, fg=TEXT_MUTED, anchor='w').pack(side='left')
+        val = tk.Label(linha, text='—', font=self._ft_value_font(), bg=PANEL,
+                       fg=TEXT_DIM, width=8, anchor='e')
+        val.pack(side='left')
+        tk.Label(linha, text=unit, font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
+                 anchor='w').pack(side='left', padx=(5, 0))
 
-        cv = tk.Canvas(row, width=_BAR_W, height=_BAR_H, bg=PANEL,
-                       highlightthickness=0, bd=0)
-        cv.pack(side='left')
-        # Trilho + marca do zero, desenhados uma vez.
-        # _shade recebe fator em [-1, 1]; acima disso o canal estoura 255 e
-        # devolve uma string hex malformada, que o Tk pinta de PRETO.
-        cv.create_rectangle(0, 3, _BAR_W, _BAR_H - 3,
-                            fill=_shade(BORDER, 0.55), outline='')
-        bar = cv.create_rectangle(_BAR_W // 2, 3, _BAR_W // 2, _BAR_H - 3,
-                                  fill=PRIMARY, outline='')
-        cv.create_line(_BAR_W // 2, 0, _BAR_W // 2, _BAR_H,
-                       fill=TEXT_MUTED, width=1)
+        pct = tk.Label(parent, text='', font=FONT_SMALL, bg=PANEL,
+                       fg=TEXT_DIM, anchor='w')
+        pct.pack(fill='x')
 
-        pct = tk.Label(row, text='', font=FONT_MONO_S, bg=PANEL, fg=TEXT_DIM,
-                       width=9, anchor='e')
-        pct.pack(side='left', padx=(10, 0))
-
-        return {'val': val, 'canvas': cv, 'bar': bar, 'pct': pct,
-                'unit': unit, 'rated': ft_axis_rated(axis)}
+        return {'val': val, 'pct': pct, 'unit': unit,
+                'rated': ft_axis_rated(axis)}
 
     def _build_ft_magnitude(self, parent, title: str, unit: str):
         box = tk.Frame(parent, bg=PANEL)
@@ -898,17 +909,9 @@ class FtAxesMixin:
             v = shown.get(axis)
             rated = wid['rated']
             if v is None or not live:
-                wid['val'].config(text=f'—  {wid["unit"]}', fg=TEXT_DIM)
+                wid['val'].config(text='—', fg=TEXT_DIM)
                 wid['pct'].config(text='', fg=TEXT_DIM)
-                wid['canvas'].coords(wid['bar'],
-                                     _BAR_W // 2, 3, _BAR_W // 2, _BAR_H - 3)
                 continue
-
-            frac = 0.0 if rated <= 0 else max(-1.0, min(1.0, v / rated))
-            mid = _BAR_W / 2.0
-            x = mid + frac * mid
-            wid['canvas'].coords(wid['bar'],
-                                 min(mid, x), 3, max(mid, x), _BAR_H - 3)
 
             over = abs(v) / rated if rated > 0 else 0.0
             if over >= 1.0:
@@ -917,12 +920,11 @@ class FtAxesMixin:
                 cor = WARN
             else:
                 cor = PRIMARY
-            wid['canvas'].itemconfig(wid['bar'], fill=cor)
             # 4 casas para torque (valores pequenos), 3 para força.
             casas = 4 if wid['unit'] != 'N' else 3
-            wid['val'].config(text=f'{v:+.{casas}f}  {wid["unit"]}',
+            wid['val'].config(text=f'{v:+.{casas}f}',
                               fg=DANGER if over >= 1.0 else TEXT)
-            wid['pct'].config(text=f'{over * 100:5.1f}% FS',
+            wid['pct'].config(text=f'{over * 100:.1f}% FS',
                               fg=cor if over >= 0.8 else TEXT_DIM)
 
         # ── Módulos ──────────────────────────────────────────────────

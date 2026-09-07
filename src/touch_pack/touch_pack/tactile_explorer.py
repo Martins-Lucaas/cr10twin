@@ -160,6 +160,7 @@ from .constants import (
     FORCE_SETPOINT_MAX_N as _FORCE_SETPOINT_MAX_N,
     CONTACT_ON_N as _CONTACT_ON_N,
     FORCE_NOISE_SIGMA_N as _FORCE_NOISE_SIGMA_N,
+    FORCE_CTRL_SIGMA_N as _FORCE_CTRL_SIGMA_N,
     HOLD_TOL_SIGMA as _HOLD_TOL_SIGMA,
     HOLD_TOL_N as _HOLD_TOL_N,
     HOLD_TOL_PCT as _HOLD_TOL_PCT,
@@ -497,7 +498,11 @@ _QS_SETTLE_MAX_TICKS = 33    # teto da espera (~1 s a 33 Hz)
 # da 1ª. Deriva e não pico-a-pico, porque o ptp cresce com o tamanho da janela
 # mesmo num sinal estacionário — é o mesmo critério que o tare do
 # force_receiver usa (_window_drift), e pelo mesmo motivo.
-_QS_SETTLE_DRIFT_N = 2.0 * _FORCE_NOISE_SIGMA_N
+# 2σ do sinal que a MALHA vê, não do sensor cru — mesma correção do
+# HOLD_TOL_N. Com o σ cru isto valia 0,046 N e ficou MAIOR que a banda de
+# 0,02 N pedida em 07/09/2026: o laço declararia "assentado" ainda fora da
+# banda, que é a contradição que o test_no_overshoot trava.
+_QS_SETTLE_DRIFT_N = 2.0 * _FORCE_CTRL_SIGMA_N
 _QS_RELAX          = 0.7     # sub-relaxação do passo (robustez a erro de K_est)
 _QS_DF_MAX_N       = 0.2     # N: ΔF projetado máximo por micro-passo (contato rígido, sem silicone)
 # Teto ABSOLUTO do micro-passo. Não é o limitador principal — quem limita por

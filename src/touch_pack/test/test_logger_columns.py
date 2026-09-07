@@ -313,7 +313,7 @@ def test_celula_desconhecida_cai_no_default_da_bancada(ros, tmpdir_runs,
     monkeypatch.setattr(PL, 'OUTPUT_DIR', tmpdir_runs)
     logger = PL.PalpationLogger()
     try:
-        assert logger.get_parameter('force_sensor').value == 'load_cell'
-        assert logger._force_sensor == 'load_cell'
+        assert logger.get_parameter('force_sensor').value == 'ft6'
+        assert logger._force_sensor == 'ft6'
     finally:
         logger.destroy_node()

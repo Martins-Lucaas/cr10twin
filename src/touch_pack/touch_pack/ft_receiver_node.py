@@ -113,6 +113,14 @@ class FtReceiverNode(Node):
         self._calib_pub = self.create_publisher(
             Bool, '/load_cell/calibrated', 10)
         self._tared_pub = self.create_publisher(Bool, '/load_cell/tared', 10)
+        # Taxa MEDIDA na thread de aquisição. Existe porque quem estimava era
+        # a GUI, pelos instantes em que a callback dela rodava — e isso mede o
+        # agendamento do executor, não a aquisição: com o laço a 400,00 Hz
+        # (desvio 0,019 Hz no driver) a tela balançava 11 Hz. Aqui o número
+        # sai dos mesmos carimbos que o laço usa, antes de filtro, tara e das
+        # seis publicações, que é o trabalho de duração variável no caminho.
+        self._rate_pub = self.create_publisher(
+            Float32, '/load_cell/rate_hz', 10)
         self._tare_result_pub = self.create_publisher(
             String, '/load_cell/tare_result', 10)
         # Canal de COMANDO do sensor (Modbus RTU pela mesma 485) — JSON nos
@@ -184,6 +192,9 @@ class FtReceiverNode(Node):
             f.set_sensitivity(1.0)
             self._filters.append(f)
         self._last_t_us: int | None = None
+        # ~1 s de carimbos de chegada, para a taxa publicada.
+        self._rate_win: collections.deque = collections.deque(
+            maxlen=max(int(FT_NOMINAL_RATE_HZ), 8))
 
         self._lock = threading.Lock()
         self._tare = [0.0] * len(FT_AXES)
@@ -210,10 +221,32 @@ class FtReceiverNode(Node):
                                  self._on_rezero, 10)
         self.create_subscription(String, '/ft_sensor/command',
                                  self._on_command, 10)
+        # Auto-zero lento ligado/desligado. Ele cancela deriva térmica, mas
+        # em repouso prende a leitura em zero exato — e numa bancada em que se
+        # OLHA o sinal parado isso é indistinguível de célula morta. Quem quer
+        # ver a força contínua desliga; quem fecha malha longa deixa ligado.
+        self._autozero = bool(self.declare_parameter('ft_autozero', True).value)
+        # One-Euro por canal ligado/desligado. Ele custa ATRASO — é um passa-
+        # baixa adaptativo, e o que ele tira de ruído ele tira também de
+        # degrau. Quem quer o sinal do sensor como ele sai do fio desliga; o
+        # /ft_sensor/wrench_raw continua cru dos dois jeitos, mas ele também é
+        # pré-tare, então não serve a quem precisa do zero.
+        self._filter_on = bool(
+            self.declare_parameter('ft_filter', True).value)
         self._modbus_slave = int(self.declare_parameter(
             'ft_modbus_slave_id', FT_MODBUS_SLAVE_ID).value)
         self._modbus_timeout = float(self.declare_parameter(
             'ft_modbus_timeout_s', FT_MODBUS_TIMEOUT_S).value)
+        # Passo do laço polled. 0 = livre, o mais rápido que a linha aceitar —
+        # e era o que estava aqui. Livre a taxa é o que SOBRA depois da
+        # latência do USB, então ela balança com a carga da máquina: cada
+        # transação leva o tempo que levar, e um pico de CPU vira um dt maior.
+        # Com passo fixo o laço espera a diferença e o dt fica igual, ao custo
+        # de ficar abaixo do teto. Como o dt é o que o filtro e o explorer
+        # consomem, taxa ESTÁVEL vale mais que taxa máxima.
+        rate_alvo = float(self.declare_parameter(
+            'ft_poll_rate_hz', FT_NOMINAL_RATE_HZ).value)
+        self._poll_interval = (1.0 / rate_alvo) if rate_alvo > 0.0 else 0.0
         # Uma transação por vez: a derivação da linha (ft_cmd_channel) não
         # aninha, e serializar aqui dá erro claro em vez de RuntimeError.
         self._cmd_busy = threading.Lock()
@@ -282,6 +315,7 @@ class FtReceiverNode(Node):
                 self._serial,
                 slave_id=self._modbus_slave,
                 timeout_s=self._modbus_timeout,
+                interval_s=self._poll_interval,
                 on_sample=self._on_sample)
             self._polled.start()
 
@@ -423,13 +457,17 @@ class FtReceiverNode(Node):
                 dt = d_us / 1e6
         self._last_t_us = t_us
 
-        filt = [self._filters[k].update(float(vals[k]), dt)
-                for k in range(len(FT_AXES))]
+        if self._filter_on:
+            filt = [self._filters[k].update(float(vals[k]), dt)
+                    for k in range(len(FT_AXES))]
+        else:
+            filt = [float(v) for v in vals]
 
         self._publish_wrench(self._wrench_raw_pub, vals)
 
         with self._lock:
             self._rx_frames += 1
+            self._rate_win.append(time.perf_counter())
             self._link_ok = True
             self._buf.append(filt)
             tare_done = self._tare_done
@@ -470,7 +508,8 @@ class FtReceiverNode(Node):
 
         # Auto-zero lento. As duas guardas são necessárias — em repouso E
         # dentro da banda —, senão ele zeraria o próprio contato num HOLD.
-        if (self._phase in self._AUTOZERO_PHASES
+        if (self._autozero
+                and self._phase in self._AUTOZERO_PHASES
                 and abs(f_net) < self._AUTOZERO_BAND_N):
             with self._lock:
                 for k in range(len(FT_AXES)):
@@ -511,15 +550,27 @@ class FtReceiverNode(Node):
         se a força publicada tem origem, não se um arquivo foi lido."""
         with self._lock:
             ok, tared = self._link_ok, self._tare_done
+            win = list(self._rate_win)
+        if len(win) >= 8:
+            span = win[-1] - win[0]
+            if span > 0:
+                r = Float32(); r.data = float((len(win) - 1) / span)
+                self._rate_pub.publish(r)
         c = Bool(); c.data = bool(ok)
         self._calib_pub.publish(c)
         t = Bool(); t.data = bool(tared)
         self._tared_pub.publish(t)
 
     def _check_link(self) -> None:
-        alive = (self._serial.connected
-                 and self._serial.last_rx > 0.0
-                 and (time.monotonic() - self._serial.last_rx) < 3.0)
+        # De QUEM é o last_rx: em polled o transporte só entrega bytes pela
+        # derivação (ft_cmd_channel), e o parser de stream nunca casa um
+        # quadro 'ST' — o `last_rx` do FtSerialSource fica em 0.0 para sempre.
+        # Olhá-lo nesse modo fazia o nó gritar "a linha está muda, confira 24 V
+        # e A/B" a cada partida com o sensor respondendo 458 amostras/s.
+        src = self._polled if self._polled is not None else self._serial
+        alive = (src.connected
+                 and src.last_rx > 0.0
+                 and (time.monotonic() - src.last_rx) < 3.0)
         with self._lock:
             self._link_ok = alive
         if not alive and not self._last_rx_warn:

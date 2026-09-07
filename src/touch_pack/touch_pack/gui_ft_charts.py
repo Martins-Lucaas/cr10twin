@@ -1,9 +1,15 @@
 """gui_ft_charts.py — gráficos da aba "6 Axes", em paridade com a FIBOS.
 
 O `Six_Axis_FT.exe` desenha os seis canais com o qwt em dois gráficos (força e
-torque, escalas diferentes) mais uma vista de colunas. Os defaults de escala
-dele ficam em `Csv/Range.csv` da instalação, e é de lá que saem os números em
-`FT_CHART_*` (ver constants.py).
+torque, escalas diferentes). Os defaults de escala dele ficam em
+`Csv/Range.csv` da instalação, e é de lá que saem os números em `FT_CHART_*`
+(ver constants.py).
+
+A vista de COLUNAS saiu em 07/09/2026: ela repetia, em barra, o mesmo número
+que o readout da aba já mostra em corpo grande — e barra por eixo é justamente
+a leitura que o operador pediu para tirar, porque obriga a converter altura em
+valor. O que ela tinha de próprio (o % do fundo de escala DESTA unidade, e não
+da escala genérica do gráfico) foi para a linha de baixo de cada readout.
 
 Por que isto não mora no gui_loadcell.py: aquele arquivo já tem 792 linhas e é
 o recorte de um arquivo que tinha 234 métodos numa classe só. Gráfico é outro
@@ -30,7 +36,7 @@ import tkinter as tk
 
 from .constants import (
     FT_AXES, FT_AXIS_LABELS, FT_CHART_FORCE_MAX, FT_CHART_TORQUE_MAX,
-    FT_CHART_WINDOW_N, FT_RATED_FORCE_N, FT_RATED_TORQUE_NM, ft_axis_rated,
+    FT_CHART_WINDOW_N, FT_RATED_FORCE_N, FT_RATED_TORQUE_NM,
 )
 from .ui_helpers import (
     PANEL, TEXT, TEXT_MUTED, TEXT_DIM, PRIMARY, PRIMARY_HV,
@@ -47,8 +53,6 @@ FT_SERIES_COLOR = {
 
 _CHART_H = 190          # altura útil de cada gráfico, em px
 _CHART_COLS = 360       # colunas de decimação (até 2 pontos por coluna)
-_COL_W = 46             # largura de cada barra da vista de colunas
-_COL_H = 150
 
 
 def decimate_minmax(seq, cols: int = _CHART_COLS):
@@ -95,7 +99,6 @@ class FtChartsMixin:
         self._ft_chart_paused = False
         self._ft_chart_lines = {}      # eixo -> id da polilinha no canvas
         self._ft_chart_cv = {}
-        self._ft_col_widgets = {}
 
     def _ft_charts_feed(self, vals) -> None:
         """Uma amostra dos seis eixos.
@@ -237,39 +240,6 @@ class FtChartsMixin:
             self._ft_chart_paused = bool(self._ft_chart_pause_var.get())
 
     # ── Vista de colunas ──────────────────────────────────────────────
-    def _build_ft_columns_card(self, root: tk.Frame) -> None:
-        card = self._card(root, 'Columns — % of rated', expand=False)
-        tk.Label(
-            card,
-            text=('Each bar is the axis against the rated range of THIS unit '
-                  f'(±{FT_RATED_FORCE_N:.0f} N, '
-                  f'±{FT_RATED_TORQUE_NM:.0f} N·m) — not the chart scale '
-                  'above, which carries the generic factory defaults.'),
-            font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
-            justify='left', wraplength=780).pack(fill='x', pady=(6, 8))
-
-        row = tk.Frame(card, bg=PANEL)
-        row.pack(fill='x')
-        for axis, label, unidade in FT_AXIS_LABELS:
-            cel = tk.Frame(row, bg=PANEL)
-            cel.pack(side='left', padx=(0, 10))
-            cv = tk.Canvas(cel, width=_COL_W, height=_COL_H, bg=PANEL,
-                           highlightthickness=1, highlightbackground=BORDER)
-            cv.pack()
-            meio = _COL_H // 2
-            cv.create_line(0, meio, _COL_W, meio, fill=BORDER)
-            barra = cv.create_rectangle(6, meio, _COL_W - 6, meio,
-                                        fill=FT_SERIES_COLOR[axis],
-                                        outline='')
-            val = tk.Label(cel, text='—', font=FONT_MONO_S, bg=PANEL,
-                           fg=TEXT_DIM)
-            val.pack()
-            tk.Label(cel, text=label, font=FONT_LBL, bg=PANEL,
-                     fg=TEXT_MUTED).pack()
-            self._ft_col_widgets[axis] = {
-                'cv': cv, 'bar': barra, 'val': val, 'unit': unidade,
-                'rated': ft_axis_rated(axis)}
-
     # ── Repintura, chamada pelo _refresh_ft_axes (10 Hz) ──────────────
     def _refresh_ft_charts(self, shown: dict, live: bool) -> None:
         if not getattr(self, '_ft_chart_lines', None):
@@ -306,17 +276,3 @@ class FtChartsMixin:
                 coords += [fx * larg, max(1.0, min(_CHART_H - 1.0, y))]
             cv.coords(linha, *coords)
 
-        for axis, wid in self._ft_col_widgets.items():
-            v = shown.get(axis)
-            meio = _COL_H / 2
-            if v is None or not live:
-                wid['val'].config(text='—', fg=TEXT_DIM)
-                wid['cv'].coords(wid['bar'], 6, meio, _COL_W - 6, meio)
-                continue
-            rated = wid['rated']
-            frac = 0.0 if rated <= 0 else max(-1.0, min(1.0, v / rated))
-            y = meio - frac * (meio - 4)
-            wid['cv'].coords(wid['bar'], 6, min(y, meio), _COL_W - 6,
-                             max(y, meio))
-            wid['val'].config(text=f'{v:+.2f}',
-                              fg=DANGER if abs(frac) >= 1.0 else TEXT)
