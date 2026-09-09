@@ -1,0 +1,216 @@
+{
+  "cycles": {
+    "1": {
+      "DESCENDING": {
+        "duration_s": 16.28,
+        "max_n": 2.025,
+        "mean_n": 0.443,
+        "min_n": -0.023,
+        "n_samples": 6484,
+        "overshoot_n": 0.025,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.718,
+        "target_n": 2.0
+      },
+      "HOLD": {
+        "duration_s": 8.57,
+        "final_window": {
+          "max_n": 2.012,
+          "mean_n": 1.989,
+          "min_n": 1.968,
+          "n_samples": 1995,
+          "std_n": 0.01
+        },
+        "final_window_s": 5.0,
+        "max_n": 2.076,
+        "mean_n": 1.99,
+        "min_n": 1.92,
+        "n_samples": 3411,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.036,
+        "target_n": 2.0
+      }
+    },
+    "2": {
+      "DESCENDING": {
+        "duration_s": 16.12,
+        "max_n": 1.985,
+        "mean_n": 0.392,
+        "min_n": -0.025,
+        "n_samples": 6427,
+        "overshoot_n": -0.015,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.66,
+        "target_n": 2.0
+      },
+      "HOLD": {
+        "duration_s": 8.01,
+        "final_window": {
+          "max_n": 1.989,
+          "mean_n": 1.967,
+          "min_n": 1.944,
+          "n_samples": 1975,
+          "std_n": 0.011
+        },
+        "final_window_s": 5.0,
+        "max_n": 2.059,
+        "mean_n": 1.975,
+        "min_n": 1.896,
+        "n_samples": 3177,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.034,
+        "target_n": 2.0
+      }
+    },
+    "3": {
+      "DESCENDING": {
+        "duration_s": 17.23,
+        "max_n": 2.01,
+        "mean_n": 0.51,
+        "min_n": -0.021,
+        "n_samples": 6832,
+        "overshoot_n": 0.01,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.757,
+        "target_n": 2.0
+      },
+      "HOLD": {
+        "duration_s": 8.12,
+        "final_window": {
+          "max_n": 2.018,
+          "mean_n": 1.998,
+          "min_n": 1.985,
+          "n_samples": 1982,
+          "std_n": 0.007
+        },
+        "final_window_s": 5.0,
+        "max_n": 2.066,
+        "mean_n": 1.99,
+        "min_n": 1.91,
+        "n_samples": 3217,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.04,
+        "target_n": 2.0
+      }
+    },
+    "4": {
+      "DESCENDING": {
+        "duration_s": 16.58,
+        "max_n": 2.015,
+        "mean_n": 0.467,
+        "min_n": -0.027,
+        "n_samples": 6580,
+        "overshoot_n": 0.015,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.731,
+        "target_n": 2.0
+      },
+      "HOLD": {
+        "duration_s": 8.3,
+        "final_window": {
+          "max_n": 2.024,
+          "mean_n": 2.002,
+          "min_n": 1.989,
+          "n_samples": 1994,
+          "std_n": 0.009
+        },
+        "final_window_s": 5.0,
+        "max_n": 2.074,
+        "mean_n": 1.995,
+        "min_n": 1.92,
+        "n_samples": 3311,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.039,
+        "target_n": 2.0
+      }
+    },
+    "5": {
+      "DESCENDING": {
+        "duration_s": 15.82,
+        "max_n": 1.986,
+        "mean_n": 0.404,
+        "min_n": -0.028,
+        "n_samples": 6309,
+        "overshoot_n": -0.014,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.672,
+        "target_n": 2.0
+      },
+      "HOLD": {
+        "duration_s": 8.15,
+        "final_window": {
+          "max_n": 1.977,
+          "mean_n": 1.829,
+          "min_n": 0.011,
+          "n_samples": 1996,
+          "std_n": 0.455
+        },
+        "final_window_s": 5.0,
+        "max_n": 2.044,
+        "mean_n": 1.891,
+        "min_n": 0.011,
+        "n_samples": 3255,
+        "setpoint_ref": "per_sample",
+        "std_n": 0.365,
+        "target_n": 2.0
+      }
+    }
+  },
+  "cycles_detected": 5,
+  "duration_s": 138.36,
+  "n_samples": 55023,
+  "params": {
+    "approach_speed_mms": 15.0,
+    "depth_mm": 40.0,
+    "fine_approach_mm": 0.0,
+    "fine_speed_mms": 0.0,
+    "force_mod_cycles": 30,
+    "force_mod_hz": 1.0,
+    "force_mod_max_n": 2.0,
+    "force_mod_min_n": 0.20000000298023224,
+    "force_mod_shape": "OFF",
+    "force_n": 2.0,
+    "force_sensor": "ft6",
+    "grid_shape": "RECT",
+    "hold_stable_s": 5.0,
+    "hold_timeout_s": 20.0,
+    "hold_tol_n": 0.05000000074505806,
+    "home_deg": [
+      72.81,
+      -12.4,
+      -150.31,
+      72.63,
+      90.0,
+      -157.79
+    ],
+    "lc_calib_fingerprint": "",
+    "lc_voltage_unit": "N",
+    "mode": "TOUCH",
+    "probe_align": "OFF",
+    "probe_align_force_n": 1.0,
+    "probe_align_points": 4,
+    "probe_align_radius_mm": 15.0,
+    "probe_align_retract_mm": 10.0,
+    "probe_align_tilt_max_deg": 20.0,
+    "repeats": 5,
+    "run_id": "20260909_113452",
+    "safe_z_mm": 10.0,
+    "slide_dir": "+X",
+    "slide_dist_mm": 50.0,
+    "slide_slope_deg": 0.0,
+    "speed_factor_pct": 10.0,
+    "speed_mms": 20.0,
+    "stamp": {
+      "nanosec": 200000000,
+      "sec": 894
+    },
+    "step_dwell_s": 10.0,
+    "step_max_n": 3.5,
+    "step_size_n": 0.0,
+    "step_start_n": 0.5,
+    "tool_tcp_mm": 67.7,
+    "transit_speed_mms": 10.0,
+    "waypoints": []
+  },
+  "target_force_n": 2.0
+}
