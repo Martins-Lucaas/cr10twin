@@ -94,8 +94,24 @@ class _Tooltip:
             self.tip = None
 
 
+class HdrButton(tk.Button):
+    """O que `_hdr_btn` devolve: um tk.Button COM `set_state`.
+
+    Existe só para o tipo. O `set_state` é pendurado na instância (é um
+    closure sobre o `state` do botão, não daria para ser método), e sem
+    declará-lo em algum lugar cada uma das ~24 chamadas de
+    `botao.set_state(...)` na palpation_gui aparecia como erro — o
+    `type: ignore` da atribuição silencia a escrita, nunca as leituras.
+    Ninguém instancia esta classe: ela nomeia o contrato.
+    """
+
+    def set_state(self, icon: str, label: str,
+                  bg: str, fg: str = 'white') -> None: ...
+
+
 def _hdr_btn(parent, icon: str, label: str, command, *,
-              bg=BTN_NEUTRAL, fg=TEXT, font=FONT_LBL, padx=12, pady=5):
+              bg=BTN_NEUTRAL, fg=TEXT, font=FONT_LBL,
+              padx=12, pady=5) -> HdrButton:
     """Botão estilizado da barra superior — ícone Unicode + label,
     com troca dinâmica de estado via `btn.set_state(icon, label, bg, fg)`."""
     state = {'bg': bg, 'fg': fg}
@@ -119,4 +135,4 @@ def _hdr_btn(parent, icon: str, label: str, command, *,
                     activebackground=_shade(bg, -0.08),
                     activeforeground=fg)
     btn.set_state = set_state  # type: ignore[attr-defined]
-    return btn
+    return btn  # type: ignore[return-value]

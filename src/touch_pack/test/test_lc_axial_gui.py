@@ -97,6 +97,11 @@ class _Host(LcAxialMixin):
         self._lc_tab_frame = raiz
         # 'real' = o default do launch; o caso 'sim' tem teste próprio.
         self._force_source = 'real'
+        # A aba READING lê `_lc_calib_path` (fingerprint da calibração em
+        # vigor) e quem o cria é `_lc_calib_init`, dono da aba CALIBRATION.
+        # No PalpationGUI as duas sempre sobem juntas; aqui cada fixture monta
+        # só a sua, então o estado compartilhado nasce no hospedeiro.
+        self._lc_calib_init()
         self.titulos = []
         self.status = []
 

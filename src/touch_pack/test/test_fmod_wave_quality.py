@@ -157,3 +157,54 @@ def test_limitador_de_faixa_tolera_o_atraso_de_leitura():
     assert tol >= 0.15, 'tolerância pequena demais para o atraso medido'
     # ...e não tão larga que deixe de ser guarda: nunca meia amplitude.
     assert tol < 0.5 * amp
+
+
+# ── Cadência do painel: COMANDO x MEDIDA ─────────────────────────────
+# O preview anunciava só os pontos comandados, e com a FA7155 no cabo o
+# número passou a parecer errado: a 0,5 Hz ele diz 67 pontos por ciclo com a
+# célula entregando 400 Hz. Não é contradição — são duas taxas, e a célula
+# só manda numa delas.
+
+def test_a_frase_separa_o_que_o_braco_comanda_do_que_a_celula_mede():
+    from touch_pack.palpation_gui import fmod_cadence_phrase, fmod_wave_dt
+    hz = 0.5
+    txt = fmod_cadence_phrase(hz, fmod_wave_dt(hz), 400.0, 'FA7155', True)
+    # comando: 1/(0,5 · 30 ms) — tick do ServoJ
+    assert '67 commanded points per cycle' in txt
+    assert '30 ms ServoJ tick' in txt
+    # medida: 400 Hz / 0,5 Hz
+    assert '800 samples per cycle' in txt
+    assert 'FA7155 at 400 Hz' in txt
+
+
+def test_trocar_a_celula_muda_so_a_metade_da_medida():
+    """O tick do ServoJ é do firmware do CR10; nenhuma célula o altera."""
+    from touch_pack.palpation_gui import fmod_cadence_phrase, fmod_wave_dt
+    hz, dt = 0.5, fmod_wave_dt(0.5)
+    ft = fmod_cadence_phrase(hz, dt, 400.0, 'FA7155', True)
+    hx = fmod_cadence_phrase(hz, dt, 24.0, 'HX711', False)
+    assert ft.split(',')[0] == hx.split(',')[0] == '67 commanded points per cycle (30 ms ServoJ tick)'
+    assert '800 samples per cycle' in ft and '48 samples per cycle' in hx
+
+
+def test_a_frase_nao_afirma_taxa_medida_quando_e_nominal():
+    """Sem célula no ar o número é catálogo, e a frase tem de dizer isso."""
+    from touch_pack.palpation_gui import fmod_cadence_phrase, fmod_wave_dt
+    txt = fmod_cadence_phrase(0.5, fmod_wave_dt(0.5), 400.0, 'FA7155', False)
+    assert 'FA7155 nominal 400 Hz' in txt
+    assert ' at 400 Hz' not in txt
+
+
+def test_a_taxa_vem_da_celula_configurada_e_prefere_a_medida():
+    import types
+    from touch_pack.palpation_gui import PalpationGUI
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ, LC_NOMINAL_RATE_HZ
+    stub = types.SimpleNamespace(_force_sensor='ft6', _ft_rate_hz=None)
+    assert PalpationGUI._force_cell_rate(stub) == (FT_NOMINAL_RATE_HZ,
+                                                   'FA7155', False)
+    stub._ft_rate_hz = 405.3
+    assert PalpationGUI._force_cell_rate(stub) == (405.3, 'FA7155', True)
+    # a HX711 não publica taxa: só resta a nominal, e a frase não mente
+    stub._force_sensor = 'load_cell'
+    assert PalpationGUI._force_cell_rate(stub) == (LC_NOMINAL_RATE_HZ,
+                                                   'HX711', False)

@@ -40,6 +40,11 @@ Argumentos (todos opcionais):
                        cancela deriva térmica, mas zera a leitura parada
     ft_filter        true (default) = One-Euro (σ 10× menor, ~80 ms de atraso
                        no gatilho de contato) | false = sinal cru, sem atraso
+    learned_contact_persist
+                     false (DEFAULT) = nenhuma home fica aprendida entre
+                       launches; toda sessão rasteja a 1ª descida de cada home
+                       | true = reaproveita o contato aprendido da sessão
+                       anterior (só com a peça e a fixação intocadas)
 
 Exemplos:
     ros2 launch touch_pack tactile_cell.launch.py
@@ -438,6 +443,12 @@ def launch_setup(context, *args, **kwargs):
                    .strip().lower() in ('1', 'true', 'yes'))
     ft_filter = (LaunchConfiguration('ft_filter').perform(context)
                  .strip().lower() in ('1', 'true', 'yes'))
+    # Mesma leitura permissiva dos dois acima, e pelo mesmo motivo: só a
+    # grafia afirmativa liga. Qualquer outra coisa — inclusive um erro de
+    # digitação — cai no lado seguro, que aqui é ESQUECER o aprendizado.
+    learned_contact_persist = (
+        LaunchConfiguration('learned_contact_persist').perform(context)
+        .strip().lower() in ('1', 'true', 'yes'))
     # Real x simulado é decisão SEPARADA de qual célula está no cabo e de
     # qual control_mode roda. Valor desconhecido cai em 'real': um erro de
     # digitação não pode fazer a GUI mostrar força de Gazebo como se fosse
@@ -503,6 +514,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'arm_base_z':   0.78,
             'use_sim_time': True,
+            'learned_contact_persist': learned_contact_persist,
         }])
 
     gui_node = Node(
@@ -692,6 +704,17 @@ def generate_launch_description():
                         'de 0,0219 para 0,0020 N | false entrega o sinal do '
                         'sensor sem atraso nenhum. O filtro é adaptativo, mas '
                         'custa ~80 ms no gatilho de contato a 2 N/s.'),
+        DeclareLaunchArgument(
+            'learned_contact_persist', default_value='false',
+            description='Reaproveitar entre SESSÕES a profundidade de contato '
+                        'aprendida por home: false (DEFAULT) esquece tudo a '
+                        'cada launch e a 1ª descida de cada home rasteja a '
+                        '~50 µm/s (~8 min para uma home a 24 mm do contato) | '
+                        'true reaproveita, o que vale a licença de descer em '
+                        'velocidade cheia até a margem — e só é seguro se a '
+                        'peça e a fixação NÃO foram tocadas desde a última '
+                        'sessão. Dentro de uma mesma sessão o aprendizado '
+                        'continua valendo nos dois casos.'),
         DeclareLaunchArgument(
             'ft_autozero', default_value='false',
             description='Auto-zero lento do FA7155: false (DEFAULT) mostra a '

@@ -55,7 +55,12 @@ def test_alvo_de_01n_e_o_caso_que_movl_nao_atendia():
     alvo) e nenhuma velocidade o reduzia. Em streaming o impacto para no
     limiar."""
     pico_streaming = _pico_previsto(crawl_v_ms(K_RIGIDA), K_RIGIDA)
-    assert pico_streaming <= _CONTACT_ON_N
+    # `crawl_v_ms` INVERTE esta mesma conta, então o pico previsto É o
+    # orçamento — não algo abaixo dele. Um `<=` exato falha por 1 ulp
+    # (0,12000000000000002 <= 0,12) sempre que a ida e a volta não caem no
+    # mesmo binário; é igualdade em ponto flutuante, e se escreve como tal
+    # (mesma convenção de test_a_referencia_em_uso_ainda_honra_o_orcamento).
+    assert pico_streaming == pytest.approx(_CONTACT_ON_N)
     assert pico_streaming < 0.25 * _PISO_MOVL_M * K_RIGIDA
 
 
@@ -127,9 +132,14 @@ def test_o_piso_de_velocidade_torna_o_orcamento_inatingivel_acima_de_33knm():
     # Abaixo da virada o orçamento é honrado…
     assert impact_peak_n(crawl_v_ms(0.9 * k_virada),
                          0.9 * k_virada) == pytest.approx(_CONTACT_ON_N)
-    # …acima dela, não — e é por isso que existe um aviso.
-    assert impact_peak_n(crawl_v_ms(10.0 * k_virada),
-                         10.0 * k_virada) > 10.0 * _CONTACT_ON_N
+    # …acima dela, não — e é por isso que existe um aviso. A 10× a virada o
+    # piso de velocidade já é quem manda, então o pico cresce LINEARMENTE com
+    # a rigidez: 10× o orçamento, não "mais que 10×". A comparação com o
+    # ORÇAMENTO (_CONTACT_ON_N) é a que diz o achado; comparar com 10× dele
+    # cobrava uma desigualdade estrita de uma igualdade exata.
+    pico = impact_peak_n(crawl_v_ms(10.0 * k_virada), 10.0 * k_virada)
+    assert pico > _CONTACT_ON_N
+    assert pico == pytest.approx(10.0 * _CONTACT_ON_N)
 
 
 def test_a_referencia_em_uso_ainda_honra_o_orcamento():

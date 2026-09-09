@@ -251,7 +251,12 @@ def test_teto_do_link_acompanha_o_baud():
     assert ft_max_rate_hz() == FT_MAX_RATE_HZ
     assert ft_max_rate_hz(FT_SERIAL_BAUD) == FT_MAX_RATE_HZ
     assert ft_max_rate_hz(460800) == 460800 / (FT_FRAME_LEN * 10)
-    assert ft_max_rate_hz(460800) == pytest.approx(4 * FT_MAX_RATE_HZ)
+    # A relação com o teto do módulo é a RAZÃO DOS BAUDS, seja ela qual for.
+    # Escrever "4×" cravado só valia enquanto FT_SERIAL_BAUD fosse 115200; o
+    # exemplar da bancada é de 1 Mbps desde a FA7155, e o teste passou a
+    # afirmar um baud que não é mais o do projeto.
+    assert ft_max_rate_hz(460800) == pytest.approx(
+        FT_MAX_RATE_HZ * 460800 / FT_SERIAL_BAUD)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -292,43 +297,115 @@ def test_cronometro_para_em_frozen():
 # ══════════════════════════════════════════════════════════════════════
 # 8. O alívio nunca empurra
 # ══════════════════════════════════════════════════════════════════════
+#
+# Os três testes abaixo guardavam `TactileExplorer._qs_relief_step`, a lei
+# proporcional Δx = relax·err/K com piso em _QS_RELIEF_FLOOR_N. Ela foi
+# substituída pela RAMPA A VELOCIDADE CONSTANTE do `_qs_regulate` (ver a
+# docstring dele), e com ela o piso deixou de existir: quem limita o recuo
+# agora são os MESMOS dois clamps do avanço — teto por ΔF projetado
+# (_QS_RAMP_DF_CAP_N) e NÃO-ULTRAPASSAGEM (_QS_NO_CROSS_FRAC·|err|/k_upper).
+#
+# As invariantes continuam sendo as três de sempre e por isso os testes
+# continuam existindo: o alívio nunca empurra, e cada um dos dois tetos morde
+# quando é a vez dele. O que mudou é o ponto de medida — não há mais função
+# pura para chamar, então o passo é lido onde ele é COMANDADO, estubando
+# `_qs_step`. Testa o laço de verdade, e não uma cópia da conta.
 
-def test_alivio_nunca_empurra():
-    """Com fz ABAIXO de _QS_RELIEF_FLOOR_N a expressão do piso fica positiva
-    e o max() transformava um passo de alívio num de empurrar. Hoje isso só
-    não acontece por coincidência de três limites independentes, então a
-    invariante tem de ser do CÓDIGO, não do contexto."""
+
+def _passos_de_alivio(node, *, fz, target_f, tol_n, k_nm, timeout_s=0.25):
+    """Roda `_qs_regulate` com a força PRESA acima do alvo e devolve
+    (passos comandados, v_ramp em m/s, k do teto por ΔF, k_upper).
+
+    Força constante ⇒ a rampa nunca cruza o setpoint, o laço fica inteiro na
+    ETAPA A recuando, e sai por timeout. É exatamente a situação que os
+    testes querem observar."""
+    import numpy as np
+    passos = []
+
+    node._q_now = lambda: np.deg2rad([0, 0, -90, 0, 90, 0]).astype(float)
+    node._stream_q = lambda *a, **k: None
+    node._pause_gate = lambda: True
+    node._force_stale_abort = lambda _fase: False
+    node._qs_measure_fz = lambda *a, **k: fz
+    node._fz_corrected = lambda: fz
+
+    def _step(_dir, step_m, *_a, **_k):
+        passos.append(step_m)
+        return node._q_now()
+    node._qs_step = _step
+
+    # Rigidez CONHECIDA: os dois clamps a consultam (`value` e `k_upper`) e
+    # sem fixá-la o passo dependeria do que a EMA tivesse acumulado. Com a
+    # força CONSTANTE nenhum par (Δx, ΔF) fecha, então ela não se move
+    # durante o laço. `value` e `k_upper` são propriedades derivadas — o que
+    # se escreve é o estado, e os tetos se leem de volta do próprio
+    # estimador em vez de reproduzir a conta dele aqui.
+    node._k_est.k = k_nm
+    node._k_est.k_last = None
+    node._k_est.estimated = True
+    k_df, k_cross = node._k_est.value, node._k_est.k_upper
+
+    v_ramp = float(node.get_parameter('hold_ramp_mms').value) / 1e3
+    node._qs_regulate(target_f, tol_n, np.array([0., 0., -1.]),
+                      1.0, np.eye(6), budget_m=None, stable_s=99.0,
+                      timeout_s=timeout_s, phase='TESTE')
+    return passos, v_ramp, k_df, k_cross
+
+
+def test_alivio_nunca_empurra(explorer):
+    """A invariante que dá nome ao bloco: com a força ACIMA do alvo, todo
+    passo comandado recua ou é nulo. Na lei antiga um max() com o piso podia
+    inverter o sinal; hoje o sentido é um fator (`sign_now`) multiplicando um
+    módulo não-negativo, e o teste trava isso para toda a faixa útil."""
     pytest.importorskip('rclpy')
-    from touch_pack.tactile_explorer import (
-        TactileExplorer, _QS_RELIEF_FLOOR_N)
-    passo = TactileExplorer._qs_relief_step
-    for fz in (0.0, 0.05, _QS_RELIEF_FLOOR_N, 0.5, 3.0):
-        for bruto in (-1e-4, -1e-6, 0.0):
-            out = passo(bruto, fz, 5_000.0, 0.3)
-            assert out <= 0.0, f'fz={fz} bruto={bruto} virou {out}'
+    from touch_pack.constants import HOLD_TOL_N
+    for fz in (0.5, 2.5, 3.0, 9.0):
+        passos, *_ = _passos_de_alivio(
+            explorer, fz=fz, target_f=0.3, tol_n=HOLD_TOL_N, k_nm=5_000.0)
+        assert passos, f'fz={fz}: o laço não comandou passo nenhum'
+        for p in passos:
+            assert p <= 0.0, f'fz={fz} virou passo de empurrar ({p})'
 
 
-def test_alivio_ainda_respeita_o_piso_quando_ha_folga():
-    """A guarda de sinal não pode ter comido a função do piso: com força bem
-    acima dele o recuo continua limitado a (fz - piso)/k."""
+def test_alivio_respeita_a_nao_ultrapassagem(explorer):
+    """Sucessor de `test_alivio_ainda_respeita_o_piso_quando_ha_folga`: com o
+    erro PEQUENO, quem morde é a não-ultrapassagem — o recuo não gasta mais
+    que _QS_NO_CROSS_FRAC da folga até o alvo, nem na pior rigidez."""
     pytest.importorskip('rclpy')
+    from touch_pack.constants import HOLD_TOL_N
     from touch_pack.tactile_explorer import (
-        TactileExplorer, _QS_RELIEF_FLOOR_N)
-    k_push, fz = 5_000.0, 3.0
-    limite = -(fz - _QS_RELIEF_FLOOR_N) / k_push
-    # Pedido enorme (-1 m) e teto por ΔF folgado: quem morde é o piso.
-    assert TactileExplorer._qs_relief_step(
-        -1.0, fz, k_push, 1e6) == pytest.approx(limite)
+        _QS_NO_CROSS_FRAC, _QS_RAMP_DF_CAP_N, _CTRL_DT)
+    target_f, k_nm = 2.0, 5_000.0
+    fz = target_f + 0.1                      # erro de 0,1 N, bem acima da banda
+    passos, v_ramp, k_df, k_cross = _passos_de_alivio(
+        explorer, fz=fz, target_f=target_f, tol_n=HOLD_TOL_N, k_nm=k_nm)
+    esperado = _QS_NO_CROSS_FRAC * 0.1 / k_cross
+    # Só é teste da não-ultrapassagem se ela for mesmo a menor das três.
+    assert esperado < _QS_RAMP_DF_CAP_N / k_df
+    assert esperado < v_ramp * _CTRL_DT
+    assert passos
+    for p in passos:
+        assert p == pytest.approx(-esperado)
 
 
-def test_alivio_respeita_o_teto_por_df():
+def test_alivio_respeita_o_teto_por_df(explorer):
     """O teto por ΔF é o mesmo do empurrar e continua sendo o primeiro a
-    morder quando o piso está longe."""
+    morder quando o erro é grande — a folga até o alvo deixa de ser o
+    gargalo e o que limita é o salto de força que um passo projeta."""
     pytest.importorskip('rclpy')
-    from touch_pack.tactile_explorer import TactileExplorer
-    k_push = 5_000.0
-    assert TactileExplorer._qs_relief_step(
-        -1.0, 9.0, k_push, 0.3) == pytest.approx(-0.3 / k_push)
+    from touch_pack.constants import HOLD_TOL_N
+    from touch_pack.tactile_explorer import (
+        _QS_NO_CROSS_FRAC, _QS_RAMP_DF_CAP_N, _CTRL_DT)
+    target_f, k_nm = 2.0, 5_000.0
+    fz = 9.0                                  # erro de 7 N: folga enorme
+    passos, v_ramp, k_df, k_cross = _passos_de_alivio(
+        explorer, fz=fz, target_f=target_f, tol_n=HOLD_TOL_N, k_nm=k_nm)
+    esperado = _QS_RAMP_DF_CAP_N / k_df
+    assert esperado < _QS_NO_CROSS_FRAC * (fz - target_f) / k_cross
+    assert esperado < v_ramp * _CTRL_DT
+    assert passos
+    for p in passos:
+        assert p == pytest.approx(-esperado)
 
 
 # ── auxiliares ────────────────────────────────────────────────────────

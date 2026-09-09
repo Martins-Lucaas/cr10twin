@@ -155,3 +155,83 @@ def test_a_formula_analitica_so_vale_onde_o_filtro_domina():
     # a fórmula CAI com a frequência; o transporte não. Confiar nela a 10 Hz
     # é o erro de fase que faz o ILC divergir.
     assert fmod_measure_lag_s(10.0) < fmod_measure_lag_s(1.0)
+
+
+# ── 3. A fase depende da CÉLULA que está no fio ──────────────────────
+# A bancada trocou a HX711 (24 Hz) pela FA7155 (~400 Hz entregues em polled).
+# O termo da mediana do atraso é meia janela DA TAXA DA FONTE, então trocar a
+# célula sem trocar a taxa gira a correção do ILC em fase — o modo de falha
+# do bloco 2 acima, só que silencioso.
+
+def test_o_atraso_da_mediana_segue_a_taxa_da_fonte():
+    """Só o termo da mediana muda com a célula; o do One-Euro não, porque o
+    cutoff está travado em 2 Hz nas duas taxas (min(rate/3, 2) = 2)."""
+    from touch_pack.tactile_explorer import fmod_measure_lag_s, _FMOD_ILC_BINS
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ, LC_NOMINAL_RATE_HZ
+    from touch_pack.lc_filter import MEDIAN_N
+    f_hz = 1.0
+    lag_hx = fmod_measure_lag_s(f_hz, LC_NOMINAL_RATE_HZ)
+    lag_ft = fmod_measure_lag_s(f_hz, FT_NOMINAL_RATE_HZ)
+    esperado = 0.5 * (MEDIAN_N - 1) * (1.0 / LC_NOMINAL_RATE_HZ
+                                       - 1.0 / FT_NOMINAL_RATE_HZ)
+    assert lag_hx - lag_ft == pytest.approx(esperado, abs=1e-9)
+    assert lag_ft == pytest.approx(0.0763, abs=0.001)
+    # E não é diferença cosmética: a 1 Hz ela vale quase um bin INTEIRO do
+    # ILC, ou seja o erro cairia no bin vizinho o ensaio todo.
+    bin_s = 1.0 / (f_hz * _FMOD_ILC_BINS)
+    assert (lag_hx - lag_ft) > 0.75 * bin_s
+
+
+def test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula():
+    """Os call sites do explorer não podem cair no default da função: ele é
+    o nominal da HX711, e a célula no fio é outra."""
+    import inspect
+    from touch_pack import tactile_explorer as te
+    chamadas = [ln for ln in inspect.getsource(te).splitlines()
+                if 'fmod_measure_lag_s(' in ln and 'def ' not in ln]
+    usos = [ln for ln in chamadas if 'prof.freq_hz' in ln]
+    assert usos, 'nenhum call site de fmod_measure_lag_s encontrado'
+    for ln in usos:
+        assert '_lc_rate_hz()' in ln, f'call site sem a taxa medida: {ln.strip()}'
+
+
+def test_a_taxa_cai_no_nominal_enquanto_nenhuma_leitura_chegou():
+    """Sem amostra não há taxa medida. O fallback é o pior caso (maior
+    atraso) e, na prática, onda nenhuma roda nesse estado — _FORCE_STALE_S
+    barra antes."""
+    import threading
+    import types
+    from touch_pack.tactile_explorer import TactileExplorer
+    from touch_pack.constants import LC_NOMINAL_RATE_HZ
+    stub = types.SimpleNamespace(_lc_lock=threading.Lock(),
+                                 _lc_rate_ema_hz=0.0)
+    assert TactileExplorer._lc_rate_hz(stub) == LC_NOMINAL_RATE_HZ
+    stub._lc_rate_ema_hz = 399.7
+    assert TactileExplorer._lc_rate_hz(stub) == pytest.approx(399.7)
+
+
+def test_a_taxa_medida_acompanha_a_cadencia_que_chega(monkeypatch):
+    """A taxa sai da CHEGADA das leituras, então trocar a fonte no fio troca
+    o atraso usado pelo ILC sem ninguém reconfigurar nada."""
+    import threading
+    import types
+    import touch_pack.tactile_explorer as te
+
+    relogio = {'t': 100.0}
+    monkeypatch.setattr(te.time, 'monotonic', lambda: relogio['t'])
+    stub = types.SimpleNamespace(_lc_lock=threading.Lock(),
+                                 _lc_rate_ema_hz=0.0, _lc_force_net=0.0,
+                                 _lc_force_ts=0.0, _lc_force_seq=0,
+                                 _LC_MAX_PLAUSIBLE_N=100.0)
+
+    def alimenta(rate_hz, n):
+        for _ in range(n):
+            relogio['t'] += 1.0 / rate_hz
+            te.TactileExplorer._cb_lc_force_net(
+                stub, types.SimpleNamespace(data=1.0))
+
+    alimenta(24.0, 200)      # HX711
+    assert stub._lc_rate_ema_hz == pytest.approx(24.0, abs=0.5)
+    alimenta(400.0, 1000)    # FA7155
+    assert stub._lc_rate_ema_hz == pytest.approx(400.0, abs=5.0)
+    assert stub._lc_force_seq == 1200

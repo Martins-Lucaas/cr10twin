@@ -197,7 +197,15 @@ def _stats(forces: list[float]) -> dict:
     }
 
 
-def _seg_summary(seg: dict, target: float | None) -> dict:
+# Janela de medição usada quando o run não diz qual foi (CSV antigo, sem
+# hold_stable_s no params.json). É o valor que valeu até 09/09/2026, quando a
+# janela era cravada em 1 s — mantê-lo como reserva é o que deixa summaries
+# velhos comparáveis com os que foram medidos assim.
+_FINAL_WINDOW_FALLBACK_S = 1.0
+
+
+def _seg_summary(seg: dict, target: float | None,
+                 window_s: float = _FINAL_WINDOW_FALLBACK_S) -> dict:
     rows = seg['rows']
     forces = [r['force'] for r in rows]
     t0, t1 = rows[0]['t'], rows[-1]['t']
@@ -239,9 +247,13 @@ def _seg_summary(seg: dict, target: float | None) -> dict:
             out['mae_vs_setpoint_n'] = round(
                 statistics.fmean(abs(f - target) for f in forces), 3)
     if seg['phase'] == 'HOLD':
-        # Qualidade da estabilização: estatística do último segundo do HOLD
-        # (a janela que o critério de _HOLD_STABLE_S validou).
-        tail = [r['force'] for r in rows if r['t'] >= t1 - 1.0]
+        # Qualidade da estabilização, medida sobre o DWELL — a janela que o
+        # regulador de fato defendeu, e não um segundo arbitrário no fim dela.
+        # Era cravada em 1,0 s: com dwell de 5 s isso descartava 80 % da
+        # medição, e com dwell de 60 s descartaria 98 %. `window_s` vem do
+        # hold_stable_s do run (ver compute_summary).
+        out['final_window_s'] = round(window_s, 2)
+        tail = [r['force'] for r in rows if r['t'] >= t1 - window_s]
         if tail:
             out['final_window'] = _stats(tail)
     if seg['phase'] == 'SLIDING':
@@ -259,6 +271,14 @@ def _seg_summary(seg: dict, target: float | None) -> dict:
 def compute_summary(rows: list[dict], params: dict) -> dict:
     target = params.get('force_n')
     target = float(target) if target is not None else None
+    # A janela da estatística assentada É o dwell pedido no run. Runs antigos
+    # (sem o campo, ou com 0) caem no 1,0 s histórico.
+    try:
+        window_s = float(params.get('hold_stable_s') or 0.0)
+    except (TypeError, ValueError):
+        window_s = 0.0
+    if window_s <= 0.0:
+        window_s = _FINAL_WINDOW_FALLBACK_S
 
     cycles: dict[int, dict] = {}
     for seg in _segments(rows):
@@ -270,7 +290,7 @@ def compute_summary(rows: list[dict], params: dict) -> dict:
         k = 2
         while key in cyc:
             key = f'{seg["phase"]}_{k}'; k += 1
-        cyc[key] = _seg_summary(seg, target)
+        cyc[key] = _seg_summary(seg, target, window_s)
 
     summary: dict = {
         'n_samples': len(rows),

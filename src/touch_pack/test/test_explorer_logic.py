@@ -76,7 +76,7 @@ def test_hold_exits_when_force_stable(node):
     # dwell_s=0: aqui testa-se o critério de estabilização, não a medição.
     th = _keep_force_fresh(node, 2.0, 3.0)
     t0 = time.time()
-    out = node._phase_hold(stable_s=0.3, timeout_s=5.0, dwell_s=0.0)
+    out = node._phase_hold(timeout_s=5.0, dwell_s=0.0)
     dt = time.time() - t0              # medir ANTES do join (thread dura 3 s)
     th.join()
     assert out == 'ok'
@@ -86,7 +86,9 @@ def test_hold_exits_when_force_stable(node):
 def test_hold_times_out_when_out_of_band(node):
     th = _keep_force_fresh(node, 0.5, 2.0)   # fora da banda de 2.0±0.15 N
     t0 = time.time()
-    out = node._phase_hold(stable_s=0.3, timeout_s=0.8)
+    # dwell_s=0: a janela sob teste é a de CHEGADA (_QS_ARRIVE_S), e o
+    # dwell default de 5 s só somaria tempo ao que se está cronometrando.
+    out = node._phase_hold(timeout_s=0.8, dwell_s=0.0)
     dt = time.time() - t0
     th.join()
     assert out == 'ok'                 # timeout prossegue com aviso
@@ -95,7 +97,7 @@ def test_hold_times_out_when_out_of_band(node):
 
 def test_hold_aborts_on_excess_force(node):
     th = _keep_force_fresh(node, 16.0, 1.0)
-    out = node._phase_hold(stable_s=0.3, timeout_s=5.0)
+    out = node._phase_hold(timeout_s=5.0)
     th.join()
     assert out == 'force'
 
@@ -111,7 +113,7 @@ def test_descending_aborts_without_force_data(node):
 def test_hold_aborts_when_force_freezes(node):
     _feed_force(node, 1.0)             # uma única leitura, depois congela
     t0 = time.time()
-    out = node._phase_hold(stable_s=2.0, timeout_s=10.0)
+    out = node._phase_hold(timeout_s=10.0)
     assert out == 'stale'
     assert time.time() - t0 < 1.5      # abortou em ~_FORCE_STALE_S
 

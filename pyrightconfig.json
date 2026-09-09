@@ -1,0 +1,21 @@
+{
+  "//": "Onde o Pylance/Pyright acha o que NÃO está no workspace. Os pacotes de mensagens (touch_pack_msgs, covvi_interfaces) e o próprio ROS são gerados/instalados pelo colcon e resolvidos em runtime pelo `source install/setup.bash` — sem estes caminhos o editor marcava 20+ imports como não resolvidos em código que roda perfeitamente. Se `install/` for reconstruído em outro Python, ajuste a versão nos caminhos.",
+  "extraPaths": [
+    "src/touch_pack",
+    "install/touch_pack_msgs/local/lib/python3.10/dist-packages",
+    "install/covvi_interfaces/local/lib/python3.10/dist-packages",
+    "install/covvi_hand_driver/lib/python3.10/site-packages",
+    "install/grasp_ml_pack/lib/python3.10/site-packages",
+    "install/hand_pack/lib/python3.10/site-packages",
+    "/opt/ros/humble/lib/python3.10/site-packages",
+    "/opt/ros/humble/local/lib/python3.10/dist-packages"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "build",
+    "install",
+    "log"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingModuleSource": "none"
+}

@@ -40,6 +40,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+from collections.abc import Mapping
+from typing import Any, overload
 
 import numpy as np
 if tuple(int(x) for x in np.__version__.split(".")[:2]) >= (2, 0):
@@ -103,6 +105,7 @@ from .constants import (
     hold_tol_n as _hold_tol_n_for,
     FORCE_SETPOINT_MAX_N,
     FT_NOMINAL_RATE_HZ,
+    LC_NOMINAL_RATE_HZ,
     HOME_POSE_FILE, ROBOT_CONFIG_FILE, POSES_FILE,
     tool_stamp, tool_stamp_mismatch,
     PALPATION_PARAMS_FILE, RUNS_DIR,
@@ -134,14 +137,14 @@ try:
     # à parte do bloco acima: o painel tem de funcionar em simulação pura,
     # onde o real_driver pode nem importar.
 except Exception:  # pragma: no cover
-    CR10RealDriver = None
-    CR10RealDriverConfig = None
+    CR10RealDriver: Any = None
+    CR10RealDriverConfig: Any = None
     CR10RealDriverError = Exception
-    _urdf_to_dobot = None
+    _urdf_to_dobot: Any = None
     MIMIC_LIST = []
-    _fk_partial = None
-    _JOINT_MIN = None
-    _JOINT_MAX = None
+    _fk_partial: Any = None
+    _JOINT_MIN: Any = None
+    _JOINT_MAX: Any = None
     _REAL_DRIVER_OK = False
 
 try:
@@ -151,9 +154,9 @@ try:
         T_HAND_ATTACH as _T_HAND,
     )
 except Exception:  # pragma: no cover
-    _fk_tcp = None
-    _T_TCP = None
-    _T_HAND = None
+    _fk_tcp: Any = None
+    _T_TCP: Any = None
+    _T_HAND: Any = None
 
 # N → kgf: o painel mostra as DUAS unidades ao mesmo tempo. kgf (e não "kg")
 # porque a célula mede FORÇA; é o número que uma balança marcaria sob a mesma
@@ -192,8 +195,8 @@ try:
     )
     _MANIP3D_OK = True
 except Exception:  # pragma: no cover
-    Manip3DView = None
-    _rpy_deg = None
+    Manip3DView: Any = None
+    _rpy_deg: Any = None
     _MANIP_MAX_LIN_M = 0.015
     _MANIP_MAX_DQ = 0.06
     _MANIP3D_OK = False
@@ -207,8 +210,8 @@ try:
     )
     _URDF_SCENE_OK = True
 except Exception:  # pragma: no cover
-    _build_scene = None
-    _coarse_scene = None
+    _build_scene: Any = None
+    _coarse_scene: Any = None
     _SCENE_BUDGET = 5000
     _URDF_SCENE_OK = False
 
@@ -229,10 +232,10 @@ try:
     from matplotlib.animation import FuncAnimation
     _TOUCH_PLOT_OK = True
 except Exception:  # pragma: no cover
-    TouchSensorSource = None
-    TouchFigure = None
-    FigureCanvasTkAgg = None
-    FuncAnimation = None
+    TouchSensorSource: Any = None
+    TouchFigure: Any = None
+    FigureCanvasTkAgg: Any = None
+    FuncAnimation: Any = None
     TOUCH_ROWS = TOUCH_COLS = 4
     TOUCH_TAXELS = 16
     _TOUCH_PLOT_OK = False
@@ -287,7 +290,7 @@ SLIDE_DIST_MIN, SLIDE_DIST_MAX, SLIDE_DIST_DEFAULT = 1.0, 300.0, 50.0  # mm
 # ── FORÇA MODULADA (modo TOUCH) — faixas do painel ─────────────────────
 # Formas aceitas; espelham _FMOD_SHAPES do tactile_explorer.
 FMOD_SHAPES = ('OFF', 'SINE', 'COSINE')
-# Frequência da onda. O teto é do FIRMWARE, não do painel: o `t` do ServoJ
+# Frequência da onda. O teto é do 150, não do painel: o `t` do ServoJ
 # tem faixa [0.02, 3600] s ("Dobot TCP/IP Remote Control Interface Guide
 # V4.5.1"), e com os 5 pontos por período que a onda exige isso trava a
 # frequência máxima em 1/(0,02 x 5) = 10,0 Hz.
@@ -335,6 +338,30 @@ def fmod_wave_dt(hz: float, servoj_period_s: float = FMOD_CTRL_DT_S) -> float:
     want = 1.0 / max(hz * FMOD_MIN_PTS_PER_CYCLE, 1e-9)
     return min(max(want, FMOD_DT_MIN_S, SERVOJ_T_MIN_S, servoj_period_s),
                FMOD_CTRL_DT_S)
+
+
+def fmod_cadence_phrase(hz: float, dt_s: float, rate_hz: float,
+                        cell: str, measured: bool) -> str:
+    """Frase de cadência do preview: pontos COMANDADOS × amostras MEDIDAS.
+
+    São duas taxas independentes e o painel dizia só a primeira, o que fazia
+    o número parecer errado com a FA7155 no cabo: a 0,5 Hz ele anuncia 67
+    pontos por ciclo mesmo com a célula a 400 Hz. Não é contradição — 67 é
+    1/(0,5·30 ms), o tick do ServoJ, e a célula não tem como aumentá-lo (o
+    teto é o `t` mínimo do firmware, 20 ms). Quem a célula multiplica é a
+    outra metade, a MEDIDA: ~800 amostras por ciclo na FA7155 contra ~48 na
+    HX711, e é dela que o ILC tira os bins de fase. Dizer as duas lado a
+    lado é o que evita ler a cadência do braço como se fosse a do sensor.
+
+    Função pura — testável sem Tk e sem bancada.
+    """
+    pts = 1.0 / max(hz * dt_s, 1e-9)
+    amostras = rate_hz / max(hz, 1e-9)
+    origem = 'at' if measured else 'nominal'
+    return (f'{pts:.0f} commanded points per cycle '
+            f'({dt_s * 1e3:.0f} ms ServoJ tick), measured at '
+            f'{amostras:.0f} samples per cycle '
+            f'({cell} {origem} {rate_hz:.0f} Hz).')
 
 
 def fmod_max_freq_hz(servoj_period_s: float = FMOD_CTRL_DT_S) -> float:
@@ -535,8 +562,8 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._hand_watchdog_thread: threading.Thread | None = None
         self._hand_watchdog_stop = threading.Event()
         self._eci_enabled = False
-        self._eci_prefix = self.declare_parameter(
-            'eci_prefix', '/covvi/hand').value
+        self._eci_prefix = str(self.declare_parameter(
+            'eci_prefix', '/covvi/hand').value or '/covvi/hand')
         self._param_robot_ip   = self.declare_parameter('robot_ip',   '').value
         self._param_robot_mode = self.declare_parameter('robot_mode', '').value
         # Efetuador final vindo do launch (hand | touch_tool) REGRA (até o
@@ -547,13 +574,16 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # URDF COMPLETO que o launch entregou ao Gazebo (com os <visual>).
         self._robot_desc_path = str(self.declare_parameter(
             'robot_description_path', '').value).strip()
-        self._eci_srv = None
-        self._eci_msg = None
-        self._cli_eci_grip = None
-        self._cli_eci_posn = None
-        self._cli_hand_pwr_on = None
-        self._cli_hand_pwr_off = None
-        self._cli_eci_realtime = None
+        # `Any`: recebem os módulos covvi_interfaces.{srv,msg} e os clientes
+        # de serviço só no connect (ver _eci_connect). O guard de uso é o
+        # `_eci_enabled`/`is None` de cada chamador, não o tipo.
+        self._eci_srv: Any = None
+        self._eci_msg: Any = None
+        self._cli_eci_grip: Any = None
+        self._cli_eci_posn: Any = None
+        self._cli_hand_pwr_on: Any = None
+        self._cli_hand_pwr_off: Any = None
+        self._cli_eci_realtime: Any = None
         self._hand_powered = False
         self._eci_posn_after: str | None = None
         # Teleoperação da mão por câmera (hand_camera_teleop.HandCameraTeleop,
@@ -569,7 +599,8 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # (mirror_bool, pose) da última trajetória de joint6 da câmera —
         # `_cb_arm_trajectory` usa para não espelhar quando mirror_bool é False.
         self._cam_arm_gate: tuple[bool, tuple] | None = None
-        self._camera_index = int(self.declare_parameter('camera_index', 0).value)
+        self._camera_index = int(
+            self.declare_parameter('camera_index', 0).value or 0)
         # Versão B: mirror real→sim da mão (telemetria DigitPosnAll)
         # A mão simulada segue a POSIÇÃO MEDIDA da mão física (escala ECI
         # 0–200), de modo que o sim acompanhe a velocidade real, em vez de
@@ -770,10 +801,13 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._adc_pub_ok = 0
         self._adc_pub_bad = 0
         self._adc_bad_warn_t = 0.0
-        self._touch_source = None      # TouchSensorSource | None
-        self._touch_figure = None      # TouchFigure | None
-        self._touch_canvas = None      # FigureCanvasTkAgg | None
-        self._touch_anim = None        # FuncAnimation | None (blit)
+        # `Any`: nascem None e só viram objeto quando a aba Sensores sobe
+        # (e só se _TOUCH_PLOT_OK). Todo uso é guardado por essa flag ou por
+        # getattr — declarar o union aqui só duplicaria o guard em cada linha.
+        self._touch_source: Any = None   # TouchSensorSource | None
+        self._touch_figure: Any = None   # TouchFigure | None
+        self._touch_canvas: Any = None   # FigureCanvasTkAgg | None
+        self._touch_anim: Any = None     # FuncAnimation | None (blit)
         self._touch_anim_running = False
         # Medição do custo do frame da figura do toque (s) — alimenta o ritmo
         # adaptativo em _retune_touch_anim.
@@ -877,6 +911,9 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         self._exec_stop = threading.Event()
         self._exec_thread: threading.Thread | None = None
         self._exec_movement_id: int | None = None
+        # Pré-home em curso (ver _prehome_before_start): segura o Start
+        # até o braço real chegar à home e concordar com o simulador.
+        self._prehoming = False
         # Refs de widgets (preenchidos em _build_poses_tab)
         self._poses_lbx: tk.Listbox | None = None
         self._movs_lbx: tk.Listbox | None = None
@@ -1188,15 +1225,6 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             log.debug('touch anim toggle falhou: %s', exc)
 
     def _instrument_touch_blit(self) -> None:
-        """Cronometra o frame REAL da figura do toque: do início do callback da
-        FuncAnimation até o último blit entregue ao Tk — que é o custo da
-        tabela em _retune_touch_anim, não só o tempo de mexer nos dados
-        (0,53 ms; a rasterização é o resto).
-
-        Com blit=True o matplotlib chama canvas.blit() uma vez POR EIXO (quatro
-        por frame), então o valor bom é o da ÚLTIMA chamada. Por isso ele fica
-        só anotado aqui e é consumido no callback seguinte, quando o frame
-        anterior já fechou."""
         canvas = self._touch_canvas
         if canvas is None:
             return
@@ -1243,7 +1271,10 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         anim = getattr(self, '_touch_anim', None)
         src = getattr(anim, 'event_source', None) if anim is not None else None
         ema = self._touch_frame_ema
-        if src is None or not ema:
+        # `anim is None` explícito: `src` só é não-None quando `anim` também
+        # é, mas isso vem da expressão acima e não sobrevive à leitura de
+        # `anim._interval` lá embaixo.
+        if anim is None or src is None or not ema:
             return
         cost_ms = ema * 1e3
         period = min(max(cost_ms / _TOUCH_ANIM_DUTY, _TOUCH_ANIM_MIN_MS),
@@ -1808,7 +1839,10 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         mode_menu = tk.OptionMenu(
             conn_rob, self._robot_mode_var,
             'SIM_ONLY', 'MIRROR',
-            command=self._set_robot_mode)
+            # O stub do tkinter declara command como (StringVar) -> object; o
+            # Tk entrega a string escolhida (é o que _set_robot_mode recebe e
+            # o que a GUI usa desde sempre). Stub errado, não o chamador.
+            command=self._set_robot_mode)  # type: ignore[arg-type]
         mode_menu.config(bg=BTN_NEUTRAL, fg=TEXT, font=FONT_SMALL,
                           relief='flat', highlightthickness=0,
                           activebackground=PRIMARY,
@@ -2294,10 +2328,12 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                               'sits inside the noise.')
         self._param_row(adv, label='HOLD — Stable Window',
                          unit='s', var=self.hold_stable_var,
-                         vmin=0.2, vmax=5.0, step=0.1,
+                         vmin=0.2, vmax=60.0, step=0.5,
                          hint='CONTINUOUS time inside the band required to '
                               'accept the setpoint as reached. Leaving the '
-                              'band restarts the count.')
+                              'band restarts the count. This is also the '
+                              'MEASUREMENT window: the settled statistics in '
+                              'summary.json are computed over it.')
         self._param_row(adv, label='HOLD — Timeout',
                          unit='s', var=self.hold_timeout_var,
                          vmin=2.0, vmax=60.0, step=1.0,
@@ -2809,7 +2845,21 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                        lambda *_a: (not self._suppressing) and on_change())
 
     # Clamp helpers
-    def _clamp_var(self, var: tk.DoubleVar, vmin: float, vmax: float,
+    # Duas leituras da MESMA função, e a diferença importa em quase 60
+    # pontos de chamada: com `default` a saída nunca é None (é o próprio
+    # default que cobre a falha), sem ele pode ser. Sem estas assinaturas todo
+    # chamador que passa `default=` era lido como `float | None` e cada
+    # `float(...)` a jusante virava erro — inclusive onde o valor é garantido.
+    # `tk.Variable` no lugar de `tk.DoubleVar`: os spinboxes de repeats e
+    # speed_factor são IntVar, e o corpo só usa `.get()`/`.set()`.
+    @overload
+    def _clamp_var(self, var: tk.Variable, vmin: float, vmax: float,
+                   default: float) -> float: ...
+    @overload
+    def _clamp_var(self, var: tk.Variable, vmin: float, vmax: float,
+                   default: None = None) -> float | None: ...
+
+    def _clamp_var(self, var: tk.Variable, vmin: float, vmax: float,
                     default: float | None = None) -> float | None:
         """Lê `var`, força-o ao intervalo [vmin, vmax] (re-escreve no var
         se necessário) e devolve o valor saneado. Retorna `default` (ou
@@ -2887,7 +2937,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         pt = JointTrajectoryPoint()
         pt.positions = [float(v) for v in positions_rad]
         pt.time_from_start = self._duration_msg(duration_s)
-        msg.points.append(pt)
+        msg.points = [pt]
         self._arm_pub.publish(msg)
         # MIRROR é tratado pela subscrição em /cr10_group_controller/joint_trajectory
         # — captura este publish e também o do tactile_explorer numa única rota.
@@ -2906,7 +2956,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         pt = JointTrajectoryPoint()
         pt.positions = [float(v) for v in list(q_rad)[:6]]
         pt.time_from_start = self._duration_msg(duration_s)
-        msg.points.append(pt)
+        msg.points = [pt]
         self._arm_pub.publish(msg)
 
     # Mirror MovJ (MIRROR mode — braço real segue os sliders)
@@ -2967,9 +3017,13 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         # joint6 da teleop por câmera só espelha no braço real com a checkbox
         # "→ real" marcada. Identifica a trajetória da câmera pela pose (igual
         # à última que ela publicou) — jog manual/arrasto passam normalmente.
+        # `points` vem dos stubs do ROS como Sequence|Set — indexar um Set
+        # não existe para o checker, e em runtime é sempre lista. A cópia
+        # local é a lista de verdade, usada por todo o resto do callback.
+        pontos = list(msg.points)
         gate = self._cam_arm_gate
-        if gate is not None and not gate[0] and msg.points:
-            q = list(msg.points[-1].positions)[:6]
+        if gate is not None and not gate[0] and pontos:
+            q = list(pontos[-1].positions)[:6]
             if len(q) == 6 and gate[1] == tuple(round(float(x), 4) for x in q):
                 return
         # Drag teach ativo → motores liberados, não enviar comandos de posição.
@@ -2987,14 +3041,14 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             phase = self._latest_phase
         if phase not in ('IDLE', 'DONE', 'ABORTED'):
             return  # palpação ativa → ServoJ poll loop assume
-        if not msg.points:
+        if not pontos:
             return
         # Eco do follow real→sim: as posições MEDIDAS re-publicadas no tópico
         # (com velocities) não devem gerar MovJ de volta ao próprio feedback.
         # Sliders publicam sem velocities e continuam passando normalmente.
-        if self._mirror_following and msg.points[-1].velocities:
+        if self._mirror_following and pontos[-1].velocities:
             return
-        positions_rad = list(msg.points[-1].positions)
+        positions_rad = list(pontos[-1].positions)
         if len(positions_rad) < 6:
             return
         self._mirror_movj_debounced(positions_rad[:6])
@@ -3067,7 +3121,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                     pt.positions = [float(v) for v in q_urdf]
                     pt.velocities = [float(v) for v in vel]
                     pt.time_from_start = Duration(sec=0, nanosec=60_000_000)
-                    msg.points.append(pt)
+                    msg.points = [pt]
                     self._arm_pub.publish(msg)
                     # Espelha posição real → sliders da GUI (Tk-safe via after).
                     self.root.after(0, self._update_sliders_from_q,
@@ -3137,6 +3191,124 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 except Exception:
                     pass
 
+    # ── Pré-home do Start ─────────────────────────────────────────────
+    # Tolerância de concordância sim↔real, em radianos. É o número que decide
+    # se o Start pode prosseguir, e por isso é APERTADO: o que o primeiro
+    # ServoJ da palpação faz é descarregar essa diferença INTEIRA num único
+    # tick de 30 ms, sem rampa (ver _mirror_poll_loop). A 0,3° o pior caso é
+    # ~10°/s de solavanco; a 1,2°, que foi a divergência real medida em
+    # 09/09/2026, já são 40°/s no punho.
+    _PREHOME_TOL_RAD = math.radians(0.3)
+    # Tolerância de CHEGADA à home. Mais frouxa de propósito: o MovJ assenta
+    # onde o controlador o deixa, e o resto do caminho até a home nominal é
+    # feito pelo _phase_goto_home do explorer, que é uma trajetória lenta e
+    # verificada. O que não pode sobrar é diferença entre sim e real.
+    _PREHOME_ARRIVE_RAD = math.radians(1.0)
+    _PREHOME_TIMEOUT_S = 60.0
+
+    def _prehome_before_start(self, payload: dict) -> bool:
+        """Leva o braço real à home antes de publicar /palpation/start.
+
+        Devolve True se assumiu o start (o worker o republica depois), False
+        se não havia nada a fazer e o chamador deve publicar já.
+
+        POR QUE EXISTE. Enquanto a fase é IDLE o braço real não é comandado; o
+        `_mirror_poll_loop` só espelha o feedback real→sim. No instante em que
+        a palpação começa, a fase deixa de ser IDLE e o mesmo laço passa a
+        mandar ServoJ a 33 Hz com a pose do SIMULADOR — de uma vez, sem rampa,
+        e com o dedup (`_mirror_last_target`) recém-zerado logo abaixo. Toda
+        divergência acumulada entre sim e real vira um degrau único no
+        primeiro tick, em todas as juntas que diferirem.
+
+        Foi o que aconteceu em 09/09/2026: o simulador estava na home e o
+        braço real 1,2° atrás em j6, e o Start descarregou isso de uma vez.
+        A diferença pode ser bem maior — basta sincronizar, mexer nos sliders
+        e apertar Start.
+
+        A CORREÇÃO é usar o caminho que já funciona: `_apply_arm_home` é
+        exatamente o botão ⌂ Home — publica a home nos sliders (o simulador
+        vai por trajetória) e o `_cb_arm_trajectory` a converte num MovJ
+        articular para o braço real, com SpeedFactor e a janela de follow
+        real→sim. Movimento PTP controlado pelo firmware, não um degrau de
+        ServoJ. Só depois de os dois chegarem é que a palpação começa.
+        """
+        if getattr(self, '_prehoming', False):
+            return True                       # já em curso
+        with self._real_lock:
+            drv = self._real_driver
+            ativo = (drv is not None and self._robot_connected
+                     and self._robot_mode == 'MIRROR')
+        if not ativo:
+            return False                      # só sim: nada a sincronizar
+
+        self._prehoming = True
+        self._set_status('Homing the real arm before palpation…', WARN)
+        # Mesmo caminho do botão ⌂ Home, na thread do Tk (mexe em sliders).
+        self._apply_arm_home()
+        threading.Thread(target=self._prehome_worker,
+                         args=(payload,), daemon=True).start()
+        return True
+
+    def _prehome_worker(self, payload: dict) -> None:
+        """Espera o braço real chegar à home e concordar com o simulador."""
+        q_home = np.array(
+            [math.radians(float(self._arm_home_deg[j])) for j in ARM_JOINTS],
+            dtype=np.float64)
+        t_end = time.monotonic() + self._PREHOME_TIMEOUT_S
+        ok_ticks = 0
+        erro = 'tempo esgotado'
+        while time.monotonic() < t_end:
+            time.sleep(0.10)
+            drv = self._real_driver
+            if drv is None or not self._robot_connected:
+                erro = 'braço real desconectado durante o homing'
+                break
+            try:
+                q_real = drv.read_joints_urdf_latest()
+            except Exception:
+                continue                      # leitura transitória inválida
+            if np.linalg.norm(q_real) < 0.05:
+                continue                      # blip de zero do firmware
+            q_sim = self._latest_joint_rad
+            if q_sim is None:
+                continue
+            d_home = float(np.max(np.abs(q_real - q_home)))
+            d_sync = float(np.max(np.abs(q_real - np.asarray(q_sim))))
+            if (d_home <= self._PREHOME_ARRIVE_RAD
+                    and d_sync <= self._PREHOME_TOL_RAD):
+                # Duas leituras seguidas: uma só pode cair no meio de um
+                # quadro de feedback ainda não atualizado depois do MovJ.
+                ok_ticks += 1
+                if ok_ticks >= 2:
+                    self.get_logger().info(
+                        f'[PRE-HOME] braço real na home '
+                        f'(erro {math.degrees(d_home):.2f}°) e sincronizado '
+                        f'com o sim ({math.degrees(d_sync):.2f}°) — '
+                        'liberando a palpação.')
+                    self._prehoming = False
+                    self.root.after(
+                        0, lambda: self._do_palpation_start(payload,
+                                                            prehomed=True))
+                    return
+            else:
+                ok_ticks = 0
+                erro = (f'home {math.degrees(d_home):.2f}° / '
+                        f'sim↔real {math.degrees(d_sync):.2f}°')
+
+        # RECUSA o start. O braço fica onde está: publicar assim mesmo é
+        # exatamente o solavanco que esta função existe para impedir.
+        self.get_logger().error(
+            f'[PRE-HOME] braço real não convergiu para a home ({erro}) — '
+            'palpação NÃO iniciada. Verifique a conexão e use ⌂ Home.')
+        self._prehoming = False
+        self.root.after(0, self._prehome_failed, erro)
+
+    def _prehome_failed(self, erro: str) -> None:
+        self._starting_palpation = False
+        self._set_status(
+            f'Palpation not started: the real arm did not reach home '
+            f'({erro}). Press ⌂ Home and try again.', DANGER)
+
     def _mirror_follow_tick(self) -> None:
         """Espelha o feedback do braço real → Gazebo durante um MovJ de jog."""
         now = time.monotonic()
@@ -3195,7 +3367,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         pt.positions = [float(v) for v in q_urdf]
         pt.velocities = [float(v) for v in vel]
         pt.time_from_start = Duration(sec=0, nanosec=60_000_000)
-        msg.points.append(pt)
+        msg.points = [pt]
         self._arm_pub.publish(msg)
 
     def _cb_touch_value(self, msg: Float32) -> None:
@@ -3319,7 +3491,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         pt = JointTrajectoryPoint()
         pt.positions = [float(v) for v in positions]
         pt.time_from_start = self._duration_msg(duration_s)
-        msg.points.append(pt)
+        msg.points = [pt]
         self._hand_pub.publish(msg)
 
     # Versão B: mirror real→sim da mão (telemetria DigitPosnAll)
@@ -3694,7 +3866,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         except Exception as exc:
             self.get_logger().error(f'SetCurrentGrip falhou: {exc}')
 
-    def _apply_hand_preset(self, preset_deg: dict[str, float],
+    def _apply_hand_preset(self, preset_deg: Mapping[str, float],
                             *, eci_grip_id: int | None = None):
         """Aplica um preset de mão (Abrir/Apontar/Fechar)."""
         if not getattr(self, 'hand_sliders', None):
@@ -3857,6 +4029,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             return
 
         def _pipe_log(proc=self._touch_rx_proc):
+            assert proc.stdout is not None   # criado com stdout=PIPE acima
             for raw in proc.stdout:
                 log.info('[TOUCH-RX] %s',
                          raw.decode('utf-8', errors='replace').rstrip())
@@ -3887,6 +4060,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             return
 
         def _pipe_log(proc=self._logger_proc):
+            assert proc.stdout is not None   # criado com stdout=PIPE acima
             for raw in proc.stdout:
                 log.info('[LOGGER] %s',
                          raw.decode('utf-8', errors='replace').rstrip())
@@ -4530,6 +4704,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             # Publica trajetória completa no Gazebo de uma vez.
             msg = JointTrajectory()
             msg.joint_names = ARM_JOINTS
+            pontos = []
             for i, pose in enumerate(poses):
                 pt = JointTrajectoryPoint()
                 pt.positions = [math.radians(float(v)) for v in pose['q_deg']]
@@ -4538,7 +4713,8 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 pt.time_from_start = Duration(
                     sec=int(total_s),
                     nanosec=int((total_s % 1.0) * 1_000_000_000))
-                msg.points.append(pt)
+                pontos.append(pt)
+            msg.points = pontos
             self._arm_pub.publish(msg)
 
         if mode == 'MIRROR':
@@ -4706,7 +4882,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         lbl.pack(side='right')
         return lbl
 
-    def _build_slide_dir_selector(self, parent) -> None:
+    def _build_slide_dir_selector(self, parent) -> tk.Frame:
         """Segmented control (4 botões mutex) para a direção do sliding."""
         row = tk.Frame(parent, bg=PANEL); row.pack(fill='x', pady=(8, 2))
         top = tk.Frame(row, bg=PANEL); top.pack(fill='x')
@@ -4806,7 +4982,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             colour = TEXT_MUTED
         lbl.config(text=head + body, fg=colour)
 
-    def _build_fmod_shape_selector(self, parent) -> None:
+    def _build_fmod_shape_selector(self, parent) -> tk.Frame:
         """Segmented control (3 botões mutex) para a forma da onda de força."""
         row = tk.Frame(parent, bg=PANEL); row.pack(fill='x', pady=(8, 2))
         top = tk.Frame(row, bg=PANEL); top.pack(fill='x')
@@ -4852,6 +5028,22 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             else:
                 b.config(bg=BTN_NEUTRAL, fg=TEXT)
         self._update_fmod_preview()
+
+    def _force_cell_rate(self) -> tuple[float, str, bool]:
+        """(taxa, nome, medida?) da célula que está no cabo.
+
+        A FA7155 publica a taxa real (/load_cell/rate_hz, ou a estimativa
+        local do _cb_ft_wrench quando o receiver é antigo); a HX711 não
+        publica nenhuma, então ali só resta a nominal. `medida` existe para
+        a frase não afirmar "at 400 Hz" quando o número é um chute de
+        catálogo.
+        """
+        if getattr(self, '_force_sensor', 'ft6') != 'ft6':
+            return LC_NOMINAL_RATE_HZ, 'HX711', False
+        r = getattr(self, '_ft_rate_hz', None)
+        if r and math.isfinite(float(r)) and float(r) > 0.0:
+            return float(r), 'FA7155', True
+        return FT_NOMINAL_RATE_HZ, 'FA7155', False
 
     def _update_fmod_preview(self) -> None:
         """Resume a onda abaixo dos campos: média, amplitude, duração e
@@ -4919,8 +5111,8 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                     f'servoj_period_s:={1.0/(hz*FMOD_MIN_PTS_PER_CYCLE):.3f}.')
             colour = DANGER
         else:
-            txt += (f' {pts:.0f} points per cycle at best '
-                    f'({dt*1e3:.0f} ms tick).')
+            rate_hz, cell, medida = self._force_cell_rate()
+            txt += ' ' + fmod_cadence_phrase(hz, dt, rate_hz, cell, medida)
 
         # O setpoint constante ainda governa a DESCIDA: o braço para nele e só
         # depois o HOLD sobe/desce até a média. Se os dois diferirem, há uma
@@ -5107,7 +5299,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         """
         row = tk.Frame(parent, bg=PANEL); row.pack(fill='x', pady=(5, 3))
         if integer or snap:
-            res = 1.0 if integer else float(snap)
+            res = 1.0 if integer else float(snap or 1.0)
             def _snap():
                 name = str(var)
                 try:
@@ -5179,6 +5371,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 stderr=subprocess.STDOUT, start_new_session=True)
             # Thread daemon lê stdout+stderr do driver e redireciona para o log
             def _pipe_hand_log(proc=self._hand_proc):
+                assert proc.stdout is not None   # stdout=PIPE logo acima
                 for raw in proc.stdout:
                     line = raw.decode('utf-8', errors='replace').rstrip()
                     log.warning('[HAND-PROC] %s', line)
@@ -5829,7 +6022,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             pt.positions  = [float(v) for v in q_urdf]
             pt.velocities = [0.0] * 6
             pt.time_from_start = Duration(sec=3, nanosec=0)
-            msg.points.append(pt)
+            msg.points = [pt]
             self._arm_pub.publish(msg)
         except Exception as exc:
             self.get_logger().warning(f'[SYNC] Publicação JTC falhou: {exc}')
@@ -6776,7 +6969,12 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 default=PROBE_ALIGN_TILT_MAX_DEG_DEFAULT)
         finally:
             self._suppressing = False
-        if None in (speed, depth, force_sp, slide_dist, approach):
+        # `is None` um a um, e não `None in (…)`: a tupla esconde a checagem
+        # de qualquer análise estática, e as ~55 conversões `float(...)` daqui
+        # até o fim do método passavam a ser lidas como `float(float | None)`.
+        # É a MESMA condição em runtime; o que muda é ela ficar verificável.
+        if (speed is None or depth is None or force_sp is None
+                or slide_dist is None or approach is None):
             self._starting_palpation = False
             self._set_status('Invalid parameters.', DANGER)
             return
@@ -7053,13 +7251,21 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
             self._lc_do_tare()
         self._do_palpation_start(payload)
 
-    def _do_palpation_start(self, payload: dict) -> None:
+    def _do_palpation_start(self, payload: dict,
+                            *, prehomed: bool = False) -> None:
         """Envia /palpation/start após garantir que a LC está pronta.
 
         Único ponto de publicação — é aqui que a guarda de reentrância do
         _on_start é liberada, inclusive no caminho que passou pelo atraso de
         1,8 s do auto-tare.
+
+        `prehomed=False` (o caminho normal) NÃO publica ainda: primeiro leva o
+        braço real à home pelo mesmo MovJ do botão ⌂ Home e só volta aqui,
+        com prehomed=True, quando real e simulado estiverem na mesma pose.
+        Ver _prehome_before_start.
         """
+        if not prehomed and self._prehome_before_start(payload):
+            return            # o worker republica quando o braço chegar
         self._starting_palpation = False
         # Carimba a publicação: é o que fecha a janela cega até o explorer
         # aparecer ocupado no status (ver o gate em _on_start).

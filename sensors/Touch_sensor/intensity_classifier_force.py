@@ -419,7 +419,12 @@ def read_force_udp():
         try:
             SIO_UDP_CONNRESET = getattr(socket, "SIO_UDP_CONNRESET",
                                         0x9800000C)
-            sock.ioctl(SIO_UDP_CONNRESET, struct.pack("I", 0))
+            # `ioctl` só existe no socket do WINDOWS — em Linux/macOS o
+            # AttributeError do except abaixo é o caminho normal, não uma
+            # falha. O ignore é para o checker, que roda com os stubs desta
+            # plataforma e não tem como saber disso.
+            sock.ioctl(SIO_UDP_CONNRESET,           # type: ignore[attr-defined]
+                       struct.pack("I", 0))
         except (AttributeError, ValueError, OSError):
             pass
         sock.bind(("", LOAD_CELL_UDP_PORT))

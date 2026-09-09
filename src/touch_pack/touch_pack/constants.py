@@ -74,9 +74,12 @@ FORCE_NOISE_SIGMA_N = 0.023  # N: σ em repouso. HX711, 17/08/2026, 2390
 # Consequência para o CONTACT_ON_N: cru, a FA7155 dá 3σ = 66 mN, o que deixa
 # 54 mN de folga até os 0,12 N — MAIS folga que os 29 mN sobre os 91 mN do
 # HX711 filtrado, para os quais o limiar foi sintonizado em 28/08. Ou seja,
-# desligar o One-Euro não estreitou a margem de contato; ela cresceu.
-# (Com ft_filter true a mesma medida dá σ = 0,0020 N — o filtro compra isso
-# com atraso, que é o motivo de ele nascer desligado no launch.)
+# nem sem o One-Euro a margem de contato estreitaria; ela cresceria.
+# (Com ft_filter true a mesma medida dá σ = 0,0020 N. O filtro compra isso com
+# ~80 ms de atraso no gatilho de contato, e AINDA ASSIM ele é o DEFAULT do
+# launch — `ft_filter` nasce em 'true' em tactile_cell.launch.py. Este bloco
+# já dizia o contrário e estava errado: o número que a MALHA vê é o filtrado,
+# e é o FORCE_CTRL_SIGMA_N abaixo, não este σ cru, que dimensiona o hold.)
 # σ do sinal que a MALHA vê — que deixou de ser o do sensor cru quando o
 # One-Euro passou a nascer ligado. O explorer consome /load_cell/force_net,
 # que é filtrado; dimensionar a banda contra o ruído CRU a superestimava em

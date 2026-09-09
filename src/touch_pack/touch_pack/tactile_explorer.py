@@ -744,7 +744,14 @@ _SERVOJ_T_MIN_S = 0.020
 # num material viscoelástico (silicone) é outra coisa. Não é malha de força na
 # onda: é adaptação LENTA de um parâmetro, um ciclo por vez.
 _FMOD_K_ADAPT_ALPHA = 0.35    # EMA da correção por ciclo
-_FMOD_K_ADAPT_MIN_DF_N = 0.03 # N: fundamental medida abaixo disso é ruído
+# N: fundamental medida abaixo disso é ruído. O valor FICA com a FA7155, e
+# só agora ele é folgado de verdade. O ruído do lock-in sobre N amostras vale
+# 4σ/√(2N): com o cru da FA7155 (σ = 21,9 mN) e ~400 amostras por ciclo a
+# 1 Hz dá 3,1 mN, então o piso é ~10× o chão. Com a HX711 crua (σ = 112 mN,
+# ~24 amostras/ciclo) o mesmo cálculo dava 65 mN — o piso ficava ABAIXO do
+# ruído e não filtrava nada. Baixá-lo agora só liberaria adaptação para ondas
+# de amplitude menor que o CONTACT_ON_N, que não é ensaio que a bancada peça.
+_FMOD_K_ADAPT_MIN_DF_N = 0.03
 _FMOD_MAX_AMP_N = 5.0     # N: amplitude (pico) máxima aceita, por segurança
 # Teto do passo por tick, em FORÇA projetada (Δx = ΔF/K). O passo da onda é
 # grande perto do zero-crossing (amp·2πf·dt) e o teto do QS, de 10 µm,
@@ -812,7 +819,16 @@ _FMOD_AMP_RAMP_CYCLES = 3.0    # ciclos até 100 %
 # 154 ms deixa de ser um problema de estabilidade e vira o que é: um
 # deslocamento conhecido entre o comando e a medida, que se desconta ao
 # indexar (ver fmod_measure_lag_s).
-_FMOD_ILC_BINS  = 24      # bins de fase por ciclo (~1 por ponto a 1 Hz/24 Hz)
+# Bins de fase por ciclo. O número nasceu amarrado à MEDIDA: com a HX711 a
+# 24 Hz, uma onda de 1 Hz dava ~24 amostras por ciclo, ou seja ~1 ponto por
+# bin, e mais bins seriam bins vazios. Com a FA7155 (~400 Hz entregues, ver
+# FT_NOMINAL_RATE_HZ) são ~400 amostras por ciclo a 1 Hz — ~16 por bin — e a
+# medida deixou de ser o limitante. Quem limita agora é o COMANDO: no pior
+# caso a onda sai com _FMOD_MIN_PTS_PER_CYCLE (5) pontos por período, e
+# correção indexada em mais bins do que há pontos comandados não tem onde ser
+# aplicada. Por isso 24 FICA: a célula nova deu folga na medida, não no
+# comando.
+_FMOD_ILC_BINS  = 24
 _FMOD_ILC_ALPHA = 0.4     # ganho de aprendizado por ciclo
 # Teto da correção, em frações da amplitude em posição. O ILC corrige erro de
 # EXECUÇÃO; se ele pedir mais que isto o problema é outro (contato perdido,
@@ -839,6 +855,19 @@ def fmod_measure_lag_s(freq_hz: float,
     aprender sozinho é um atraso grande o bastante para o erro entrar no bin
     errado, e é isso que descontar a parte conhecida evita.
 
+    `rate_hz` É A TAXA DA FONTE QUE ESTÁ NO FIO, e ela não é uma constante
+    deste arquivo: a mediana de _MEDIAN_N amostras atrasa meia janela, o que
+    vale 41,7 ms na HX711 (24 Hz) e 2,5 ms na FA7155 (~400 Hz entregues em
+    polled — ver FT_NOMINAL_RATE_HZ). Os 39 ms de diferença são 14° a 1 Hz,
+    mais de um bin dos _FMOD_ILC_BINS: assumir a célula errada aqui gira a
+    correção do ILC em fase, que é o erro que esta função existe para não
+    cometer. Por isso o chamador passa a taxa MEDIDA (`_lc_rate_hz`) e o
+    default é só semente para quem chamar sem célula no ar.
+
+    O termo do filtro NÃO muda com a célula: o One-Euro trava em
+    min(rate/3, ONE_EURO_MAXCUTOFF_HZ) e a 24 Hz ou a 400 Hz quem manda é o
+    teto de 2 Hz nos dois casos (ver lc_filter).
+
     Função pura — testável sem ROS e sem bancada.
     """
     f = max(float(freq_hz), 1e-6)
@@ -856,7 +885,9 @@ def fmod_measure_gain(freq_hz: float) -> float:
 
     Companheira de fmod_measure_lag_s: aquela dá a fase, esta dá o módulo. O
     One-Euro está travado em ONE_EURO_MAXCUTOFF_HZ (2 Hz) em repouso e perto
-    dele, e um passa-baixa de 1ª ordem nesse cutoff vale 1/√(1+(f/fc)²):
+    dele — e continua travado lá com a FA7155, porque o outro teto do filtro
+    é rate/3 (133 Hz a 400 Hz, 8 Hz a 24 Hz) e nunca é ele quem manda. Um
+    passa-baixa de 1ª ordem nesse cutoff vale 1/√(1+(f/fc)²):
 
         0,5 Hz → 97 %      2 Hz → 71 %      6,67 Hz → 29 %
         1,0 Hz → 89 %      4 Hz → 45 %     10,0 Hz → 20 %
@@ -927,8 +958,11 @@ class _WaveILC:
         # FILTRO Q (suavização circular). Sem ele o ILC realimenta o ruído da
         # célula nos harmônicos altos do vetor, onde a planta não responde, e
         # a correção diverge em poucos ciclos — é o modo de falha clássico do
-        # controle repetitivo. Com σ de 112 mN no sinal cru desta célula, não
-        # é uma precaução teórica.
+        # controle repetitivo. Continua não sendo precaução teórica com a
+        # FA7155, só menos violenta: o cru dela tem σ = 21,9 mN (contra os
+        # 112 mN do cru da HX711) e cada bin agora promedia ~16 amostras em
+        # vez de ~1 a 1 Hz, o que já divide o ruído por ~4. Sobra ~5 mN por
+        # bin realimentados a cada ciclo, e é isso que o Q derruba.
         upd = (np.roll(upd, 1) + 2.0 * upd + np.roll(upd, -1)) / 4.0
         self.corr = np.clip(self.corr + self.alpha * upd,
                             -self.clip_m, self.clip_m)
@@ -951,6 +985,16 @@ class _WaveILC:
 # a 1 Hz, 65° a 2 Hz. Sem tolerância o pico atrasado ultrapassa f_max em
 # TODO ciclo e o limitador corta, abrindo um entalhe no topo da senoide. A
 # tolerância é o que separa "guarda de excursão" de "regulador por ciclo".
+#
+# COM A FA7155 O GUARDA MUDOU DE INIMIGO, e por isso os dois números ficam.
+# Ele compara contra `fz_meas`, que na bancada nova é o CRU (a onda lê
+# /load_cell/sample_net; ver _fz_raw), então o atraso do One-Euro sai da
+# conta: dos 154 ms medidos a 1 Hz sobram os ~14° de transporte do executor
+# e do material, ~39 ms. Em compensação o cru não tem filtro nenhum, e é o
+# ruído dele que passa a dimensionar o piso: σ = 21,9 mN, logo 0,10 N são
+# 4,6σ — margem sã contra um corte espúrio. Na HX711 crua (σ = 112 mN) esse
+# mesmo piso valia 0,9σ e o guarda teria cortado no ruído; o piso só virou
+# defensável agora.
 _FMOD_BAND_TOL_FRAC = 0.15     # da amplitude pedida
 _FMOD_BAND_TOL_MIN_N = 0.10    # N: piso, para amplitudes pequenas
 # Velocidade de PICO da onda (2·π·f·amp). Diferente de _FMOD_V_MAX_MMS, que
@@ -1457,7 +1501,26 @@ class TactileExplorer(Node):
         self.declare_parameter('approach_v_min_mms',   5.0)
         # Persistência do contato aprendido por home (ver _load_learned).
         # max_age_h = 0 desliga o vencimento (entradas valem para sempre).
-        self.declare_parameter('learned_contact_persist', True)
+        #
+        # NASCE DESLIGADA, e o motivo é segurança. Um contato aprendido é a
+        # licença para descer em VELOCIDADE CHEIA até a margem antes dele —
+        # e essa licença vale sob uma hipótese que o software não tem como
+        # verificar: que a peça e a fixação continuam onde estavam. Entre uma
+        # sessão e a seguinte é exatamente o que muda (trocou a amostra,
+        # reapertou o calço, remontou a ponteira), e o custo dos dois erros é
+        # assimétrico: esquecer o aprendizado custa uma descida lenta, e
+        # confiar nele com a peça mais alta custa uma colisão a 15 mm/s.
+        #
+        # O preço é conhecido: sem aprendizado a descida INTEIRA roda no
+        # rastejo (v_unlearned_ms = v_slow_ms, ver _phase_descending), ~50
+        # µm/s. De uma home a 24 mm do contato são ~8 min — uma vez por home
+        # por sessão, porque dentro da sessão o aprendizado em memória segue
+        # valendo (_remember_contact não consulta este parâmetro).
+        #
+        # Quem tiver uma bancada que NÃO se mexe entre sessões e quiser o
+        # tempo de volta liga com learned_contact_persist:=true, e aí o aviso
+        # do _load_learned diz sob que hipótese o arquivo está sendo lido.
+        self.declare_parameter('learned_contact_persist', False)
         self.declare_parameter('learned_contact_max_age_h', 24.0)
         self.declare_parameter('descent_speed_mms', 5.0)
         # Velocidade NOMINAL da rampa fina de _qs_regulate até o setpoint
@@ -1624,6 +1687,14 @@ class TactileExplorer(Node):
         # Contador de amostras distintas — o debounce de contato precisa contar
         # LEITURAS, não iterações do loop (33 Hz de loop vs 10 Hz do HX711).
         self._lc_force_seq: int = 0
+        # Taxa MEDIDA de chegada do Float32 (Hz, EMA). Existe porque o atraso
+        # da mediana do lc_filter é meia janela DA TAXA DA FONTE, e a fonte
+        # deixou de ser uma só: 24 Hz na HX711, ~400 Hz na FA7155. Quem
+        # consome é fmod_measure_lag_s, via _lc_rate_hz(). Medir em vez de
+        # ler a constante da célula também cobre o caso real da FA7155, cuja
+        # entrega em polled oscila com a carga da máquina (458 Hz ocioso,
+        # 405 Hz com a GUI no ar — ver FT_NOMINAL_RATE_HZ).
+        self._lc_rate_ema_hz: float = 0.0
         # ── sinal CRU da célula, para a onda ──────────────────────────
         # O Float32 acima é filtrado (mediana + One-Euro travado em 2 Hz) e
         # serve para tudo que é quase-estático, onde o filtro está certo. A
@@ -1728,10 +1799,33 @@ class TactileExplorer(Node):
         val = float(msg.data)
         if not math.isfinite(val) or abs(val) > self._LC_MAX_PLAUSIBLE_N:
             return
+        now = time.monotonic()
         with self._lc_lock:
+            # Intervalo entre LEITURAS. A janela de validade descarta o
+            # primeiro quadro (ts = 0) e as pausas do nó, que virariam uma
+            # taxa absurdamente baixa e contaminariam a EMA por muitos ciclos.
+            dt = now - self._lc_force_ts
+            if self._lc_force_ts > 0.0 and 1e-4 < dt < 1.0:
+                r = 1.0 / dt
+                self._lc_rate_ema_hz = (
+                    r if self._lc_rate_ema_hz <= 0.0
+                    else 0.98 * self._lc_rate_ema_hz + 0.02 * r)
             self._lc_force_net = val
-            self._lc_force_ts = time.monotonic()
+            self._lc_force_ts = now
             self._lc_force_seq += 1
+
+    def _lc_rate_hz(self) -> float:
+        """Taxa (Hz) da fonte que alimenta /load_cell/force_net.
+
+        MEDIDA, não deduzida da célula configurada: é ela que fixa o atraso da
+        mediana em fmod_measure_lag_s, e um nó com a fonte errada no fio
+        giraria a correção do ILC em fase sem avisar. Enquanto nada chegou —
+        onda nenhuma roda nesse estado, o _FORCE_STALE_S barra antes — vale o
+        nominal da HX711, que é o pior caso (maior atraso).
+        """
+        with self._lc_lock:
+            r = self._lc_rate_ema_hz
+        return r if r > 0.0 else _LC_NOMINAL_RATE_HZ
 
     def _cb_lc_force_net_slow(self, msg: Float32) -> None:
         """Recebe /load_cell/force_net_slow — mesma convenção de sinal e o
@@ -2037,9 +2131,11 @@ class TactileExplorer(Node):
             f'de {_LEARNED_CONTACT_FILE}'
             + (f'; {expired} vencida(s) (> {max_age_h:.0f} h) descartada(s) — '
                'essas homes voltam a rastejar' if expired else '')
-            + '. ATENÇÃO: isto assume que a peça e a fixação NÃO mudaram desde '
-              'a última sessão. Se trocou a amostra, apague o arquivo ou rode '
-              'com learned_contact_persist:=false.')
+            + '. ATENÇÃO: a persistência foi LIGADA explicitamente '
+              '(learned_contact_persist:=true), e ela assume que a peça e a '
+              'fixação NÃO mudaram desde a última sessão — hipótese que este '
+              'nó não tem como verificar. Se algo foi remontado, desligue o '
+              'parâmetro (é o default) ou apague o arquivo.')
 
     def _flush_learned(self) -> None:
         """Grava o dicionário se houver mudança pendente. Tem TIMER PRÓPRIO
@@ -4424,7 +4520,7 @@ class TactileExplorer(Node):
 
 
     def _phase_hold(self, timeout_s: float = _HOLD_TIMEOUT_S,
-                    dwell_s: float = _HOLD_DWELL_S) -> str:
+                    dwell_s: float | None = None) -> str:
         """HOLD — a rampa quase-estática leva a compressão ao setpoint, CONFIRMA
         a chegada e MANTÉM por `dwell_s` (medição) antes de liberar.
 
@@ -4441,6 +4537,16 @@ class TactileExplorer(Node):
             tol_override = self._hold_tol_n
             if self._hold_timeout_s is not None:
                 timeout_s = self._hold_timeout_s
+            # `dwell_s=None` = "use o que a GUI pediu". O campo `hold_stable_s`
+            # da mensagem CHEGAVA aqui e não era lido por ninguém: as três
+            # chamadas de _phase_hold omitem o argumento, então valia sempre o
+            # _HOLD_DWELL_S embutido. O campo existia, era publicado, ia para o
+            # params.json — e não governava nada. Quem passa dwell_s explícito
+            # (a escada, com 0.0) continua mandando.
+            if dwell_s is None:
+                dwell_s = (self._hold_stable_s
+                           if self._hold_stable_s is not None
+                           else _HOLD_DWELL_S)
 
         tol_n = (tol_override if tol_override is not None
                  else max(_HOLD_TOL_N, _HOLD_TOL_PCT * target_f))
@@ -4900,7 +5006,7 @@ class TactileExplorer(Node):
         # Atraso do pipeline de medida na frequência da onda. É o que separa o
         # setpoint da leitura que ele causou; sem descontá-lo o erro entra no
         # bin errado e o ILC aprende uma correção girada em fase.
-        ilc_lag_s = fmod_measure_lag_s(prof.freq_hz)
+        ilc_lag_s = fmod_measure_lag_s(prof.freq_hz, self._lc_rate_hz())
         ilc_learning = False   # vira True depois do warmup (ver abaixo)
         ilc_rms_m = 0.0
         # ── o ILC pode CONFIAR na medida nesta frequência? ───────────
@@ -5291,7 +5397,7 @@ class TactileExplorer(Node):
                         f'{ilc_lag_s * 1e3:.0f} ms '
                         f'({360.0 * ilc_lag_s * prof.freq_hz:.0f}° a '
                         f'{prof.freq_hz:.2f} Hz; a fórmula previa '
-                        f'{fmod_measure_lag_s(prof.freq_hz)*1e3:.0f} ms). '
+                        f'{fmod_measure_lag_s(prof.freq_hz, self._lc_rate_hz())*1e3:.0f} ms). '
                         f'{_frozen} — daqui em diante quem corrige é o '
                         f'vetor.')
                 # ── ETAPA 5: corte repetido vira recuo de AMPLITUDE ───
