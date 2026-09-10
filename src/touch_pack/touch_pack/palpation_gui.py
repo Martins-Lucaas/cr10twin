@@ -94,6 +94,8 @@ from .constants import (
     taxel_frame_to_physical,
     taxel_index_to_physical,
     ARM_JOINTS, HAND_JOINTS, HAND_POINT_DEG, POINTING_SEED_DEG,
+    ECI_POSN_OPEN, ECI_POSN_CLOSED, eci_posn_to_deg as _eci_posn_to_deg,
+    hand_deg_to_driver_rad as _hand_deg_to_driver_rad,
     FORCE_ABORT_LIMIT_N as _FORCE_ABORT_LIMIT_N,
     CONTACT_ON_N as _CONTACT_ON_N,
     CONTACT_OFF_FRAC as _CONTACT_OFF_FRAC,
@@ -395,14 +397,6 @@ HAND_LIMITS_DEG = {
 HAND_OPEN_DEG  = {j: 0 for j in HAND_JOINTS}
 HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
                   'Ring':  80, 'Little': 80, 'Rotate': 0}
-
-# Escala ECI real dos dígitos (calibrada na mão física em 06/07/2026): a
-# telemetria DigitPosnAll NÃO vai de 0 a 200 — o fim de curso mecânico
-# aberto lê ~47 (rotate ~67) e o fechado ~198 (rotate ~197).
-ECI_POSN_OPEN = {'Thumb': 47, 'Index': 47, 'Middle': 47,
-                 'Ring':  47, 'Little': 47, 'Rotate': 67}
-ECI_POSN_CLOSED = {'Thumb': 198, 'Index': 198, 'Middle': 198,
-                   'Ring':  198, 'Little': 198, 'Rotate': 197}
 
 # Grip-patterns embutidos da mão COVVI (CurrentGripID 1–14)
 # Para cada padrão de pega:
@@ -3478,13 +3472,20 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                            duration_s: float) -> None:
         """Publica a trajetória da mão no Gazebo a partir das 6 juntas
         primárias (rad), expandindo as juntas mimic do URDF. Usado tanto pelo
-        comando do slider (sim-only) quanto pelo mirror real→sim (Versão B)."""
+        comando do slider (sim-only) quanto pelo mirror real→sim (Versão B).
+
+        `primary_rad` vem em graus de PONTA DE DEDO (0–90°, a escala do slider
+        e da mão física). O Gazebo move a junta DRIVER, que vai só até 1,0 rad
+        — mandar o ângulo de dedo direto satura o teto e ceifa a excursão."""
         names = list(HAND_JOINTS)
-        positions = [primary_rad[j] for j in HAND_JOINTS]
-        # Expande as 26 juntas mimic com as razões do URDF.
+        driver_rad = {j: _hand_deg_to_driver_rad(j, _math.degrees(primary_rad[j]))
+                      for j in HAND_JOINTS}
+        positions = [driver_rad[j] for j in HAND_JOINTS]
+        # Expande as 26 juntas mimic com as razões do URDF. O multiplicador é
+        # relativo ao DRIVER, igual ao clamp em hand_pack.urdf_helpers.
         for mimic_name, driver, mult in MIMIC_LIST:
             names.append(mimic_name)
-            positions.append(primary_rad[driver] * mult)
+            positions.append(driver_rad[driver] * mult)
         msg = JointTrajectory()
         # stamp=zero → controller starts immediately (sim-time-safe).
         msg.joint_names = names
@@ -3511,11 +3512,7 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
         now = time.monotonic()
         self._hand_mirror_last_rx = now
 
-        def _deg(joint: str, pos: int) -> float:
-            max_deg = 60.0 if joint == 'Rotate' else 90.0
-            lo, hi = ECI_POSN_OPEN[joint], ECI_POSN_CLOSED[joint]
-            frac = (float(pos) - lo) / float(hi - lo)
-            return max(0.0, min(max_deg, frac * max_deg))
+        _deg = _eci_posn_to_deg
 
         primary_rad = {
             'Thumb':  _math.radians(_deg('Thumb',  msg.thumb_pos)),

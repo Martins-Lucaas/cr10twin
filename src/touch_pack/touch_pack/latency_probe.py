@@ -34,14 +34,14 @@ Uso:
 
   # duration_s:=0  → captura até Ctrl-C.
 
-Saída (tudo em sensors/Data/latency/ — diretório VERSIONADO no git, para a
+Saída (tudo em data/latency/ — diretório VERSIONADO no git, para a
 análise posterior ser reproduzível a partir do repositório):
   latency_<sentido>_<ts>_raw.csv      as DUAS séries brutas (6 juntas, taxas
                                       nativas, relógio monotônico comum)
   latency_<sentido>_<ts>_aligned.csv  par reamostrado da junta usada
   latency_<sentido>_<ts>_result.json  resultado + metadados completos
   latency_<sentido>_<ts>.png          gráfico sobreposto (direto p/ o slide)
-Após as capturas: git add sensors/Data/latency && git commit.
+Após as capturas: git add data/latency && git commit.
 
 Parâmetros ROS:
   robot_ip     ''              IP do CR10; vazio → ~/.config/touch_pack/robot.json
@@ -63,10 +63,11 @@ import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor
 
 from sensor_msgs.msg import JointState
 
-from .constants import ARM_JOINTS, ROBOT_CONFIG_FILE, RUNS_DIR
+from .constants import ARM_JOINTS, ROBOT_CONFIG_FILE, LATENCY_DIR
 
 try:
     from .real_driver import CR10RealDriver, CR10RealDriverConfig
@@ -81,13 +82,18 @@ class LatencyProbe(Node):
 
     def __init__(self):
         super().__init__('latency_probe')
+        # Tipagem dinâmica nos numéricos: `-p duration_s:=20` vale tanto
+        # quanto `:=20.0`. Sem isso o rclpy recusa o INTEGER contra um default
+        # DOUBLE e o nó nem sobe — erro que só aparece na bancada, com o robô
+        # já ligado esperando. Toda leitura abaixo já faz float()/int().
+        num = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter('robot_ip', '')
         self.declare_parameter('direction', 'auto')
-        self.declare_parameter('duration_s', 20.0)
-        self.declare_parameter('poll_hz', 100.0)
-        self.declare_parameter('joint_index', -1)
-        self.declare_parameter('grid_dt_s', 0.004)
-        self.declare_parameter('max_lag_s', 0.6)
+        self.declare_parameter('duration_s', 20.0, num)
+        self.declare_parameter('poll_hz', 100.0, num)
+        self.declare_parameter('joint_index', -1, num)
+        self.declare_parameter('grid_dt_s', 0.004, num)
+        self.declare_parameter('max_lag_s', 0.6, num)
 
         self._lock = threading.Lock()
         self._sim: list[tuple[float, list[float]]] = []
@@ -303,8 +309,8 @@ class LatencyProbe(Node):
                 '  Correlação de pico baixa (<0.9) — sinal ruidoso; considere um '
                 'movimento mais amplo/lento e repetir.')
 
-        # ── Artefatos publicáveis (sensors/Data/latency/ é versionado) ───
-        out_dir = os.path.join(RUNS_DIR, 'latency')
+        # ── Artefatos publicáveis (data/latency/ é versionado) ───
+        out_dir = os.path.join(LATENCY_DIR, 'latency')
         os.makedirs(out_dir, exist_ok=True)
         ts = time.strftime('%Y%m%d_%H%M%S')
         tag = res['detected']

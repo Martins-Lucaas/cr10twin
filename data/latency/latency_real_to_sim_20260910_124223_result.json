@@ -1,0 +1,50 @@
+{
+  "timestamp": "20260910_124223",
+  "direction_requested": "real_to_sim",
+  "direction_detected": "real_to_sim",
+  "latency_ms": 71.44,
+  "lag_s_signed": -0.07144,
+  "sign_convention": "lag>0: REAL atrasa (Sim-to-Real); lag<0: SIM atrasa (Real-to-Sim)",
+  "peak_corr": 1.0,
+  "joint_used": "joint3",
+  "movement_amp_deg": 0.888,
+  "per_joint": {
+    "joint1": {
+      "lag_ms": -72.45,
+      "peak_corr": 0.9997,
+      "amp_deg": 0.426
+    },
+    "joint2": {
+      "lag_ms": -71.27,
+      "peak_corr": 1.0,
+      "amp_deg": 0.759
+    },
+    "joint3": {
+      "lag_ms": -71.44,
+      "peak_corr": 1.0,
+      "amp_deg": 0.888
+    },
+    "joint4": {
+      "lag_ms": -72.4,
+      "peak_corr": 0.9999,
+      "amp_deg": 0.886
+    },
+    "joint5": {
+      "lag_ms": -71.52,
+      "peak_corr": 1.0,
+      "amp_deg": 0.87
+    },
+    "joint6": {
+      "lag_ms": -72.48,
+      "peak_corr": 0.9999,
+      "amp_deg": 0.673
+    }
+  },
+  "n_samples_sim": 4893,
+  "n_samples_real": 2000,
+  "overlap_duration_s": 19.56,
+  "poll_hz": 100.0,
+  "grid_dt_s": 0.004,
+  "max_lag_s": 0.6,
+  "robot_ip": "192.168.5.2"
+}

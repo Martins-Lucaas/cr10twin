@@ -9,9 +9,7 @@
 \hline
 \textbf{Excitation} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & \textbf{MAE (deg)} & \textbf{RMSE (deg)} \\
 \hline
-Drag-teach (0.4--33.2 deg) & 34 & $71.6 \pm 0.2$ & $0.011 \pm 0.008$ & $0.023 \pm 0.019$ \\
-\hline
-GUI jog (2.9--3.9 deg) & 3 & $78.2 \pm 1.4$ & $0.116 \pm 0.017$ & $0.271 \pm 0.050$ \\
+Drag-teach (0.4--33.2 deg) & 24 & $131.2 \pm 9.5$ & $0.974 \pm 0.243$ & $1.632 \pm 0.358$ \\
 \hline
 \end{tabular}
 \label{tab:latency}
@@ -21,24 +19,24 @@ GUI jog (2.9--3.9 deg) & 3 & $78.2 \pm 1.4$ & $0.116 \pm 0.017$ & $0.271 \pm 0.0
 % caminho Real-to-Sim: o probe detectou real_to_sim nas 7 capturas.
 
 \begin{table}[t]
-\caption{Per-joint agreement between the twin and the physical arm during drag-teach mirroring, after compensating the measured lag}
+\caption{Per-joint agreement between the twin and the physical hand during drag-teach mirroring, after compensating the measured lag}
 \begin{center}
 \renewcommand{\arraystretch}{1.12}
 \begin{tabular}{|c|c|c|c|c|c|}
 \hline
-\textbf{Joint} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & \textbf{MAE (deg)} & \textbf{max (deg)} & \textbf{$r$} \\
+\textbf{Digit} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & \textbf{MAE (deg)} & \textbf{max (deg)} & \textbf{$r$} \\
 \hline
-joint1 & 6 & $71.5 \pm 0.2$ & 0.003 & 0.15 & 1.00000 \\
+Thumb & 4 & $131.2 \pm 4.0$ & 1.073 & 8.07 & 0.98998 \\
 \hline
-joint2 & 5 & $71.5 \pm 0.1$ & 0.004 & 0.18 & 0.99999 \\
+Index & 4 & $135.6 \pm 2.6$ & 1.029 & 6.79 & 0.99423 \\
 \hline
-joint3 & 7 & $71.5 \pm 0.1$ & 0.011 & 0.17 & 0.99999 \\
+Middle & 4 & $136.6 \pm 1.9$ & 0.907 & 6.48 & 0.99497 \\
 \hline
-joint4 & 7 & $71.7 \pm 0.4$ & 0.012 & 1.09 & 0.99998 \\
+Ring & 4 & $136.6 \pm 1.3$ & 0.902 & 6.51 & 0.99501 \\
 \hline
-joint5 & 5 & $71.5 \pm 0.2$ & 0.021 & 1.33 & 0.99999 \\
+Little & 4 & $135.9 \pm 2.3$ & 0.974 & 6.58 & 0.99456 \\
 \hline
-joint6 & 4 & $71.7 \pm 0.1$ & 0.014 & 0.58 & 1.00000 \\
+Rotate & 4 & $111.6 \pm 3.0$ & 0.962 & 7.88 & 0.97528 \\
 \hline
 \end{tabular}
 \label{tab:perjoint}

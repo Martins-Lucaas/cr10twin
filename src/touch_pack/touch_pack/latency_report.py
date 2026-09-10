@@ -87,14 +87,29 @@ def xcorr_lag(sig_s: np.ndarray, sig_r: np.ndarray, dt: float,
     return best_k * dt, peak
 
 
-def _read_raw(path: str) -> tuple[np.ndarray, np.ndarray]:
-    """(S, R) reamostrados na grade comum, em rad, 6 colunas cada."""
+def _joints_of(header: list[str]) -> list[str]:
+    """Juntas da captura, na ordem do cabeçalho do *_raw.csv.
+
+    O probe do braço grava `joint1_rad..joint6_rad`; o da mão grava
+    `Thumb_rad..Rotate_rad`. Ler o conjunto do arquivo, em vez de assumir o do
+    braço, é o que faz este relatório servir aos dois sem uma segunda cópia.
+    """
+    joints = [c[:-4] for c in header if c.endswith('_rad')]
+    if not joints:
+        raise ValueError('nenhuma coluna *_rad no cabeçalho')
+    return joints
+
+
+def _read_raw(path: str) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """(S, R) reamostrados na grade comum, em rad, + os nomes das juntas."""
     sim: list[tuple[float, list[float]]] = []
     real: list[tuple[float, list[float]]] = []
     with open(path, newline='') as fh:
-        for row in csv.DictReader(fh):
+        rd = csv.DictReader(fh)
+        joints = _joints_of(list(rd.fieldnames or []))
+        for row in rd:
             t = float(row['t_mono_s'])
-            q = [float(row[f'{j}_rad']) for j in ARM_JOINTS]
+            q = [float(row[f'{j}_rad']) for j in joints]
             (sim if row['source'] == 'sim' else real).append((t, q))
     if len(sim) < 50 or len(real) < 50:
         raise ValueError(f'amostras insuficientes (sim={len(sim)}, real={len(real)})')
@@ -104,9 +119,10 @@ def _read_raw(path: str) -> tuple[np.ndarray, np.ndarray]:
     if t1 - t0 < 2.0:
         raise ValueError('sobreposição temporal insuficiente entre as séries')
     grid = np.arange(t0, t1, GRID_DT_S)
-    S = np.column_stack([np.interp(grid, t_s, q_s[:, j]) for j in range(6)])
-    R = np.column_stack([np.interp(grid, t_r, q_r[:, j]) for j in range(6)])
-    return S, R
+    n = len(joints)
+    S = np.column_stack([np.interp(grid, t_s, q_s[:, j]) for j in range(n)])
+    R = np.column_stack([np.interp(grid, t_r, q_r[:, j]) for j in range(n)])
+    return S, R, joints
 
 
 def _condition(raw_path: str) -> str:
@@ -129,12 +145,12 @@ def _condition(raw_path: str) -> str:
 
 def analyze_capture(raw_path: str, min_amp_deg: float) -> list[dict]:
     """Uma linha por junta com movimento mensurável nesta captura."""
-    S, R = _read_raw(raw_path)
+    S, R, joints = _read_raw(raw_path)
     max_lag = int(round(MAX_LAG_S / GRID_DT_S))
     cond = _condition(raw_path)
     tag = os.path.basename(raw_path).replace('_raw.csv', '')
     out: list[dict] = []
-    for j, name in enumerate(ARM_JOINTS):
+    for j, name in enumerate(joints):
         amp = float(np.degrees(np.std(R[:, j])))
         if amp < min_amp_deg:
             continue
@@ -224,7 +240,8 @@ def _tex_condition_table(by_cond: dict[str, dict]) -> str:
     return tex
 
 
-def _tex_joint_table(by_joint: dict[str, dict], cond: str) -> str:
+def _tex_joint_table(by_joint: dict[str, dict], cond: str,
+                     joint_order: list[str], subsystem: str = 'arm') -> str:
     """Tabela por junta de UMA condição só.
 
     Misturar regimes de excitação aqui destrói exatamente a afirmação que a
@@ -233,14 +250,16 @@ def _tex_joint_table(by_joint: dict[str, dict], cond: str) -> str:
     que se moveu naquelas) saía com 74,3 ± 3,7 ms contra 71,4 ± 0,2 das
     vizinhas, e a leitura virava "a junta 3 é diferente", que é falso.
     """
+    noun = 'hand' if subsystem == 'hand' else 'arm'
+    head = 'Digit' if subsystem == 'hand' else 'Joint'
     tex = _TAB_HEAD % (
-        'Per-joint agreement between the twin and the physical arm during '
+        f'Per-joint agreement between the twin and the physical {noun} during '
         'drag-teach mirroring, after compensating the measured lag',
         '|c|c|c|c|c|c|')
-    tex += (r'\textbf{Joint} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & '
+    tex += (rf'\textbf{{{head}}} & \textbf{{N}} & \textbf{{$|\Delta t|$ (ms)}} & '
             r'\textbf{MAE (deg)} & \textbf{max (deg)} & \textbf{$r$} \\' '\n'
             r'\hline' '\n')
-    for name in ARM_JOINTS:
+    for name in joint_order:
         a = by_joint.get(name)
         if a is None:
             continue
@@ -274,15 +293,19 @@ def write_outputs(rows: list[dict], out_dir: str) -> tuple[str, str]:
     # mais representada, que é a homogênea — no dataset atual, drag teach.
     cond_main = max(by_cond, key=lambda c: by_cond[c]['n'])
     joint_rows = [r for r in rows if r['condicao'] == cond_main]
+    # Ordem das juntas: a do arquivo (dict preserva inserção), não a do braço —
+    # os *_raw.csv da mão trazem Thumb..Rotate.
+    joint_order = list(dict.fromkeys(r['junta'] for r in joint_rows))
+    subsystem = 'arm' if set(joint_order) <= set(ARM_JOINTS) else 'hand'
     by_joint = {j: _agg([r for r in joint_rows if r['junta'] == j])
-                for j in ARM_JOINTS if any(r['junta'] == j for r in joint_rows)}
+                for j in joint_order}
     tex_path = os.path.join(out_dir, 'latency_tables.tex')
     with open(tex_path, 'w') as fh:
         fh.write('% Gerado por `ros2 run touch_pack latency_report`.\n'
                  '% NÃO editar à mão — regerar após cada campanha.\n\n')
         fh.write(_tex_condition_table(by_cond))
         fh.write('\n')
-        fh.write(_tex_joint_table(by_joint, cond_main))
+        fh.write(_tex_joint_table(by_joint, cond_main, joint_order, subsystem))
     return csv_path, tex_path
 
 

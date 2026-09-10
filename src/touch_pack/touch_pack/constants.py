@@ -26,6 +26,60 @@ HAND_POINT_DEG = {'Thumb': 30.0, 'Index': 0.0, 'Middle': 80.0,
                   'Ring': 80.0, 'Little': 80.0, 'Rotate': 0.0}
 HAND_POINTING_RAD = {j: math.radians(v) for j, v in HAND_POINT_DEG.items()}
 
+# Curso angular de cada junta primária da mão, em graus (fim de curso do URDF).
+HAND_SPAN_DEG = {'Thumb': 90.0, 'Index': 90.0, 'Middle': 90.0,
+                 'Ring': 90.0, 'Little': 90.0, 'Rotate': 60.0}
+
+# Escala ECI real dos dígitos (calibrada na mão física em 06/07/2026): a
+# telemetria DigitPosnAll NÃO vai de 0 a 200 — o fim de curso mecânico
+# aberto lê ~47 (rotate ~67) e o fechado ~198 (rotate ~197).
+ECI_POSN_OPEN = {'Thumb': 47, 'Index': 47, 'Middle': 47,
+                 'Ring':  47, 'Little': 47, 'Rotate': 67}
+ECI_POSN_CLOSED = {'Thumb': 198, 'Index': 198, 'Middle': 198,
+                   'Ring':  198, 'Little': 198, 'Rotate': 197}
+
+
+# Faixa da junta DRIVER da mão no URDF, em radianos. Não é o ângulo da ponta
+# do dedo: 1,0 rad de driver produz ~163° na ponta do Index, pela cadeia de
+# juntas mimic. Autoridade única — `hand_pack.urdf_helpers` importa daqui para
+# aplicar o clamp no URDF, e `hand_deg_to_driver_rad` abaixo mapeia para cá.
+# Elas TÊM de ser o mesmo número: quando divergiram (a conversão mirava 0–90°
+# contra um teto de 57,3°), a mão simulada ceifou 30% da excursão dos dedos e
+# a campanha de latência de 10/09/2026 mediu ganho 0,77 em vez de 1,0.
+HAND_DRIVER_UPPER_RAD = {'Thumb': 1.00, 'Index': 1.00, 'Middle': 1.00,
+                         'Ring':  1.00, 'Little': 1.00, 'Rotate': 1.00}
+# `lower` calibrado — equivalente ao `open_limit` do DigitConfigMsg da mão real.
+HAND_DRIVER_LOWER_RAD = {'Thumb': 0.08, 'Index': 0.12, 'Middle': 0.12,
+                         'Ring':  0.12, 'Little': 0.12, 'Rotate': 0.00}
+
+
+def hand_deg_to_driver_rad(joint: str, deg: float) -> float:
+    """Pose em graus da mão REAL (0–90° dedos, 0–60° Rotate) → radiano da
+    junta driver do URDF.
+
+    É a fronteira entre os dois espaços angulares do sistema: o slider da GUI
+    e a mão física falam em graus de ponta de dedo; o Gazebo move o driver.
+    Mandar grau de dedo direto para o driver satura no teto de 1,0 rad — foi
+    o bug de 10/09/2026. Ver HAND_DRIVER_UPPER_RAD acima.
+    """
+    span = HAND_SPAN_DEG[joint]
+    lo, hi = HAND_DRIVER_LOWER_RAD[joint], HAND_DRIVER_UPPER_RAD[joint]
+    frac = min(max(float(deg) / span, 0.0), 1.0)
+    return lo + frac * (hi - lo)
+
+
+def eci_posn_to_deg(joint: str, pos: float) -> float:
+    """Contagem da telemetria DigitPosnAll → grau da junta primária.
+
+    Fica aqui, e não na GUI, porque o mirror real→sim e o hand_latency_probe
+    precisam da MESMA conversão: se as duas divergirem, a latência medida
+    passa a incluir uma diferença de escala que não existe no sistema.
+    """
+    span = HAND_SPAN_DEG[joint]
+    lo, hi = ECI_POSN_OPEN[joint], ECI_POSN_CLOSED[joint]
+    frac = (float(pos) - lo) / float(hi - lo)
+    return max(0.0, min(span, frac * span))
+
 # Limite de segurança: medição CANCELADA se a compressão exceder este valor.
 FORCE_ABORT_LIMIT_N = 15.0
 # Setpoint máximo selecionável na GUI.
@@ -263,6 +317,7 @@ FT_MODE_STREAM = 'stream'
 FT_MODE_POLLED = 'polled'
 FT_MODE_CHOICES = (FT_MODE_STREAM, FT_MODE_POLLED)
 
+FT_CHART_WINDOW_N   = 2000     # Chart_X1_Max / Chart_X2_Max — amostras
 FT_CHART_FORCE_MAX  = 200.0    # Chart_Y1_Max / Min — N
 FT_CHART_TORQUE_MAX = 50.0     # Chart_Y2_Max / Min — N·m
 
@@ -565,6 +620,27 @@ def _resolve_runs_dir() -> str:
 
 
 RUNS_DIR = _resolve_runs_dir()
+
+
+def _resolve_latency_dir() -> str:
+    """Onde os probes de latência gravam: `<repo>/data`, NUNCA sensors/Data.
+
+    RUNS_DIR aponta para `sensors/Data`, que o .gitignore ignora inteiro (1,2
+    GB de runs de palpação, com arquivos que o GitHub recusa). As medições de
+    latência são pequenas (~2 MB por campanha) e sustentam o artigo, então
+    moram em `data/`, versionado. Gravar direto aqui elimina o passo manual de
+    copiar de sensors/ para data/ — passo que já fez uma campanha inteira
+    ficar invisível ao git.
+    """
+    env = os.environ.get('TOUCH_PACK_LATENCY_DIR')
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    if _REPO_ROOT:
+        return os.path.join(_REPO_ROOT, 'data')
+    return os.path.join(RUNS_DIR, 'latency_runs')
+
+
+LATENCY_DIR = _resolve_latency_dir()
 
 
 def _lc_share_calib() -> str | None:

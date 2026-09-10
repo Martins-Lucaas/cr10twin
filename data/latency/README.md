@@ -20,7 +20,7 @@ ros2 run touch_pack latency_probe --ros-args \
     -p direction:=real_to_sim -p duration_s:=20.0
 ```
 
-Repetir **3–5 capturas por sentido**. Depois: `git add sensors/Data/latency`
+Repetir **3–5 capturas por sentido**. Depois: `git add data/latency`
 e commit — a análise final é feita a partir destes arquivos.
 
 ## O que cada arquivo contém

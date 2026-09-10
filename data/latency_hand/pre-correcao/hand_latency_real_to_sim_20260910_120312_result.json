@@ -1,0 +1,53 @@
+{
+  "timestamp": "20260910_120312",
+  "subsystem": "hand",
+  "direction_requested": "auto",
+  "direction_detected": "real_to_sim",
+  "latency_ms": 140.16,
+  "lag_s_signed": -0.14016,
+  "sign_convention": "lag>0: REAL atrasa (Sim-to-Real); lag<0: SIM atrasa (Real-to-Sim)",
+  "peak_corr": 0.9964,
+  "joint_used": "Index",
+  "movement_amp_deg": 34.074,
+  "per_joint": {
+    "Thumb": {
+      "lag_ms": -138.24,
+      "peak_corr": 0.9973,
+      "amp_deg": 30.282
+    },
+    "Index": {
+      "lag_ms": -140.16,
+      "peak_corr": 0.9964,
+      "amp_deg": 34.074
+    },
+    "Middle": {
+      "lag_ms": -140.13,
+      "peak_corr": 0.9935,
+      "amp_deg": 32.942
+    },
+    "Ring": {
+      "lag_ms": -139.05,
+      "peak_corr": 0.9944,
+      "amp_deg": 32.301
+    },
+    "Little": {
+      "lag_ms": -137.24,
+      "peak_corr": 0.9953,
+      "amp_deg": 31.629
+    },
+    "Rotate": {
+      "lag_ms": -122.68,
+      "peak_corr": 0.9937,
+      "amp_deg": 20.27
+    }
+  },
+  "n_samples_sim": 5019,
+  "n_samples_real": 2759,
+  "sim_rate_hz": 250.87,
+  "real_telemetry_rate_hz": 138.88,
+  "real_quantization_deg": 0.596,
+  "overlap_duration_s": 19.86,
+  "grid_dt_s": 0.004,
+  "max_lag_s": 0.6,
+  "eci_prefix": "/covvi/hand"
+}

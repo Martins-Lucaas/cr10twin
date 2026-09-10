@@ -22,5 +22,7 @@ src/eci_ros-main/
 sensors/Data/
 
 # data/ NÃO é ignorado, de propósito: é onde ficam os dados que sustentam o
-# artigo (data/latency/, ~5 MB). O latency_probe grava em sensors/Data/latency/,
-# que a regra acima ignora — copie de lá para cá o que for publicar.
+# artigo (data/latency/ e data/latency_hand/, ~7 MB). Os probes de latência
+# gravam DIRETO em data/ (constants.LATENCY_DIR) — não em sensors/Data/, que a
+# regra acima ignora. Antes eles gravavam lá e o passo de copiar era manual;
+# uma campanha inteira da mão ficou invisível ao git por causa disso.

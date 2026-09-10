@@ -5,31 +5,23 @@ from __future__ import annotations
 import re
 from typing import Dict
 
+from touch_pack.constants import (
+    HAND_DRIVER_LOWER_RAD, HAND_DRIVER_UPPER_RAD)
+
 
 # Limites factíveis das juntas, baseados no manual técnico da COVVI Hand
-# (CV-000918-TC Rev.
-HAND_DRIVER_LIMITS: Dict[str, float] = {
-    'Thumb':  1.00,   # ~57° driver → 102° na ponta
-    'Index':  1.00,   # ~57° driver → 163° na ponta (wrap de power-grip)
-    'Middle': 1.00,
-    'Ring':   1.00,
-    'Little': 1.00,
-    'Rotate': 1.00,
-}
-
+# (CV-000918-TC Rev. — ~57° de driver dão 102° na ponta do Thumb e 163° na do
+# Index, pelo wrap de power-grip da cadeia mimic).
+#
 # Com `enable_inter_finger_self_collision` ativo (skin + palm em
-# self_collide=true), a falange distal NÃO atravessa a palma mesmo no cap
-
-# `lower` calibrado — equivalente ao `open_limit` do DigitConfigMsg da mão
-# real.
-HAND_DRIVER_LOWER: Dict[str, float] = {
-    'Thumb':  0.08,
-    'Index':  0.12,
-    'Middle': 0.12,
-    'Ring':   0.12,
-    'Little': 0.12,
-    'Rotate': 0.00,   # oposição mantém neutra (palma aberta)
-}
+# self_collide=true), a falange distal NÃO atravessa a palma mesmo no cap.
+#
+# Os VALORES moram em touch_pack.constants: o clamp aplicado aqui no URDF e a
+# conversão que alimenta o Gazebo (`hand_deg_to_driver_rad`) precisam ser o
+# mesmo número. Enquanto foram dois, o URDF ceifava em 1,0 rad enquanto a GUI
+# mandava até 1,57 — a mão simulada perdia 30% da excursão dos dedos.
+HAND_DRIVER_LIMITS: Dict[str, float] = dict(HAND_DRIVER_UPPER_RAD)
+HAND_DRIVER_LOWER: Dict[str, float] = dict(HAND_DRIVER_LOWER_RAD)
 
 
 def clamp_hand_joint_limits(urdf_body: str) -> str:

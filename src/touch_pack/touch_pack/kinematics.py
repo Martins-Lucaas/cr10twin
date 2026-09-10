@@ -35,6 +35,8 @@ from __future__ import annotations
 import math
 import numpy as np
 
+from .constants import HAND_DRIVER_LOWER_RAD, HAND_DRIVER_UPPER_RAD
+
 _PI2 = math.pi / 2
 
 # Geometria do braço (constantes físicas em metros)
@@ -611,17 +613,10 @@ HAND_CONFIGS: dict[str, dict[str, float]] = {
     },
 }
 
-# Limites factíveis derivados de hand_pack.urdf_helpers.HAND_DRIVER_LIMITS.
-HAND_LIMITS: dict[str, float] = {
-    'Thumb': 1.0, 'Index': 1.0, 'Middle': 1.0,
-    'Ring':  1.0, 'Little': 1.0, 'Rotate': 1.0,
-}
-
-# ``lower`` calibrado — espelha hand_pack.urdf_helpers.HAND_DRIVER_LOWER.
-HAND_LOWER: dict[str, float] = {
-    'Thumb': 0.08, 'Index': 0.12, 'Middle': 0.12,
-    'Ring':  0.12, 'Little': 0.12, 'Rotate': 0.0,
-}
+# Faixa da junta driver — os valores vêm de constants.py, autoridade única
+# compartilhada com o clamp do URDF em hand_pack.urdf_helpers.
+HAND_LIMITS: dict[str, float] = dict(HAND_DRIVER_UPPER_RAD)
+HAND_LOWER: dict[str, float] = dict(HAND_DRIVER_LOWER_RAD)
 
 
 # FK 3D completa da mão COVVI Origens dos MCPs em hand_base_link, extraídas
