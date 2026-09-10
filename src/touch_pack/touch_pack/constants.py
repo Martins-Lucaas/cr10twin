@@ -268,6 +268,7 @@ FT_USB_VIDS = (
 )
 
 
+FT_TCP_HOST = '192.168.5.2'   # mesmo IP do CR10 (ver real_driver)
 FT_TCP_PORT = 60000
 
 FT_FORCE_AXIS_DEFAULT = 'z'
