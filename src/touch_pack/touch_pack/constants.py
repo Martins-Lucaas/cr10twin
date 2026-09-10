@@ -30,76 +30,17 @@ HAND_POINTING_RAD = {j: math.radians(v) for j, v in HAND_POINT_DEG.items()}
 FORCE_ABORT_LIMIT_N = 15.0
 # Setpoint máximo selecionável na GUI.
 FORCE_SETPOINT_MAX_N = 10.0
-
-# Força mínima que caracteriza CONTATO. Fonte única: é o mesmo limiar que o
-# explorer usa como gatilho de halt na descida (_CONTACT_ON_N) e que a GUI usa
-# para acender o indicador "in contact". Mora aqui porque os dois precisam
-# dele — a GUI tinha um 0.2 cravado à mão que nunca acompanhou os retunes do
-# limiar (0,11 → 0,06 → 0,10) e abria uma zona cega de 0,10–0,20 N onde o robô
-# já considerava que tocou e a tela ainda dizia "no contact".
-# A justificativa do VALOR (σ da célula em repouso, carga inercial do traverse)
-# está no bloco de _CONTACT_ON_N em tactile_explorer.py — não duplicar aqui.
-#
-# 28/08/2026: 0,10 → 0,12 N. O limiar é o ORÇAMENTO do primeiro impacto, e
-# `crawl_v_ms` divide a velocidade de rastejo por ele — a 0,10 N a descida
-# saía a 12 µm/s e uma palpação de 6,5 mm levava 532 s. Cabe subir porque o
-# filtro re-sintonizado em 28/08 entrega 3σ = 91 mN: 0,12 N continua acima do
-# ruído, com 29 mN de folga, enquanto 0,10 N ficava a 9 mN dele.
 CONTACT_ON_N = 0.12
 # Histerese do INDICADOR — só da tela, o controle não a usa. Acende em
 # CONTACT_ON_N e só apaga abaixo desta fração: com o indicador exatamente igual
 # ao gatilho, o verde pisca em ar livre toda vez que o ruído cruza o limiar.
 CONTACT_OFF_FRAC = 0.7
 
-# ── Banda de força do HOLD — fonte única GUI ↔ explorer ───────────────
-# Mora aqui pelo mesmo motivo que CONTACT_ON_N: os DOIS precisam dela, e
-# enquanto a GUI carregava um 0,15 N cravado à mão o retune de 19/08/2026
-# (que derivou a banda do ruído MEDIDO da célula) nunca chegava a valer num
-# run lançado pela tela — a mensagem de PalpationStart sobrescreve o default
-# do explorer sempre que traz hold_tol_n > 0, e ela sempre trazia.
-#
-# O piso da banda é o RUÍDO da célula: não existe banda mais estreita que a
-# incerteza da medida. Era 0,15 N solto (~6,5σ do HX711), que num alvo de
-# 0,1 N abria [−0,05; +0,25] N — incluía força ZERO, e overshoot deixava de
-# ser mensurável.
 FORCE_NOISE_SIGMA_N = 0.023  # N: σ em repouso. HX711, 17/08/2026, 2390
-                             # quadros de MANUAL/20260817_142719.
-# RE-MEDIDO com a FA7155 em 07/09/2026, e o valor FICA: σ = 0,0219 N em
-# /load_cell/force_net com 2552 amostras em repouso, SEM filtro (ft_filter
-# false) — 5% abaixo do HX711, então 0,023 continua válido e conservador. Não
-# trocar por 0,0219: tudo que é derivado daqui (a banda 4σ do hold, o
-# _QS_SETTLE_DRIFT_N 2σ do explorer, a folga de CONTACT_ON_N) foi sintonizado
-# com este número, e as duas células cabem nele.
-#
-# Consequência para o CONTACT_ON_N: cru, a FA7155 dá 3σ = 66 mN, o que deixa
-# 54 mN de folga até os 0,12 N — MAIS folga que os 29 mN sobre os 91 mN do
-# HX711 filtrado, para os quais o limiar foi sintonizado em 28/08. Ou seja,
-# nem sem o One-Euro a margem de contato estreitaria; ela cresceria.
-# (Com ft_filter true a mesma medida dá σ = 0,0020 N. O filtro compra isso com
-# ~80 ms de atraso no gatilho de contato, e AINDA ASSIM ele é o DEFAULT do
-# launch — `ft_filter` nasce em 'true' em tactile_cell.launch.py. Este bloco
-# já dizia o contrário e estava errado: o número que a MALHA vê é o filtrado,
-# e é o FORCE_CTRL_SIGMA_N abaixo, não este σ cru, que dimensiona o hold.)
-# σ do sinal que a MALHA vê — que deixou de ser o do sensor cru quando o
-# One-Euro passou a nascer ligado. O explorer consome /load_cell/force_net,
-# que é filtrado; dimensionar a banda contra o ruído CRU a superestimava em
-# uma ordem de grandeza. MEDIDO na coleta MANUAL/20260907_113343: σ = 0,0015 N
-# (desvio da diferença amostra-a-amostra ÷ √2, sobre as 20 732 amostras de
-# HOLD, taxa de 399,7 Hz).
-#
-# ATENÇÃO ao acoplamento: este número só vale com `ft_filter` LIGADO. Com
-# ft_filter:=false o que chega à malha tem σ = 0,0219 N, e a banda de 0,02 N
-# abaixo fica DENTRO do ruído — o hold nunca fecharia. Mexeu num, confira o
-# outro.
+
 FORCE_CTRL_SIGMA_N = 0.0015
 
-# Meia-banda do HOLD: 0,02 N, pedido de bancada em 07/09/2026 depois da
-# coleta acima. Era 0,092 N (4σ do HX711 CRU), e a coleta mostrou por que
-# incomodava: com σ de 0,0015 N a banda valia ~60σ, larga a ponto de aceitar
-# como "estável" um patamar que ainda derivava 71 mN em 10 s.
-# 0,02 N são ~13σ do sinal filtrado — bem acima dos 4σ que o
-# test_setpoint_band exige para a janela de estabilidade não se resetar
-# sozinha, e ainda assim 4,6× mais estreita que a banda antiga.
+
 HOLD_TOL_N     = 0.02
 HOLD_TOL_SIGMA = HOLD_TOL_N / FORCE_CTRL_SIGMA_N   # ≈ 13,3σ
 # Fração do setpoint. Era 5 %, o que fazia a banda valer 0,10 N num alvo de
@@ -115,65 +56,18 @@ def hold_tol_n(target_f: float) -> float:
     poder mostrar (e mandar) o mesmo número em vez de um default próprio."""
     return max(HOLD_TOL_N, HOLD_TOL_PCT * abs(float(target_f)))
 
-# ── Célula axial de 100 kg (XIAO ESP32C6 + HX711) ─────────────────────
-# A célula da BANCADA. Ponte de extensômetros de 100 kg lida por um HX711 e
-# carimbada por um XIAO ESP32C6, que empurra linhas ASCII pela USB. O driver é
-# o `force_receiver` (ver force_receiver_node.py) e o formato do quadro está em
-# lc_serial.py. O firmware mora em `sensors/ForceDriver/`.
-#
-# A alternativa é a FA7155 de 6 eixos (bloco seguinte, `force_sensor:=ft6`).
-# Os DOIS publicam `/load_cell/force_net`; só um pode rodar por vez.
+
 LC_USB_VIDS = (
     0x303A,   # Espressif — o XIAO ESP32C6 só tem USB Serial/JTAG, sempre este VID
 )
 LC_SERIAL_BAUD = 115200       # Serial.begin() do main.cpp
-# O RATE desta placa está em DVDD, então o HX711 CONVERTE a ~82 Hz (período
-# medido: 12135–12154 µs), e o firmware lê de propósito MAIS DEVAGAR: impõe
-# 40 ms entre leituras (HX_PERIOD_US no main.cpp). A guarda é o que impede o
-# loop de relojoar o chip antes de a conversão terminar, o que o dessincroniza
-# de forma permanente.
-#
-# TENTOU-SE ENTREGAR AS 82 Hz em 28/08/2026, sincronizando pela borda de
-# descida do DOUT em vez do relógio, e a bancada recusou: o MESMO binário caiu
-# de 58,8 Hz para 11,8 Hz ao longo de dez minutos, com os travamentos do HX711
-# subindo de 112 para 160 e a placa entrando em ciclo de reboot. A borda
-# funcionava (dt cravado em 12141 µs, jitter de 7 µs) — o que não sustentava a
-# taxa era o caminho até o dado. Ler mais rápido não é ler melhor.
-#
-# 40 ms é a guarda que sustentou uso prolongado: 6 minutos contínuos a 24,4 Hz
-# com ZERO power-cycles, zero timeouts, zero leituras recusadas e dt de
-# 41000 µs (p99 41000, máx 41087). 20 ms passou em 60 s e dessincronizou
-# depois de alguns minutos — o oscilador RC do HX711 deriva com temperatura, e
-# uma guarda perto do período de conversão perde a margem quando o chip
-# esquenta. O que compra robustez é a MARGEM, não a taxa nominal.
-#
-# Este número é a taxa ENTREGUE, não a do conversor: é ela que o receiver e a
-# GUI usam para julgar perda no caminho. Medido: 24,4 Hz.
-#
-# Este número é a taxa ENTREGUE, não a do conversor: é ela que o receiver e a
-# GUI usam para julgar perda no caminho.
-#
-# ELE NÃO É DECORATIVO — dois parâmetros do force_receiver saem DELE, e
-# mudá-lo sem mudá-los desloca os dois em silêncio:
-#   janela do tare   max(8, rate × _TARE_WIN_S)   → 2 s de janela
-#   passo do auto-zero  1/(_AUTOZERO_TAU_S × rate) → τ de 4 s
-# Deixá-lo em 24 com o firmware a 82 Hz encurtaria a janela do tare para
-# 0,58 s e aceleraria o auto-zero para τ = 1,2 s — e um auto-zero de 1,2 s com
-# banda de 0,30 N começa a comer força de contato REAL. O
-# `test_a_taxa_nominal_governa_as_janelas_do_receiver` trava essa relação.
-#
-# A MEDIR: a taxa efetiva de bancada com o firmware de borda (o
-# `lc_health_probe` reporta). 82 é o nominal do conversor; se a entrega ficar
-# consistentemente abaixo, é este número que muda.
+
 LC_NOMINAL_RATE_HZ = 24.0
 # Piso abaixo do qual o receiver reclama: nesta faixa não é mais "célula
 # lenta", é linha engasgando ou HX711 sem amostra pronta.
 LC_MIN_RATE_HZ = 5.0
 
-# Conversão counts → volts feita NO FIRMWARE: v_sensor = counts·AVDD/2²⁴, já
-# no domínio ×PGA. MANTER SINCRONIZADO com COUNTS_TO_V do
-# sensors/ForceDriver/src/main.cpp — é o par que faz o volt do CSV significar
-# a mesma coisa dos dois lados do cabo.
+
 LC_HX711_AVDD_V   = 3.3
 LC_HX711_BITS     = 24
 LC_HX711_GAIN     = 128       # canal A
@@ -199,11 +93,7 @@ LC_NOMINAL_V_PER_N = (
 # Fundo de escala do ADC no mesmo domínio: ±0,5·AVDD/gain = ±12,89 mV. Leitura
 # além disto não é força, é entrada saturada ou fiação errada.
 LC_FS_VOLTAGE_V = 0.5 * LC_HX711_AVDD_V / LC_HX711_GAIN
-# O MESMO corte em counts: ±2²⁴/(2·128) = ±65536 exatos. Espelha o
-# HX_FS_COUNTS do main.cpp, e é ELE que o receiver aplica quando o quadro traz
-# o 5º campo. Cortar no inteiro e cortar no volt não são a mesma conta na
-# borda: o que chega do fio já vem com o offset do firmware subtraído, então
-# um |v| comparado contra LC_FS_VOLTAGE_V está deslocado pelo próprio zero.
+
 LC_FS_COUNTS = 2 ** LC_HX711_BITS // (2 * LC_HX711_GAIN)
 
 # Mínimo de pontos para o wizard aceitar um ajuste. Dois pontos SEMPRE dão
@@ -218,24 +108,6 @@ LC_SLOPE_TOL_FRAC = 0.5
 
 
 def lc_load_calibration(path: str):
-    """Lê a calibração do JSON: `(slope, intercept, pontos)` ou None.
-
-    LEITOR ÚNICO do arquivo, e é isso que ele existe para ser. O
-    `force_receiver` quer a reta, o wizard da GUI quer a reta E os pontos que
-    a produziram, e qualquer reprocessamento offline quer os dois — três
-    leitores separados divergiriam no primeiro campo com dois nomes.
-
-    E há um campo com dois nomes: `intercept` é o V₀ da reta, `zero_voltage` é
-    o alias histórico do MESMO número. Arquivos anteriores ao campo `intercept`
-    só trazem o alias, e recusá-los invalidaria calibrações boas que ninguém
-    tem como refazer sem as massas padrão na mão.
-
-    Os pontos saem como `(massa_kg, forca_N, v_sensor)` com a FORÇA DERIVADA
-    da massa, e não lida do arquivo: `force_n` gravado é só `massa × g`, e
-    derivá-lo aqui garante que um arquivo escrito com outro valor de g não
-    entorte um reajuste. Ponto sem massa ou sem tensão é descartado — meio
-    ponto é pior que nenhum.
-    """
     try:
         with open(path, encoding='utf-8') as f:
             d = json.load(f)
@@ -258,22 +130,7 @@ def lc_load_calibration(path: str):
 
 
 def lc_fit_slope(points, v_zero: float):
-    """Ajusta `v = slope·F + v_zero` com o V₀ FIXO. Devolve (slope, pior_res).
 
-    `points` são pares `(forca_N, v_sensor)`; None se não houver span de força.
-
-    POR QUE O V₀ NÃO É AJUSTADO. Ele é MEDIDO — é a média de uma janela inteira
-    de amostras com a célula descarregada, e é o ponto mais bem determinado de
-    toda a calibração. Deixá-lo flutuar num ajuste de dois parâmetros joga essa
-    informação fora e ainda permite que o resultado contradiga a medição: nos
-    7 pontos que vieram com esta célula, o ajuste livre devolve V₀ = −4,29e-5 V
-    contra os +2,77e-5 V medidos, e o slope sai 0,8 % diferente. 0,8 % de
-    escala de força é o tipo de erro que nunca aparece como falha — só como um
-    ensaio que não bate com o outro.
-
-    Este é o método que produziu a calibração em vigor no repo, e o teste
-    `test_lc_calibration_fit` o trava contra o arquivo.
-    """
     den = math.fsum(f * f for f, _v in points)
     if den <= 0.0:
         return None
@@ -285,60 +142,20 @@ def lc_fit_slope(points, v_zero: float):
 
 
 def lc_force_n(v_sensor: float, slope: float, intercept: float) -> float:
-    """Força em newtons a partir da tensão da ponte (domínio ×PGA).
 
-    FONTE ÚNICA da conta: o `force_receiver`, o wizard de calibração e
-    qualquer reprocessamento offline de CSV têm de usar ESTA função, senão o
-    N do gráfico e o N do log deixam de ser o mesmo N.
-
-    A calibração é feita em COMPRESSÃO (célula apontada para cima, massas
-    padrão em cima), então o resultado é positivo comprimindo e negativo
-    tracionando qualquer que seja a polaridade da fiação — o sinal do `slope`
-    absorve a inversão. Slope nulo/ausente devolve 0,0: sem calibração não há
-    força, e devolver um número inventado seria pior que devolver zero.
-    """
     s = float(slope)
     if not s:
         return 0.0
     return (float(v_sensor) - float(intercept)) / s
 
 
-# ── Célula de 6 eixos FA7155 (RS485 em modo ATIVO) ────────────────────
-# Substitui a célula axial de 1 eixo. Não há placa nossa no caminho: o sensor
-# fala RS485 direto com o PC por um conversor USB (ZK-U485/CH340), e o driver
-# é o ft_receiver. Ver ft_serial.py para o formato do quadro.
-#
-# BAUD E TAXA SÃO DO EXEMPLAR, NÃO DO CASO GERAL DO MANUAL. Confirmado em
-# 26/08/2026 na bancada: a unidade montada no flange fala 1 Mbps e entrega
-# 1 kHz — e não os 115200/250 Hz que o manual dá como default do caso geral.
-# Estes dois números são a FONTE DE VERDADE do repo: ft_serial, ft_tcp,
-# ft_receiver e a aba "Load cell" da GUI leem daqui. Se a unidade for
-# reconfigurada pelo canal Modbus (Send_Baud_rate / Send_Frequency), é aqui
-# que o novo valor entra.
 FT_SERIAL_BAUD  = 1_000_000   # exemplar da bancada (manual §4.3 dá 115200 como
                               # default do caso geral)
 FT_FRAME_HEADER = b'\x53\x54'
 FT_FRAME_LEN    = 28          # 2 (cabeçalho) + 6×float32 + 2 (CRC-16/MODBUS)
 # Ordem dos seis canais dentro do quadro — é ela que dá nome às colunas.
 FT_AXES = ('fx', 'fy', 'fz', 'mx', 'my', 'mz')
-# Taxa que a bancada ENTREGA — não a que o sensor produz. O exemplar é de
-# 1 kHz (manual §3.1: a série aceita 500–1000 Hz sob encomenda, e esta unidade
-# veio no topo da faixa), mas ele é lido em modo POLLED, e aí cada amostra
-# custa um round-trip USB inteiro. Medido em 07/09/2026 pelo conversor CH343:
-# 458 Hz cravados por 12 s, 0 timeouts, 0 erros — o teto do FIO a 1 Mbps é
-# 2273 Hz, então quem limita é a latência do conversor, não a linha 485.
-# É dele que a aba "6 Axes" tira a faixa de "taxa saudável" e, desde
-# 07/09/2026, o PASSO do laço polled (`ft_poll_rate_hz`).
-#
-# Por que 400 e não os 458 medidos: 458 Hz é o teto de roda-livre, o que sobra
-# depois da latência do USB quando a máquina está ociosa. Pedir o teto não dá
-# taxa estável — dá a taxa que sobrar, e ela cai (405 Hz medidos com a GUI e
-# dois assinantes no ar) e volta conforme a carga. Como o dt é o que o
-# One-Euro e o explorer consomem, um dt CONSTANTE vale mais que um dt máximo:
-# com passo fixo abaixo do teto o laço absorve o pico em vez de repassá-lo.
-# Os ~13% de folga são o orçamento dessa absorção.
-# Volte para 1000.0 junto com o modo stream, se ele for destravado (ver
-# FT_MODBUS_MAP): lá não há round-trip e o teto é outro.
+
 FT_NOMINAL_RATE_HZ = 400.0
 # Taxa que o SENSOR produz, que é outra coisa: é o que está gravado na unidade
 # (Send_Frequency) e o que a GUI pré-seleciona no combo "Set rate (Hz)" — esse
@@ -365,31 +182,11 @@ FT_MAX_RATE_HZ = ft_max_rate_hz()   # ≈ 3571 Hz a 1 Mbps
 # Abaixo disto o receiver avisa: cabo ruim, baud errado ou taxa de fábrica
 # diferente da configurada.
 FT_MIN_RATE_HZ = 100.0
-# Fundo de escala do FA7155 na bancada. Serve de DUAS coisas: sanidade (uma
-# leitura muito além disto é ruído de sincronismo, não força) e escala das
-# barras da aba "6 Axes".
-#
-# 19/08/2026: confirmado pela PLAQUETA da unidade montada, que diz
-# "FA7155D-400N/20NM". A variante oscilou entre B e D nas notas de hoje, todas
-# baseadas em relato; a plaqueta é a fonte física e prevalece. A tabela de
-# variantes (datasheet da série, p. 1) confirma D = 400 N / 20 N·m.
-#
-# ATENÇÃO: isto é FUNDO DE ESCALA (capacidade nominal), NÃO o limite de
-# deformação. A sobrecarga segura é outro número, que vem do datasheet — ver
-# FT_SAFE_OVERLOAD_PCT abaixo.
+
 FT_RATED_FORCE_N   = 400.0
 FT_RATED_TORQUE_NM = 20.0
 
-# Sobrecarga segura, em % do fundo de escala: acima disto o fabricante não
-# garante retorno ao zero (deformação permanente). None = desconhecido, e a
-# GUI então avisa que não pode desenhar a faixa de risco em vez de inventar
-# um limite.
-#
-# 19/08/2026: preenchido com o datasheet da série
-# (Docs/"FA7155 SeriesSix-axis force sensor.pdf", tabela da p. 1, linha
-# "Overload level(%FS)"), que dá 300 % para os quatro modelos A/B/C/D. É a
-# mesma linha que o manual do modo ativo traduz como "Anti-G % 300".
-# Em N, para a variante D da bancada: 3 × 400 = 1200 N e 3 × 20 = 60 N·m.
+
 FT_SAFE_OVERLOAD_PCT = 300.0
 
 # Rótulo e unidade de cada eixo, na ordem do quadro (FT_AXES).
@@ -416,50 +213,12 @@ FT_USB_VIDS = (
     0x067B,   # Prolific — PL2303
 )
 
-# ── Rota alternativa: RS485 do FLANGE, via porta 60000 do controlador ──
-# Mesmo sensor e mesmo quadro; muda só o cano. O controlador CR expõe a 485 do
-# conector aviação do punho como um socket TCP cru: o guia TCP/IP, no exemplo 3
-# do ModbusCreate, diz que a 60000 é "the 485 interface at the end of the robot
-# arm". Verificado na bancada — 192.168.5.2:60000 aceita conexão externa.
-# Escolha entre os dois transportes pelo parâmetro `ft_transport` do nó.
-FT_TCP_HOST = '192.168.5.2'   # mesmo IP do CR10 (ver real_driver)
+
 FT_TCP_PORT = 60000
-# Eixo do FA7155 que faz o papel da antiga célula axial, e o sinal que o põe na
-# convenção do sistema (COMPRESSÃO POSITIVA).
-#
-# Fz+ aponta para FORA da face da ferramenta (figura 2 do manual). Ao empurrar
-# a ponteira contra a amostra, a reação entra no sensor e o Fz medido fica
-# NEGATIVO — daí o sinal −1. CONFIRA na bancada com `ft_probe.py` antes do
-# primeiro ensaio: se apertar a ponteira der força negativa, inverta o
-# parâmetro `ft_force_sign` do nó.
+
 FT_FORCE_AXIS_DEFAULT = 'z'
 FT_FORCE_SIGN_DEFAULT = -1.0
 
-# ── Canal de COMANDO Modbus RTU do FA7155 ─────────────────────────────
-# Até 26/08/2026 este repo tratava a célula como talker passivo. A análise do
-# cliente de fábrica (Six_Axis_FT.exe, Qt5 — ver ft_modbus.py) mostrou que o
-# sensor é também um ESCRAVO Modbus RTU na mesma linha 485, e que os comandos
-# Set_Zero / Send_Frequency / Send_ModBus_ID / Send_Baud_rate / StartReading
-# existem. O que o binário NÃO entrega são os endereços: são constantes
-# numéricas no código, não strings.
-#
-# ┌─ COMO PREENCHER (uma sessão de bancada, ~30 min) ──────────────────┐
-# │ 1. Ligue o FA7155 no conversor USB-RS485.                          │
-# │ 2. Abra o cliente de fábrica e conecte na aba "Modbus".            │
-# │ 3. Capture a porta serial (Portmon, ou um 2º adaptador em escuta   │
-# │    na linha 485 — só RX, sem TX, para não colidir).                │
-# │ 4. Acione UM comando de cada vez e anote o quadro que sai:         │
-# │       <slave> <0x06|0x10> <addr_hi> <addr_lo> <valor…> <crc_lo>    │
-# │       <crc_hi>                                                     │
-# │ 5. addr = (addr_hi<<8)|addr_lo → é o número que entra aqui.        │
-# │ 6. Ponha FT_MODBUS_MAP_CONFIRMED = True.                           │
-# └────────────────────────────────────────────────────────────────────┘
-#
-# ENQUANTO ISTO FOR False, `FtDevice` RECUSA TODA ESCRITA. Não é excesso de
-# zelo: endereço errado troca o node ID (e você perde o escravo na linha) ou
-# muda o baud para um que o host não fala mais — e o sensor não tem botão de
-# reset de fábrica. Leitura continua liberada: no pior caso o escravo devolve
-# exceção 0x02 (endereço ilegal), que não altera nada nele.
 FT_MODBUS_MAP_CONFIRMED = False
 
 # None = endereço desconhecido. Os *_value/_on/_off são os payloads, que a
@@ -477,24 +236,6 @@ FT_MODBUS_MAP: dict = {
     'device_id':  None,   # leitura do painel "Device ID"
 }
 
-# ── Leitura POLLED (o modo que o HMI/cliente de fábrica usa) ──────────
-# CONFIRMADO 26/08/2026 pela tela de comando do HMI, conferida byte a byte:
-#
-#     requisição   01 03 00 03 00 0C B5 CF
-#     resposta     01 03 18 <24 B = 6x float32 LE> 10 A3
-#
-# Os dois CRCs fecham com crc16_modbus() e os 24 bytes decodificam para 50,0
-# nos seis eixos (o valor de exemplo da tela). test_ft_polled.py usa esses
-# dois quadros como vetores dourados, no mesmo espírito do test_ft_hkvl56.
-#
-# Isto é um caminho DIFERENTE do stream "ST" de 28 bytes: aqui o host é
-# MESTRE e pergunta, em vez de escutar um talker. Os dois convivem na mesma
-# linha 485 e o parâmetro `ft_mode` do nó escolhe qual usar.
-#
-# Detalhe que decide o parser: a resposta traz BYTECOUNT (0x18), não o
-# endereço inicial. Ou seja, o FA7155 fala o enquadramento Modbus PADRÃO, e
-# NÃO o estilo HKVL-56 (que põe 2 bytes de endereço no lugar e teria 30
-# bytes). Use STYLE_STANDARD com count=12 ao decodificar.
 FT_MODBUS_DATA_ADDR = 0x0003   # holding register inicial dos seis eixos
 FT_MODBUS_DATA_REGS = 12       # 12 regs = 24 bytes = 6 x float32 LE
 
@@ -522,19 +263,6 @@ FT_MODE_STREAM = 'stream'
 FT_MODE_POLLED = 'polled'
 FT_MODE_CHOICES = (FT_MODE_STREAM, FT_MODE_POLLED)
 
-# ── Gráficos: paridade com o cliente de fábrica ───────────────────────
-# Números lidos de Csv/Range.csv da instalação do Six_Axis_FT.exe — é onde o
-# cliente PERSISTE as escalas, então é o que ele mostra ao abrir.
-#
-# O mesmo arquivo traz Column_Y1..Y6_Max = -100. Um "máximo" negativo é
-# sentinela de "nunca ajustado", não escala: as barras de coluna continuam
-# usando o fundo de escala real da unidade (FT_RATED_*), não isto.
-#
-# E os valores de força/torque abaixo são DEFAULTS GENÉRICOS da série, não
-# desta unidade: ±200 N é metade do fundo de escala da variante D (400 N) e
-# ±50 N·m é 2,5x o dela (20 N·m). Ficam aqui porque a paridade pedida é com o
-# que o cliente MOSTRA ao abrir; a escala é ajustável na própria aba.
-FT_CHART_WINDOW_N   = 2000     # Chart_X1_Max / Chart_X2_Max — amostras
 FT_CHART_FORCE_MAX  = 200.0    # Chart_Y1_Max / Min — N
 FT_CHART_TORQUE_MAX = 50.0     # Chart_Y2_Max / Min — N·m
 
@@ -550,36 +278,6 @@ FT_RATE_CHOICES_HZ = (10, 50, 100, 200, 250, 500, 1000)
 # Bauds oferecidos pelo mesmo cliente para a 485.
 FT_BAUD_CHOICES = (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
                    1_000_000)
-
-# ── Perfil HKVL-56 (Suzhou Hangkai Microelectronics) ──────────────────
-# CONFIRMADO por manual, 26/08/2026 — §5.1 (Communication Specifications) e
-# §4.2 (Data Format). Os dois quadros de exemplo do manual foram conferidos
-# byte a byte contra crc16_modbus() e FECHAM, e os floats de exemplo
-# decodificam para os valores impressos (00 00 48 41 -> 12,5 N). Ver
-# test_ft_hkvl56.py, que usa os quadros do manual como vetores dourados.
-#
-# ATENÇÃO — ESTE NÃO É O SENSOR DA BANCADA. Confirmado em 26/08/2026: a peça
-# no flange é o FA7155 da Fipos/FIBOS (Changzhou), plaqueta
-# "FA7155D-400N/20NM", e o exemplar fala 1 Mbps a 1 kHz. O baud coincide com o
-# do HKVL-56 e por isso NÃO distingue os dois; o que distingue é o MODO: o
-# FA7155 empurra quadros de 28 B com cabeçalho "ST" sozinho, enquanto o
-# HKVL-56 é de OUTRO fabricante e o manual dele descreve Modbus POLLED, sem
-# stream. Este perfil fica aqui descrito e testado, e NÃO ativo, por dois
-# motivos que valem para o FA7155:
-#
-#   1. Os quadros publicados neste manual validaram o crc16_modbus() do repo
-#      contra um CRC de fabricante (fecham byte a byte) — antes disso a nossa
-#      conta nunca tinha sido conferida contra nada externo.
-#   2. Os dois desvios do padrão descritos abaixo são um vício comum nesta
-#      classe de sensor. Se a captura do FA7155 mostrar uma resposta de 30
-#      bytes em vez de 29, o STYLE_HKVL56 do ft_modbus já cobre o caso.
-#
-# Dois desvios do Modbus padrão, ambos afirmados pela nota do §4.2 e
-# coerentes com os CRCs:
-#   1. a resposta de 0x03 traz o ENDEREÇO INICIAL (2 bytes) no lugar do
-#      BYTECOUNT (1 byte) — 30 bytes de resposta, não 29;
-#   2. o campo "number of reads" conta BYTES, não registradores (0x0018 = 24
-#      bytes = 6 floats).
 FT_PROFILE_HKVL56 = {
     'name':        'HKVL-56',
     'vendor':      'Suzhou Hangkai Microelectronics Technology Co., Ltd.',
@@ -601,12 +299,6 @@ FT_PROFILE_HKVL56 = {
     'stream':      None,
 }
 
-# ── Pós-processamento à moda do cliente de fábrica ────────────────────
-# O Six_Axis_FT.exe traz um Savitzky-Golay (as mensagens "Window size must be
-# odd." e "Order must be less than window size." são a assinatura dele) além
-# de média e máximo por janela. Isto NÃO substitui o mediana+One-Euro do
-# lc_filter, que é o filtro da MALHA de controle: é um segundo caminho, só de
-# exibição e exportação, para o número da GUI bater com o do fabricante.
 FT_SG_WINDOW_DEFAULT = 11    # ímpar
 FT_SG_ORDER_DEFAULT  = 3     # < janela
 FT_STATS_WINDOW_DEFAULT = 1000  # amostras de Mean_Num / MAX_Num (~1 s @1 kHz)
@@ -625,10 +317,7 @@ TOUCH_FRAME_UDP_PORT = 8082
 # Idade máxima de uma amostra para entrar no par sincronizado (s).
 SYNC_MAX_AGE_S = 0.25
 
-# A GUI republica o frame de taxels e cada evento de spike para o
-# palpation_logger juntar tudo num único CSV.
-# touch_pack_msgs/TouchFrame — taxels + o t_us do STM32. Substituiu o
-# /touch_sensor/adc (Int32MultiArray), que descartava o carimbo do firmware.
+
 TOUCH_FRAME_TOPIC = '/touch_sensor/frame'
 TOUCH_EVENT_TOPIC = '/touch_sensor/spike_event'  # std_msgs/String: RA|SA|CN_MM|CN_RA|CN_SA
 # Grade PADRÃO do sensor em uso. O 5×5 é o que está montado na bancada; o
@@ -639,25 +328,6 @@ TOUCH_COLS_DEFAULT = 5
 TOUCH_TAXELS_DEFAULT = TOUCH_ROWS_DEFAULT * TOUCH_COLS_DEFAULT
 TOUCH_EVENT_TYPES = ('RA', 'SA', 'CN_MM', 'CN_RA', 'CN_SA')
 
-# ── Orientação do 5×5: o firmware entrega o frame girado 180° ───────────────
-# Conferido na bancada em 18/08/2026, taxel a taxel, em DUAS ordens de varredura
-# independentes (serpentina e raster; 78 mil frames a 1 kHz, sem lacunas): o
-# índice que o firmware emite é o espelho do físico nos DOIS eixos —
-#
-#     frame_idx = (rows*cols - 1) - fisico_idx      (linha E coluna invertidas)
-#
-# Isso NUNCA foi embaralhamento: é bijeção perfeita, vizinho físico continua
-# vizinho no frame. Só a origem caía no canto oposto. Testadas e descartadas as
-# hipóteses de espelho só horizontal, só vertical, transposta e flex serpenteado
-# (esta última só caiu com a varredura em raster, que quebra o empate).
-#
-# A causa está em `select_row()` (sensors/TouchFirmware/main.c), que roda uma
-# máscara estática e IGNORA o parâmetro `row` de propósito. Mexer lá mudaria
-# qual taxel físico responde por cada índice e invalidaria a calibração, então
-# a correção mora aqui, do lado do PC.
-#
-# ATENÇÃO: vale só para as grades LISTADAS. O 4×4 legado nunca foi
-# caracterizado na bancada — sem medida, ele passa intacto.
 TOUCH_ROT180_GRIDS = frozenset({(5, 5)})
 
 
@@ -705,18 +375,6 @@ def run_stamp_from_msg_time(stamp) -> str:
     return _time.strftime('%Y%m%d_%H%M%S', _time.localtime(sec))
 
 
-# ── Layout dos dados em disco ─────────────────────────────────────────
-# Um diretório por MODO, e dentro dele um por RUN, com todos os arquivos
-# daquela amostra juntos:
-#
-#   sensors/Data/MATRIX_MAP/20260812_143012/{samples,sensors,matrix,adc,
-#                                            spikes,cuneiformes}.csv
-#                                           {params,summary}.json  plot.png
-#
-# Os arquivos NÃO repetem o run_id no nome — a pasta o carrega, e
-# params.json/summary.json o guardam dentro, então um arquivo copiado para
-# fora ainda se identifica. Runs anteriores a este layout continuam soltos
-# na raiz com o nome antigo (<ts>__samples.csv); os leitores aceitam os dois.
 RUN_MODES = ('SLIDE', 'TOUCH', 'MANUAL', 'MATRIX_MAP')
 # Gravação avulsa pelo botão "Record data", fora de qualquer run: não tem
 # modo, mas também não pode cair na raiz junto das pastas de modo.
@@ -806,17 +464,6 @@ MATRIX_MAX_POINTS = 400
 # Extensão máxima do plano em cada eixo, a partir da origem (mm).
 MATRIX_SPAN_MAX_MM = 200.0
 
-# ── CALIBRAÇÃO DINÂMICA DO ÂNGULO DE ATAQUE — defaults GUI ↔ explorer ─
-# A descida padrão supõe o alvo perpendicular à home. Quando não está, a
-# ponteira encosta de canto e a célula lê a projeção da força normal. A
-# calibração troca a suposição por uma medição: N toques leves em torno do
-# ponto de aproximação, ajuste do plano e ataque ao longo da normal.
-# A geometria mora em plane_probe.py; a execução, em tactile_explorer.
-#
-# Toques de sonda. O piso espelha plane_probe.MIN_PROBE_POINTS — três
-# pontos definem um plano, e menos que isso não é opção de configuração.
-# Com 4+ o ajuste vira mínimos quadrados e o resíduo passa a significar
-# alguma coisa; o teto existe porque cada toque custa uma descida completa.
 PROBE_ALIGN_POINTS_DEFAULT = 4
 PROBE_ALIGN_POINTS_MIN     = 3
 PROBE_ALIGN_POINTS_MAX     = 12
@@ -829,12 +476,7 @@ PROBE_ALIGN_RADIUS_MM_MAX     = 60.0
 # o plano sair paralelo ao real é a IGUALDADE da penetração nos N pontos,
 # não o valor. Nunca excede o setpoint do próprio ensaio (o explorer satura).
 PROBE_ALIGN_FORCE_N_DEFAULT = 1.0
-# Retração linear ANTES de girar o punho. O punho gira em torno do pulso, e
-# a ponta varre um arco de raio ≈ comprimento da ferramenta (67,7 mm com a
-# pilha FA7155; eram ~162 mm com a célula axial de 100 kg): sem afastar
-# antes, esse arco passa dentro da peça e cisalha a ponteira. Os 20 mm de
-# default foram dimensionados para a ferramenta LONGA e ficaram folgados
-# para a curta — folga aqui só custa tempo de trânsito, então continuam.
+
 PROBE_ALIGN_RETRACT_MM_DEFAULT = 20.0
 PROBE_ALIGN_RETRACT_MM_MIN     = 5.0
 PROBE_ALIGN_RETRACT_MM_MAX     = 100.0
@@ -844,21 +486,6 @@ PROBE_ALIGN_RETRACT_MM_MAX     = 100.0
 PROBE_ALIGN_TILT_MAX_DEG_DEFAULT = 20.0
 PROBE_ALIGN_TILT_HARD_MAX_DEG    = 30.0
 
-# ── Carimbo da FERRAMENTA nos arquivos ENSINADOS ──────────────────────
-# Home, poses e contato aprendido são ensinados COM uma ferramenta montada, e
-# nenhum deles registrava qual. Quando a pilha da célula axial de 100 kg
-# (TCP a 162,2 mm) deu lugar à FA7155 de 6 eixos (67,7 mm), todo arquivo em
-# ~/.config/touch_pack/ continuou sendo lido em silêncio, com o TCP 94,5 mm
-# mais alto para os MESMOS ângulos de junta.
-#
-# O carimbo não invalida nada sozinho — é diagnóstico. Erra para o lado
-# seguro em todos os casos conhecidos (ferramenta mais curta = ponta mais
-# LONGE da peça), e o contato aprendido já corrige o deslocamento ao longo da
-# aproximação em `_lookup_learned`. O que faltava era o operador SABER que a
-# pose que ele está carregando foi ensinada com outra geometria.
-#
-# Chave fora do `tcp_mm` que o learned_contact.json já usa DENTRO de cada
-# entrada (lá é a posição do TCP que dá nome à home, não o comprimento).
 TOOL_STAMP_KEY = 'tool_tcp_mm'
 
 
@@ -955,29 +582,7 @@ def _lc_share_calib() -> str | None:
 
 
 def _resolve_lc_calib_file() -> tuple[str, str]:
-    """Onde mora a calibração da célula axial. Devolve (caminho, origem).
 
-    A MESMA CALIBRAÇÃO EM QUALQUER COMPUTADOR é o requisito, e o mecanismo é
-    o git: `sensors/load_cell_calib.json` é versionado, então quem clona o
-    repo recebe a reta de 7 pontos da célula que está na bancada. O que
-    faltava era o caso do deploy — levar só o `install/` deixava a máquina
-    sem arquivo nenhum, e um driver sem reta não publica força.
-
-    Três origens, nesta ordem, e a PRIMEIRA QUE EXISTE ganha:
-
-      repo    `<repo>/sensors/` — a fonte. É a única gravável pelo wizard de
-              um jeito que se propaga (commit), e por isso vem primeiro: numa
-              bancada, recalibrar tem de valer na hora.
-      share   `share/touch_pack/sensors/` — a cópia instalada com o pacote
-              (ver setup.py). É o que faz a calibração chegar numa máquina que
-              não tem a árvore do repo.
-      config  `~/.config/touch_pack/` — último recurso, e o único que NÃO se
-              propaga: o que for calibrado ali fica naquela máquina.
-
-    Se nenhuma existir, devolve o caminho onde o wizard deveria escrever
-    (repo se houver árvore, senão config) para a mensagem de ausência poder
-    ser específica.
-    """
     repo = (os.path.join(_REPO_ROOT, 'sensors', 'load_cell_calib.json')
             if _REPO_ROOT else None)
     share = _lc_share_calib()
@@ -995,18 +600,7 @@ LC_CALIB_SHARED_SOURCES = ('repo', 'share')
 
 
 def lc_calib_fingerprint(path: str = '') -> str:
-    """Oito hex que identificam uma calibração. '' se não houver.
 
-    Existe para "a mesma calibração em qualquer computador" ser VERIFICÁVEL e
-    não só esperada: as duas máquinas imprimem isto na partida do
-    force_receiver e na aba Load Cell, e se os oito caracteres baterem é a
-    mesma reta e os mesmos pontos. Vai também no params.json de cada run, e é
-    ele que responde depois "com que calibração este dado foi medido".
-
-    A impressão é dos NÚMEROS (slope, V₀ e os pares), não do arquivo: campos
-    de metadado, indentação e ordem de chaves não a mudam — dois arquivos que
-    medem igual têm a mesma impressão.
-    """
     cal = lc_load_calibration(path or LC_CALIB_FILE)
     if cal is None:
         return ''
@@ -1024,19 +618,6 @@ STEP_MAX_LEVELS = 200
 
 def staircase_levels(start_n: float, step_n: float, max_n: float,
                      *, cap: int = STEP_MAX_LEVELS) -> list[float]:
-    """Patamares do modo DEGRAU: sobe de `start_n` até `max_n` de `step_n` em
-    `step_n`, e volta descendo pelos MESMOS patamares.
-
-    O pico entra UMA vez (não se mede duas vezes o mesmo nível seguido), e é
-    sempre `max_n` exato: se o passo não fecha certo (0,5 → 2,0 de 0,7 em
-    0,7 daria 1,9), o último degrau da subida é encurtado para cravar o
-    máximo pedido, senão o ensaio não chegaria à força que o usuário pediu.
-
-    Devolve `[]` quando a escada pedida excede `cap` patamares — nesse caso o
-    ensaio deve ser RECUSADO, não truncado (ver o comentário no laço).
-
-    Função pura — testável sem ROS.
-    """
     start_n = float(start_n)
     step_n = float(step_n)
     max_n = float(max_n)

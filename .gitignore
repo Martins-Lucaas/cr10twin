@@ -20,3 +20,7 @@ src/eci_ros-main/
 # Dados de execução da palpação — gerados em runtime pelo palpation_logger.
 # 1,2 GB, com arquivos de 48-85 MB que o GitHub rejeita acima de 100 MB.
 sensors/Data/
+
+# data/ NÃO é ignorado, de propósito: é onde ficam os dados que sustentam o
+# artigo (data/latency/, ~5 MB). O latency_probe grava em sensors/Data/latency/,
+# que a regra acima ignora — copie de lá para cá o que for publicar.

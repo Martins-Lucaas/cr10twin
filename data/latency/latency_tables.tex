@@ -1,0 +1,47 @@
+% Gerado por `ros2 run touch_pack latency_report`.
+% NÃO editar à mão — regerar após cada campanha.
+
+\begin{table}[t]
+\caption{Real-to-Sim mirroring: latency and lag-compensated kinematic agreement, by excitation regime}
+\begin{center}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|p{1.75cm}|c|c|c|c|}
+\hline
+\textbf{Excitation} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & \textbf{MAE (deg)} & \textbf{RMSE (deg)} \\
+\hline
+Drag-teach (0.4--33.2 deg) & 17 & $71.5 \pm 0.3$ & $0.009 \pm 0.007$ & $0.024 \pm 0.022$ \\
+\hline
+GUI jog (2.9--3.9 deg) & 3 & $78.2 \pm 1.4$ & $0.116 \pm 0.017$ & $0.271 \pm 0.050$ \\
+\hline
+\end{tabular}
+\label{tab:latency}
+\end{center}
+\end{table}
+% N = pares (captura, junta). Ambos os regimes medem o MESMO
+% caminho Real-to-Sim: o probe detectou real_to_sim nas 7 capturas.
+
+\begin{table}[t]
+\caption{Per-joint agreement between the twin and the physical arm during drag-teach mirroring, after compensating the measured lag}
+\begin{center}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+\textbf{Joint} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & \textbf{MAE (deg)} & \textbf{max (deg)} & \textbf{$r$} \\
+\hline
+joint1 & 3 & $71.6 \pm 0.1$ & 0.003 & 0.15 & 1.00000 \\
+\hline
+joint2 & 3 & $71.4 \pm 0.2$ & 0.006 & 0.18 & 0.99999 \\
+\hline
+joint3 & 4 & $71.4 \pm 0.1$ & 0.012 & 0.17 & 0.99999 \\
+\hline
+joint4 & 4 & $71.7 \pm 0.5$ & 0.011 & 1.09 & 0.99998 \\
+\hline
+joint5 & 2 & $71.3 \pm 0.2$ & 0.015 & 1.33 & 0.99999 \\
+\hline
+joint6 & 1 & $71.9 $ & 0.010 & 0.58 & 1.00000 \\
+\hline
+\end{tabular}
+\label{tab:perjoint}
+\end{center}
+\end{table}
+% Condição: drag teach. N = capturas em que a junta se moveu.

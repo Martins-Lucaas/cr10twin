@@ -1,0 +1,25 @@
+{
+  "timestamp": "20260706_161932",
+  "direction_requested": "sim_to_real",
+  "direction_detected": "real_to_sim",
+  "latency_ms": 79.85,
+  "lag_s_signed": -0.07985,
+  "sign_convention": "lag>0: REAL atrasa (Sim-to-Real); lag<0: SIM atrasa (Real-to-Sim)",
+  "peak_corr": 0.9953,
+  "joint_used": "joint3",
+  "movement_amp_deg": 3.186,
+  "per_joint": {
+    "joint3": {
+      "lag_ms": -79.85,
+      "peak_corr": 0.9953,
+      "amp_deg": 3.186
+    }
+  },
+  "n_samples_sim": 5082,
+  "n_samples_real": 1995,
+  "overlap_duration_s": 19.97,
+  "poll_hz": 100.0,
+  "grid_dt_s": 0.004,
+  "max_lag_s": 0.6,
+  "robot_ip": "192.168.5.2"
+}
