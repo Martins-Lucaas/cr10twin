@@ -6919,8 +6919,16 @@ class PalpationGUI(FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                 default=round(_hold_tol_n_for(
                     force_sp if force_sp is not None
                     else FORCE_SP_DEFAULT), 3))
-            hold_stable  = self._clamp_var(self.hold_stable_var, 0.2, 5.0,
-                                            default=1.0)
+            # Limites ESPELHAM a linha do painel (_param_row: 0,2..60 s).
+            # Ficaram em 5,0 quando o campo foi alargado para 60 s em
+            # 09/09/2026: pedir 10 s era clampado de volta a 5 aqui, o que
+            # reescrevia o campo na tela e media metade do que foi pedido.
+            # O default é o MESMO com que o campo nasce (5,0 s, logo acima
+            # em hold_stable_var) e o mesmo _HOLD_DWELL_S do explorer. Em
+            # 1,0 s um campo ilegível (vazio ou meio digitado) publicava uma
+            # janela de medição de 1 s que ninguém pediu nem viu na tela.
+            hold_stable  = self._clamp_var(self.hold_stable_var, 0.2, 60.0,
+                                            default=5.0)
             hold_timeout = self._clamp_var(self.hold_timeout_var, 2.0, 60.0,
                                             default=12.0)
             slide_slope  = self._clamp_var(self.slide_slope_var, -10.0, 10.0,
