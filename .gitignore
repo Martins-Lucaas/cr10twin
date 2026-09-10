@@ -20,6 +20,3 @@ src/eci_ros-main/
 # Dados de execução da palpação — gerados em runtime pelo palpation_logger.
 # 1,2 GB, com arquivos de 48-85 MB que o GitHub rejeita acima de 100 MB.
 sensors/Data/
-
-# Manuais de terceiros (Dobot, COVVI, FA7155) — 32 MB, não referenciados no repo
-Docs/
