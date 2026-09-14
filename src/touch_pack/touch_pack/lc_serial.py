@@ -38,23 +38,12 @@ POR QUE não há amostra — `zeroed=0` é bancada vibrando, não cabo solto.
 from __future__ import annotations
 
 import math
-import threading
 import time
 from typing import Callable, Optional
 
-try:
-    import serial
-    from serial.tools import list_ports
-    _SERIAL_OK = True
-except Exception:  # pragma: no cover - pyserial ausente
-    serial = None
-    list_ports = None
-    _SERIAL_OK = False
+from .line_source import SERIAL_OK as _SERIAL_OK, SerialSource, list_ports
 
 from .constants import LC_SERIAL_BAUD, LC_USB_VIDS
-
-# Intervalo entre tentativas de achar/abrir a porta (hot-plug).
-_RETRY_S = 2.0
 
 # Teto do buffer antes de descartar por sujeira. A 80 Hz a célula entrega
 # ~2,4 kB/s; 8 kB sem um `\n` significa que o que está na linha não é este
@@ -180,61 +169,47 @@ class LcLineParser:
         return seq, t_us, v, counts
 
 
-class LoadCellSerialSource:
+class LoadCellSerialSource(SerialSource):
     """Leitor do XIAO em thread de fundo.
 
     Mesma API do `FtSerialSource` (start/stop/connected/last_rx/error/port/
-    parser), para que os dois receivers tenham a mesma forma — mais o
-    `send_command`, que a FA7155 não tem equivalente pela serial.
+    parser) — as duas herdam o mesmo `SerialSource` —, mais o `send_command`,
+    que a FA7155 não tem equivalente pela serial.
 
     O callback recebe ``(seq, t_us, v_sensor, counts)``: contador e carimbo da
     borda de DOUT do MCU, tensão da ponte em volts no domínio ×PGA, e o
     inteiro cru do HX711 (None num firmware anterior ao 5º campo).
     """
 
+    _THREAD_NAME = 'lc-serial'
+
     def __init__(self, port: Optional[str] = None,
                  baud: int = LC_SERIAL_BAUD,
                  on_sample: Optional[
                      Callable[[int, int, float, Optional[int]], None]] = None):
+        self._lifecycle_init()
         self._port_req = port
         self._baud = int(baud)
         self._on_sample = on_sample
         self.port: Optional[str] = None
-        self.connected = False
-        # time.monotonic() da última amostra válida (0.0 = nunca).
-        self.last_rx: float = 0.0
-        self.error: str = ''
         self.parser = LcLineParser()
-        self._running = False
-        self._ser = None
-        self._thread: Optional[threading.Thread] = None
 
-    def start(self) -> bool:
-        """Arma a thread. False só se pyserial não existe — a ausência da
-        placa na USB não é falha: a thread fica tentando."""
-        if not _SERIAL_OK:
-            self.error = 'pyserial ausente'
-            return False
-        if self._running:
-            return True
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._worker, daemon=True, name='lc-serial')
-        self._thread.start()
-        return True
+    def _detect_port(self) -> Optional[str]:
+        return detect_lc_serial_port()
 
-    def stop(self) -> None:
-        self._running = False
-        # Fecha a porta por fora para destravar o read() da thread.
-        ser = self._ser
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
+    def _absent_message(self) -> str:
+        return ('XIAO ESP32C6 ausente na USB (VIDs aceitos: '
+                + ', '.join(f'0x{v:04X}' for v in LC_USB_VIDS) + ')')
+
+    def _on_chunk(self, data: bytes) -> None:
+        samples = self.parser.feed(data)
+        if not samples:
+            return
+        self.last_rx = time.monotonic()
+        cb = self._on_sample
+        if cb is not None:
+            for seq, t_us, v, counts in samples:
+                cb(seq, t_us, v, counts)
 
     def send_command(self, data: bytes) -> None:
         """Manda bytes para o firmware.
@@ -249,63 +224,4 @@ class LoadCellSerialSource:
         A USB é full-duplex e o firmware lê um byte por volta do loop, então
         escrever no meio do stream não colide nem perde amostra.
         """
-        ser = self._ser
-        if ser is None:
-            raise RuntimeError('porta serial do XIAO não está aberta')
-        ser.write(data)
-        ser.flush()
-
-    def _worker(self) -> None:
-        while self._running:
-            port = self._port_req or detect_lc_serial_port()
-            if port is None:
-                self.error = ('XIAO ESP32C6 ausente na USB (VIDs aceitos: '
-                              + ', '.join(f'0x{v:04X}' for v in LC_USB_VIDS)
-                              + ')')
-                time.sleep(_RETRY_S)
-                continue
-            try:
-                # timeout curto: o read(1) volta rápido quando a linha cala, e
-                # o laço reavalia self._running em vez de travar no stop().
-                ser = serial.Serial(port, self._baud, timeout=0.2)
-            except Exception as exc:
-                self.error = str(exc)
-                time.sleep(_RETRY_S)
-                continue
-            self._ser = ser
-            self.port = port
-            self.connected = True
-            self.error = ''
-            try:
-                self._read_loop(ser)
-            except Exception as exc:
-                # Desconexão (replug) ou porta fechada pelo stop().
-                self.error = str(exc)
-            finally:
-                self.connected = False
-                self._ser = None
-                try:
-                    ser.close()
-                except Exception:
-                    pass
-            if self._running:
-                time.sleep(_RETRY_S)
-
-    def _read_loop(self, ser) -> None:
-        while self._running:
-            # read(1) bloqueante + o que já estiver no buffer: entrega a menor
-            # latência possível sem virar espera ocupada.
-            data = ser.read(1)
-            if not data:
-                continue
-            waiting = getattr(ser, 'in_waiting', 0)
-            if waiting:
-                data += ser.read(waiting)
-            samples = self.parser.feed(data)
-            if not samples:
-                continue
-            self.last_rx = time.monotonic()
-            cb = self._on_sample
-            if cb is not None:
-                for seq, t_us, v, counts in samples:
-                    cb(seq, t_us, v, counts)
+        self._write_line(data, 'porta serial do XIAO não está aberta')

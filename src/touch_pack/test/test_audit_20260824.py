@@ -169,7 +169,9 @@ def test_gui_separa_falha_do_estop_real_do_sucesso():
     EmergencyStop(1) nem chegou ao controlador."""
     import re
     from pathlib import Path
-    import touch_pack.palpation_gui as gui
+    # O E-STOP saiu de palpation_gui para gui_robot no recorte da GUI — é
+    # do fonte dele que se lê o corpo do método.
+    import touch_pack.gui_robot as gui
     src = Path(gui.__file__).read_text()
     corpo = re.search(r'def _estop_engage.*?(?=\n    def )', src, re.S).group(0)
     assert 'hw_ok' in corpo, 'sucesso e falha do hardware indistinguíveis'

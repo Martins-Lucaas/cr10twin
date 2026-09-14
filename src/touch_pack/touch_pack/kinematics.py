@@ -172,7 +172,8 @@ def forward_kinematics(q: np.ndarray,
         T: pose do efetuador, matriz homogênea 4×4
     """
     T = np.eye(4)
-    for (xyz, rpy), qi, asign in zip(_URDF_ORIGINS, q, _JOINT_AXIS_SIGN):
+    for (xyz, rpy), qi, asign in zip(
+            _URDF_ORIGINS, q, _JOINT_AXIS_SIGN, strict=True):
         T = T @ _make_T(xyz, rpy) @ _Rz4(asign * float(qi))
     if T_end is not None:
         T = T @ T_end
@@ -204,7 +205,7 @@ def jacobian(q: np.ndarray, eps: float = 1e-6,
     J = np.zeros((6, 6))
     T_accum = np.eye(4)
     for i, ((xyz, rpy), qi, asign) in enumerate(
-            zip(_URDF_ORIGINS, q, _JOINT_AXIS_SIGN)):
+            zip(_URDF_ORIGINS, q, _JOINT_AXIS_SIGN, strict=True)):
         T_before = T_accum @ _make_T(xyz, rpy)
         z_i = T_before[:3, 2] * asign
         p_i = T_before[:3, 3]

@@ -423,7 +423,8 @@ def _plot_touch(ax, rows: list[dict]) -> None:
         series = [r['taxels'] for r in frames]
         ax.set_ylabel('toque cru (u.a.)')
     else:
-        series = [[v - b for v, b in zip(r['taxels'], base)] for r in frames]
+        series = [[v - b for v, b in zip(r['taxels'], base, strict=True)]
+                  for r in frames]
         ax.axhline(0.0, color='#94a3b8', linewidth=0.8)
         ax.set_ylabel('toque − repouso (u.a.)')
 

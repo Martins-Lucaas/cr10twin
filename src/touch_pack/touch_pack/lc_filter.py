@@ -130,3 +130,22 @@ QOS_SENSOR = QoSProfile(
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
     durability=QoSDurabilityPolicy.VOLATILE,
     history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+
+
+def window_drift(win: list[float]) -> float:
+    """Deriva da janela de tare: |mediana da 2ª metade − mediana da 1ª|.
+
+    Critério de estabilidade dos DOIS receivers — é ele que separa um zero
+    honesto de um zero tirado com a ponteira já encostada. Mediana e não
+    pico-a-pico porque o ptp cresce com o tamanho da janela mesmo em sinal
+    estacionário, e recusaria tares bons por um único glitch.
+
+    Mora aqui, e não em cada receiver, porque estava copiado byte a byte nos
+    dois: afrouxar o critério num sensor e não no outro daria dois padrões de
+    "zero aceitável" na mesma bancada, sem nada no log dizendo isso.
+    """
+    half = len(win) // 2
+    m1 = sorted(win[:half])[half // 2]
+    tail = win[half:]
+    m2 = sorted(tail)[len(tail) // 2]
+    return abs(m2 - m1)

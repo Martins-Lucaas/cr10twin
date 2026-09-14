@@ -68,7 +68,7 @@ from .constants import (
     lc_force_n,
 )
 from .lc_filter import (_BoxcarFilter, _LoadCellFilter, LC_SLOW_WIN_S,
-                        QOS_LATCHED, QOS_SENSOR)
+                        QOS_LATCHED, QOS_SENSOR, window_drift)
 from .lc_serial import LoadCellSerialSource, detect_lc_serial_port
 
 
@@ -333,14 +333,9 @@ class ForceReceiverNode(Node):
     # próprio contato durante um HOLD.
     _AUTOZERO_BAND_N = 0.30
 
-    @staticmethod
-    def _window_drift(win: list[float]) -> float:
-        """Deriva da janela: |mediana da 2ª metade − mediana da 1ª|."""
-        half = len(win) // 2
-        m1 = sorted(win[:half])[half // 2]
-        tail = win[half:]
-        m2 = sorted(tail)[len(tail) // 2]
-        return abs(m2 - m1)
+    # Critério de estabilidade do tare — o mesmo nos dois receivers, por isso
+    # vive em lc_filter. Continua exposto aqui como `self._window_drift`.
+    _window_drift = staticmethod(window_drift)
 
     def _publish_tare_result(self, *fields) -> None:
         m = String()

@@ -24,20 +24,11 @@ from __future__ import annotations
 
 import math
 import struct
-import threading
 import time
 from typing import Callable, Optional
 
-try:
-    import serial
-    from serial.tools import list_ports
-    _SERIAL_OK = True
-except Exception:  # pragma: no cover - pyserial ausente
-    serial = None
-    list_ports = None
-    _SERIAL_OK = False
-
 from .ft_cmd_channel import LineTapMixin
+from .line_source import SERIAL_OK as _SERIAL_OK, SerialSource, list_ports
 from .constants import (
     FT_FRAME_HEADER,
     FT_FRAME_LEN,
@@ -45,9 +36,6 @@ from .constants import (
     FT_SERIAL_BAUD,
     FT_USB_VIDS,
 )
-
-# Intervalo entre tentativas de achar/abrir a porta (hot-plug).
-_RETRY_S = 2.0
 
 # Teto do buffer de recepção antes de descartar por sujeira. A 1 kHz o link
 # entrega 28 kB/s; 8 kB são ~285 quadros — se encheu sem um quadro válido
@@ -151,100 +139,49 @@ class FtFrameParser:
         return out
 
 
-class FtSerialSource(LineTapMixin):
+class FtSerialSource(LineTapMixin, SerialSource):
     """Leitor do FA7155 em thread de fundo.
 
     Mesma API do LoadCellSerialSource (start/stop/connected/last_rx/error),
-    para que o nó receptor tenha a mesma forma dos dois lados.
+    para que o nó receptor tenha a mesma forma dos dois lados — hoje porque as
+    duas herdam o mesmo `SerialSource`.
 
     O callback recebe ``(seq, t_us, (fx, fy, fz, mx, my, mz))`` — forças em N,
     momentos em N·m, no referencial da figura 2 do manual (Fz+ saindo da face
     da ferramenta).
     """
 
+    _THREAD_NAME = 'ft-serial'
+
     def __init__(self, port: Optional[str] = None,
                  baud: int = FT_SERIAL_BAUD,
                  rate_hz: float = FT_NOMINAL_RATE_HZ,
                  on_sample: Optional[
                      Callable[[int, int, tuple], None]] = None):
+        self._lifecycle_init()
         self._port_req = port
         self._baud = int(baud)
         self._period_us = 1e6 / max(float(rate_hz), 1.0)
         self._on_sample = on_sample
         self.port: Optional[str] = None
-        self.connected = False
-        # time.monotonic() do último quadro válido (0.0 = nunca).
-        self.last_rx: float = 0.0
-        self.error: str = ''
         self.parser = FtFrameParser()
         self._seq = 0
-        self._running = False
-        self._ser = None
-        self._thread: Optional[threading.Thread] = None
         self._tap_init()
 
-    def start(self) -> bool:
-        """Arma a thread. False só se pyserial não existe — a ausência do
-        conversor na USB não é falha: a thread fica tentando."""
-        if not _SERIAL_OK:
-            self.error = 'pyserial ausente'
-            return False
-        if self._running:
-            return True
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._worker, daemon=True, name='ft-serial')
-        self._thread.start()
-        return True
+    def _detect_port(self) -> Optional[str]:
+        return detect_ft_serial_port()
 
-    def stop(self) -> None:
-        self._running = False
-        # Fecha a porta por fora para destravar o read() da thread.
-        ser = self._ser
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
+    def _absent_message(self) -> str:
+        return ('conversor USB-RS485 ausente (VIDs aceitos: '
+                + ', '.join(f'0x{v:04X}' for v in FT_USB_VIDS) + ')')
 
-    def _worker(self) -> None:
-        while self._running:
-            port = self._port_req or detect_ft_serial_port()
-            if port is None:
-                self.error = ('conversor USB-RS485 ausente (VIDs aceitos: '
-                              + ', '.join(f'0x{v:04X}' for v in FT_USB_VIDS)
-                              + ')')
-                time.sleep(_RETRY_S)
-                continue
-            try:
-                # timeout curto: o read(1) volta rápido quando a linha cala, e
-                # o laço reavalia self._running em vez de travar no stop().
-                ser = serial.Serial(port, self._baud, timeout=0.2)
-            except Exception as exc:
-                self.error = str(exc)
-                time.sleep(_RETRY_S)
-                continue
-            self._ser = ser
-            self.port = port
-            self.connected = True
-            self.error = ''
-            try:
-                self._read_loop(ser)
-            except Exception as exc:
-                # Desconexão (replug) ou porta fechada pelo stop().
-                self.error = str(exc)
-            finally:
-                self.connected = False
-                self._ser = None
-                try:
-                    ser.close()
-                except Exception:
-                    pass
-            if self._running:
-                time.sleep(_RETRY_S)
+    def _on_chunk(self, data: bytes) -> None:
+        self._tap_feed(data)
+        frames = self.parser.feed(data)
+        if not frames:
+            return
+        self.last_rx = time.monotonic()
+        self._stamp_frames(frames)
 
     def _line_write(self, data: bytes) -> None:
         """Põe bytes na 485 (canal de comando Modbus — ver ft_modbus).
@@ -254,28 +191,7 @@ class FtSerialSource(LineTapMixin):
         durante o write), e o sensor reenvia o quadro perdido no ciclo
         seguinte — o parser já trata isso como resync.
         """
-        ser = self._ser
-        if ser is None:
-            raise RuntimeError('porta serial do FA7155 não está aberta')
-        ser.write(data)
-        ser.flush()
-
-    def _read_loop(self, ser) -> None:
-        while self._running:
-            # read(1) bloqueante + o que já estiver no buffer: entrega a menor
-            # latência possível sem virar espera ocupada.
-            data = ser.read(1)
-            if not data:
-                continue
-            waiting = getattr(ser, 'in_waiting', 0)
-            if waiting:
-                data += ser.read(waiting)
-            self._tap_feed(data)
-            frames = self.parser.feed(data)
-            if not frames:
-                continue
-            self.last_rx = time.monotonic()
-            self._stamp_frames(frames)
+        self._write_line(data, 'porta serial do FA7155 não está aberta')
 
     def _stamp_frames(self, frames: list[tuple[float, ...]]) -> None:
         """Numera e carimba os quadros de UMA leitura.
@@ -287,6 +203,9 @@ class FtSerialSource(LineTapMixin):
         retro-datados pelo período nominal, que é o intervalo real com que o
         sensor os produziu — o erro fica no ATRASO absoluto (jitter do USB),
         não no dt, que é o que o filtro consome.
+
+        Compartilhado com `FtTcpSource`, que importa este método: o raciocínio
+        não depende do transporte, só do sensor.
         """
         t_now_us = time.perf_counter() * 1e6
         k = len(frames)

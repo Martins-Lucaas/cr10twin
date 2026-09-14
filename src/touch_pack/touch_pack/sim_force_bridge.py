@@ -35,6 +35,11 @@ from geometry_msgs.msg import WrenchStamped
 
 from .lc_filter import QOS_SENSOR   # BEST_EFFORT/KEEP_LAST(1), mesmo do receiver real
 
+# Idade máxima do wrench antes de considerar o plugin mudo. Igual ao
+# _FORCE_STALE_S do tactile_explorer: a ponte precisa emudecer ANTES de o
+# consumidor decidir que a leitura está velha, não depois.
+_WRENCH_STALE_S = 0.5
+
 
 class SimForceBridge(Node):
     def __init__(self) -> None:
@@ -45,6 +50,7 @@ class SimForceBridge(Node):
         rate_hz = float(self.declare_parameter('rate_hz', 80.0).value)
 
         self._raw: float | None = None
+        self._raw_ts = None
         self._filt: float | None = None
         self._t_prev = self.get_clock().now()
 
@@ -61,11 +67,24 @@ class SimForceBridge(Node):
 
     def _on_wrench(self, msg: WrenchStamped) -> None:
         self._raw = self._sign * float(msg.wrench.force.z) - self._offset
+        self._raw_ts = self.get_clock().now()
 
     def _tick(self) -> None:
-        if self._raw is None:
+        if self._raw is None or self._raw_ts is None:
             return
         now = self.get_clock().now()
+        # Plugin mudo ⇒ PARAR de publicar. Republicar o último valor a 80 Hz
+        # mantinha /load_cell/force_net eternamente "fresco" e a guarda de
+        # leitura velha do explorer (_force_stale_abort) nunca disparava em
+        # simulação — exatamente o caso que este nó existe para cobrir.
+        if (now - self._raw_ts).nanoseconds * 1e-9 > _WRENCH_STALE_S:
+            self._raw = None
+            self._filt = None
+            self.get_logger().warn(
+                f'/sim/load_cell/wrench sem dados há > {_WRENCH_STALE_S:.1f} s '
+                '— parando de publicar /load_cell/force_net.',
+                throttle_duration_sec=5.0)
+            return
         if self._filter_hz > 0.0:
             dt = max(1e-4, (now - self._t_prev).nanoseconds * 1e-9)
             a = 1.0 - math.exp(-2.0 * math.pi * self._filter_hz * dt)

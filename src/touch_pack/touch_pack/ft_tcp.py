@@ -31,7 +31,6 @@ Diferenças de comportamento em relação ao ft_serial.py:
 from __future__ import annotations
 
 import socket
-import threading
 import time
 from typing import Callable, Optional
 
@@ -42,7 +41,8 @@ from .constants import (
     FT_TCP_PORT,
 )
 from .ft_cmd_channel import LineTapMixin
-from .ft_serial import FtFrameParser
+from .ft_serial import FtFrameParser, FtSerialSource
+from .line_source import ReconnectingSource
 
 # Intervalo entre tentativas de reconexão (robô desligado, cabo de rede fora).
 _RETRY_S = 2.0
@@ -159,107 +159,58 @@ def configure_cabinet_485(host: str = FT_TCP_HOST,
     return out
 
 
-class FtTcpSource(LineTapMixin):
+class FtTcpSource(LineTapMixin, ReconnectingSource):
     """Leitor do FA7155 pela 60000, em thread de fundo.
 
     API idêntica à do FtSerialSource (start/stop/connected/last_rx/error/port/
     parser) — é o que permite o ft_receiver_node trocar de transporte sem saber
-    de qual dos dois se trata.
+    de qual dos dois se trata. A reconexão, o par connected/error e o
+    encerramento vêm do `ReconnectingSource` comum aos três transportes; aqui
+    ficam só as três coisas que são do socket.
 
     O callback recebe ``(seq, t_us, (fx, fy, fz, mx, my, mz))``, forças em N e
     momentos em N·m, igual ao caminho USB.
     """
+
+    _THREAD_NAME = 'ft-tcp'
 
     def __init__(self, host: str = FT_TCP_HOST,
                  tcp_port: int = FT_TCP_PORT,
                  rate_hz: float = FT_NOMINAL_RATE_HZ,
                  on_sample: Optional[
                      Callable[[int, int, tuple], None]] = None):
+        self._lifecycle_init()
         self._host = str(host)
         self._tcp_port = int(tcp_port)
         self._period_us = 1e6 / max(float(rate_hz), 1.0)
         self._on_sample = on_sample
         # Mesmo nome do campo do FtSerialSource: é o que o nó imprime no log.
         self.port: Optional[str] = f'{self._host}:{self._tcp_port}'
-        self.connected = False
-        self.last_rx: float = 0.0
-        self.error: str = ''
         self.parser = FtFrameParser()
         self._seq = 0
-        self._running = False
-        self._sock: Optional[socket.socket] = None
-        self._thread: Optional[threading.Thread] = None
         self._tap_init()
 
-    def start(self) -> bool:
-        """Arma a thread. Sempre True: não há dependência opcional aqui (o
-        socket é da stdlib), e robô inalcançável não é falha de partida — a
-        thread fica tentando, igual ao hot-plug do USB."""
-        if self._running:
-            return True
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._worker, daemon=True, name='ft-tcp')
-        self._thread.start()
-        return True
+    def _open(self):
+        try:
+            sock = socket.create_connection(
+                (self._host, self._tcp_port), timeout=3.0)
+        except Exception as exc:
+            self.error = f'{self._host}:{self._tcp_port} — {exc}'
+            return None
+        sock.settimeout(_RECV_TIMEOUT_S)
+        return sock
 
-    def stop(self) -> None:
-        self._running = False
-        sock = self._sock
-        if sock is not None:
-            # shutdown antes do close: destrava um recv() que já esteja
-            # bloqueado, em vez de esperar o timeout.
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except Exception:
-                pass
-            try:
-                sock.close()
-            except Exception:
-                pass
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
-
-    def _worker(self) -> None:
-        while self._running:
-            try:
-                sock = socket.create_connection(
-                    (self._host, self._tcp_port), timeout=3.0)
-            except Exception as exc:
-                self.error = f'{self._host}:{self._tcp_port} — {exc}'
-                time.sleep(_RETRY_S)
-                continue
-            sock.settimeout(_RECV_TIMEOUT_S)
-            self._sock = sock
-            self.connected = True
-            self.error = ''
-            try:
-                self._read_loop(sock)
-            except Exception as exc:
-                self.error = str(exc)
-            finally:
-                self.connected = False
-                self._sock = None
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-            if self._running:
-                time.sleep(_RETRY_S)
-
-    def _line_write(self, data: bytes) -> None:
-        """Manda bytes pela 60000, que o controlador repassa à 485 do
-        flange (canal de comando Modbus — ver ft_modbus).
-
-        O controlador é intermediário também na ida: o `SetToolMode(1)` do
-        `configure_tool_485` tem de ter rodado, senão os pinos 1/2 estão
-        em modo AI e o byte não chega a virar sinal na linha.
-        """
-        sock = self._sock
-        if sock is None:
-            raise RuntimeError('socket da 60000 não está aberto')
-        sock.sendall(data)
+    def _close(self, sock) -> None:
+        # shutdown antes do close: destrava um recv() que já esteja
+        # bloqueado, em vez de esperar o timeout.
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        try:
+            sock.close()
+        except Exception:
+            pass
 
     def _read_loop(self, sock: socket.socket) -> None:
         while self._running:
@@ -278,21 +229,20 @@ class FtTcpSource(LineTapMixin):
             self.last_rx = time.monotonic()
             self._stamp_frames(frames)
 
-    def _stamp_frames(self, frames: list[tuple[float, ...]]) -> None:
-        """Numera e carimba os quadros de UMA leitura.
+    def _line_write(self, data: bytes) -> None:
+        """Manda bytes pela 60000, que o controlador repassa à 485 do
+        flange (canal de comando Modbus — ver ft_modbus).
 
-        Cópia deliberada do FtSerialSource._stamp_frames: o raciocínio é o
-        mesmo (o sensor não manda relógio, um recv traz k quadros de uma vez, e
-        dar a todos o mesmo instante faria dt=0 e derrubaria o One-Euro para a
-        taxa nominal). Se um terceiro transporte aparecer, vale extrair para um
-        mixin; com dois, a herança custaria mais do que estas dez linhas.
+        O controlador é intermediário também na ida: o `SetToolMode(1)` do
+        `configure_tool_485` tem de ter rodado, senão os pinos 1/2 estão
+        em modo AI e o byte não chega a virar sinal na linha.
         """
-        t_now_us = time.perf_counter() * 1e6
-        k = len(frames)
-        cb = self._on_sample
-        for idx, vals in enumerate(frames):
-            t_us = int(t_now_us - (k - 1 - idx) * self._period_us) & 0xFFFFFFFF
-            seq = self._seq
-            self._seq = (seq + 1) & 0xFFFFFFFF
-            if cb is not None:
-                cb(seq, t_us, vals)
+        sock = self._handle
+        if sock is None:
+            raise RuntimeError('socket da 60000 não está aberto')
+        sock.sendall(data)
+
+    # O carimbo dos quadros não depende do transporte, só do sensor — é o
+    # mesmo do caminho USB, e viver em dois lugares era como as duas cópias
+    # divergiam sem ninguém ver.
+    _stamp_frames = FtSerialSource._stamp_frames

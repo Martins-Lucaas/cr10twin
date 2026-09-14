@@ -71,7 +71,7 @@ from .constants import (
     ft_max_rate_hz,
     ft_polled_max_rate_hz,
 )
-from .lc_filter import _LoadCellFilter, QOS_SENSOR
+from .lc_filter import _LoadCellFilter, QOS_SENSOR, window_drift
 from .ft_modbus import (
     FtDevice, FtModbusClient, ModbusError, FtModbusMapUnconfirmed,
     format_scan, scan_registers, suggest_map,
@@ -357,14 +357,9 @@ class FtReceiverNode(Node):
     _AUTOZERO_RATE = 0.00025    # passo/amostra (tau ~ 4 s a 1 kHz; era
                                 # 0,001 quando a taxa era 250 Hz)
 
-    @staticmethod
-    def _window_drift(win: list[float]) -> float:
-        """Deriva da janela: |mediana da 2ª metade − mediana da 1ª|."""
-        half = len(win) // 2
-        m1 = sorted(win[:half])[half // 2]
-        tail = win[half:]
-        m2 = sorted(tail)[len(tail) // 2]
-        return abs(m2 - m1)
+    # Critério de estabilidade do tare — o mesmo nos dois receivers, por isso
+    # vive em lc_filter. Continua exposto aqui como `self._window_drift`.
+    _window_drift = staticmethod(window_drift)
 
     def _publish_tare_result(self, *fields) -> None:
         m = String()

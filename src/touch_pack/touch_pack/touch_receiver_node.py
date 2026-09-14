@@ -77,6 +77,7 @@ class TouchReceiverNode(Node):
             sock.bind(('', UDP_PORT))
         except OSError as exc:
             self.get_logger().error(f'Bind UDP :{UDP_PORT} falhou: {exc}')
+            sock.close()   # sem isto cada respawn do nó vaza um fd
             return
         self._sock = sock
         self.get_logger().info(f'UDP bind OK em 0.0.0.0:{UDP_PORT} (broadcast)')

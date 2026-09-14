@@ -53,7 +53,8 @@ class RealPoseSync(Node):
             self, FollowJointTrajectory, _CONTROLLER_ACTION)
 
     def _robot_ip(self) -> str:
-        param_ip = self.get_parameter('robot_ip').value.strip()
+        # `or ''`: o parâmetro vem None se o launch o declarar como null.
+        param_ip = str(self.get_parameter('robot_ip').value or '').strip()
         if param_ip:
             return param_ip
         try:

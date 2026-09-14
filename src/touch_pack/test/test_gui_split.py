@@ -28,6 +28,12 @@ MIXINS = [
     ('gui_ft_charts.py', 'FtChartsMixin'),
     ('gui_ft_arrow.py', 'FtArrowMixin'),
     ('gui_matrix.py', 'MatrixMixin'),
+    ('gui_camera.py', 'CameraMixin'),
+    ('gui_manip3d_tab.py', 'Manip3DTabMixin'),
+    ('gui_hand.py', 'HandMixin'),
+    ('gui_robot.py', 'RobotMixin'),
+    ('gui_poses.py', 'PosesMixin'),
+    ('gui_sensors.py', 'SensorsMixin'),
 ]
 HOST = ('palpation_gui.py', 'PalpationGUI')
 
@@ -36,7 +42,8 @@ HOST = ('palpation_gui.py', 'PalpationGUI')
 # do rclpy, então a lista entra à mão.
 _NODE_API = {
     'get_logger', 'get_clock', 'create_publisher', 'create_subscription',
-    'create_timer', 'declare_parameter', 'get_parameter', 'set_parameters',
+    'create_timer', 'create_client', 'create_service',
+    'declare_parameter', 'get_parameter', 'set_parameters',
     'count_publishers', 'count_subscribers', 'destroy_node',
     'destroy_subscription', 'destroy_publisher', 'destroy_timer',
     'get_name', 'get_namespace', 'context', 'executor',
