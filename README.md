@@ -43,7 +43,7 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 
 | Component | Model | Specifications |
 |---|---|---|
-| Arm | **Dobot CR10** | 6-DOF, 1375 mm reach, 10 kg payload, TCP/IP V4 protocol |
+| Arm | **Dobot CR10A** | 6-DOF, 1300 mm reach, 10 kg payload, ±0.03 mm repeatability, TCP/IP V4 protocol |
 | Hand | **COVVI Hand** | 5 fingers + 31 joints (6 primary + 25 mimic), ECI Ethernet interface |
 | Camera | Gazebo RGB | 848×480, 70° FoV, mounted behind the conveyor |
 | Load cell | 100 kg S-type cell + HX711 on a **XIAO ESP32S3** | **USB CDC only** at 115200 baud, one line per sample: `F,<seq>,<t_us>,<v_sensor>`. The WiFi/UDP path was removed on 27/07/2026 (packet loss + jitter in the HX711 front end) |
