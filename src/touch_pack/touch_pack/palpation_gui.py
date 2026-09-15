@@ -107,6 +107,7 @@ from .constants import (
     PROBE_ALIGN_RETRACT_MM_MIN, PROBE_ALIGN_RETRACT_MM_MAX,
     PROBE_ALIGN_TILT_MAX_DEG_DEFAULT, PROBE_ALIGN_TILT_HARD_MAX_DEG,
     STEP_MAX_LEVELS, staircase_levels,
+    STAIRCASE_MODES, FMOD_MODES,
 )
 
 # Driver TCP/IP do CR10 real (cabeada via 192.168.5.1 / LAN1).
@@ -1662,17 +1663,27 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                          unit='×', var=self.align_points_var,
                          vmin=PROBE_ALIGN_POINTS_MIN,
                          vmax=PROBE_ALIGN_POINTS_MAX, step=1, integer=True,
-                         hint='Number of light touches, arranged on a regular '
-                              'polygon around the approach point. 3 is the '
-                              'geometric minimum and gives the exact plane '
-                              'through those points — with no way to tell a '
-                              'bad touch from a good one. 4 or more switches '
-                              'the fit to least squares, which filters the '
-                              'mechanical noise of each touch and makes the '
-                              'RMS residual meaningful. Each point costs one '
-                              'full descent. Ignored in Matrix mode: there '
-                              'the probing points are the four corners of '
-                              'the grid you drew.')
+                         hint='Number of light touches on the RING, arranged '
+                              'on a regular polygon around the approach '
+                              'point. One extra touch lands on the CENTRE '
+                              'first — the point the run will actually '
+                              'measure. The centre adds nothing to the '
+                              'normal (it sits at the centroid), but it is '
+                              'the only touch that sees CURVATURE: on a '
+                              'domed sample every ring point falls at the '
+                              'same height, so the ring alone reports a '
+                              'perfect plane over a surface that is not '
+                              'flat. 3 ring points is the geometric minimum '
+                              'and gives the exact plane through them — with '
+                              'no way to tell a bad touch from a good one. 4 '
+                              'or more switches the fit to least squares, '
+                              'which filters the mechanical noise of each '
+                              'touch and makes the RMS residual meaningful. '
+                              'Each point costs one full descent. Ignored in '
+                              'Matrix mode: there the probing points are the '
+                              'four corners of the grid you drew, with no '
+                              'centre touch — the grid measures the surface '
+                              'by itself, one penetration per waypoint.')
         self._param_row(self._align_group, label='Align — Probe Radius',
                          unit='mm', var=self.align_radius_var,
                          vmin=PROBE_ALIGN_RADIUS_MM_MIN,
@@ -2337,16 +2348,37 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         if not ativo:
             return False                      # só sim: nada a sincronizar
 
+        # MATRIX_MAP parte da pose de JOG em que o operador deixou a sonda,
+        # logo acima do primeiro ponto — é o único modo que NÃO passa pela
+        # home, e levá-lo até lá destrói exatamente a pose que ele existe
+        # para usar (a origem passaria a ser procurada no XY da home e o run
+        # abortaria por 'no_contact' ao esgotar depth_mm em ar livre).
+        #
+        # O que esta função protege, porém, continua valendo: o degrau de
+        # ServoJ no primeiro tick do mirror depende de sim e real
+        # CONCORDAREM, não de concordarem NA HOME. Então no MATRIX ela vira
+        # uma verificação de sincronismo na pose corrente, sem mover nada.
+        sync_only = str(payload.get('mode', '')) == 'MATRIX_MAP'
+
         self._prehoming = True
-        self._set_status('Homing the real arm before palpation…', WARN)
-        # Mesmo caminho do botão ⌂ Home, na thread do Tk (mexe em sliders).
-        self._apply_arm_home()
+        if sync_only:
+            self._set_status(
+                'Checking sim↔real sync before the matrix (the jog pose is '
+                'kept)…', WARN)
+        else:
+            self._set_status('Homing the real arm before palpation…', WARN)
+            # Mesmo caminho do botão ⌂ Home, na thread do Tk (mexe em sliders).
+            self._apply_arm_home()
         threading.Thread(target=self._prehome_worker,
-                         args=(payload,), daemon=True).start()
+                         args=(payload, sync_only), daemon=True).start()
         return True
 
-    def _prehome_worker(self, payload: dict) -> None:
-        """Espera o braço real chegar à home e concordar com o simulador."""
+    def _prehome_worker(self, payload: dict, sync_only: bool = False) -> None:
+        """Espera o braço real chegar à home e concordar com o simulador.
+
+        Com `sync_only` (MATRIX_MAP) a chegada à home NÃO é exigida: a pose
+        de partida é a de jog, e só o acordo sim↔real é verificado.
+        """
         q_home = np.array(
             [math.radians(float(self._arm_home_deg[j])) for j in ARM_JOINTS],
             dtype=np.float64)
@@ -2370,17 +2402,21 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 continue
             d_home = float(np.max(np.abs(q_real - q_home)))
             d_sync = float(np.max(np.abs(q_real - np.asarray(q_sim))))
-            if (d_home <= self._PREHOME_ARRIVE_RAD
-                    and d_sync <= self._PREHOME_TOL_RAD):
+            if (d_sync <= self._PREHOME_TOL_RAD
+                    and (sync_only or d_home <= self._PREHOME_ARRIVE_RAD)):
                 # Duas leituras seguidas: uma só pode cair no meio de um
                 # quadro de feedback ainda não atualizado depois do MovJ.
                 ok_ticks += 1
                 if ok_ticks >= 2:
                     self.get_logger().info(
-                        f'[PRE-HOME] braço real na home '
-                        f'(erro {math.degrees(d_home):.2f}°) e sincronizado '
-                        f'com o sim ({math.degrees(d_sync):.2f}°) — '
-                        'liberando a palpação.')
+                        ('[PRE-HOME] MATRIX: sim e real concordam na pose de '
+                         f'jog ({math.degrees(d_sync):.2f}°) — liberando a '
+                         'matriz SEM passar pela home.'
+                         if sync_only else
+                         f'[PRE-HOME] braço real na home '
+                         f'(erro {math.degrees(d_home):.2f}°) e sincronizado '
+                         f'com o sim ({math.degrees(d_sync):.2f}°) — '
+                         'liberando a palpação.'))
                     self._prehoming = False
                     self.root.after(
                         0, lambda: self._do_palpation_start(payload,
@@ -2388,19 +2424,31 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                     return
             else:
                 ok_ticks = 0
-                erro = (f'home {math.degrees(d_home):.2f}° / '
+                erro = (f'sim↔real {math.degrees(d_sync):.2f}°'
+                        if sync_only else
+                        f'home {math.degrees(d_home):.2f}° / '
                         f'sim↔real {math.degrees(d_sync):.2f}°')
 
         # RECUSA o start. O braço fica onde está: publicar assim mesmo é
         # exatamente o solavanco que esta função existe para impedir.
         self.get_logger().error(
-            f'[PRE-HOME] braço real não convergiu para a home ({erro}) — '
-            'palpação NÃO iniciada. Verifique a conexão e use ⌂ Home.')
+            (f'[PRE-HOME] sim e real não concordam na pose de jog ({erro}) — '
+             'matriz NÃO iniciada. Reposicione com o jog até os dois '
+             'coincidirem.'
+             if sync_only else
+             f'[PRE-HOME] braço real não convergiu para a home ({erro}) — '
+             'palpação NÃO iniciada. Verifique a conexão e use ⌂ Home.'))
         self._prehoming = False
-        self.root.after(0, self._prehome_failed, erro)
+        self.root.after(0, self._prehome_failed, erro, sync_only)
 
-    def _prehome_failed(self, erro: str) -> None:
+    def _prehome_failed(self, erro: str, sync_only: bool = False) -> None:
         self._starting_palpation = False
+        if sync_only:
+            self._set_status(
+                f'Matrix not started: the sim and the real arm disagree '
+                f'({erro}). Jog them back together — the matrix keeps the '
+                'jog pose, so it cannot be fixed by homing.', DANGER)
+            return
         self._set_status(
             f'Palpation not started: the real arm did not reach home '
             f'({erro}). Press ⌂ Home and try again.', DANGER)
@@ -3308,7 +3356,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
 
         # Força modulada: só TOUCH. O explorer ignora o perfil nos demais
         # modos, então esconder aqui evita prometer o que não acontece.
-        if fgrp is not None and mode == 'TOUCH':
+        if fgrp is not None and mode in FMOD_MODES:
             if adv is not None:
                 fgrp.pack(fill='x', before=adv)
             else:
@@ -3317,7 +3365,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Escada de força: MANUAL (substitui o hold infinito) e MATRIX_MAP
         # (substitui o hold de patamar único EM CADA PONTO da grade, dando o
         # mapa de histerese da peça em vez de um único ponto da curva).
-        if sgrp is not None and mode in ('MANUAL', 'MATRIX_MAP'):
+        if sgrp is not None and mode in STAIRCASE_MODES:
             if adv is not None:
                 sgrp.pack(fill='x', before=adv)
             else:
@@ -3906,7 +3954,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 f'Start already sent {since:.1f}s ago — waiting for the '
                 'explorer to pick it up.', WARN)
             return
-        if self._latest_phase not in ('IDLE', 'DONE', 'ABORTED'):
+        # _PHASE_ENDED, não um literal: FROZEN é fase ENCERRADA (o E-STOP
+        # congelou e a thread do protocolo morreu). Com o literal, um FREEZE
+        # travava a palpação para sempre — o Start recusava por "já rodando"
+        # e o Stop não desfazia nada, porque o explorer não está mais busy.
+        if self._latest_phase not in _PHASE_ENDED:
             self._set_status(
                 f'Experiment already running ({self._latest_phase}) — '
                 'use Stop first.', WARN)
@@ -4029,9 +4081,17 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         step_max   = float(step_max   if step_max   is not None
                            else FORCE_SP_DEFAULT)
         step_dwell = float(step_dwell if step_dwell is not None else 5.0)
-        # Só MANUAL executa a escada — nos demais manda 0 explícito para o
-        # `ros2 topic echo` não sugerir patamares que não vão acontecer.
-        if self.mode_var.get() != 'MANUAL':
+        # MANUAL e MATRIX_MAP executam a escada (o explorer a percorre em
+        # cada ponto da grade, dando o mapa de histerese); nos demais manda 0
+        # explícito para o `ros2 topic echo` não sugerir patamares que não
+        # vão acontecer.
+        #
+        # O `!= 'MANUAL'` que havia aqui zerava a escada que _on_palp_mode
+        # acabara de MOSTRAR em MATRIX_MAP: o operador configurava o mapa de
+        # histerese, apertava Start e recebia identações de patamar único sem
+        # uma linha de aviso. Toda a escada por ponto existe no explorer e era
+        # inalcançável pela tela.
+        if self.mode_var.get() not in STAIRCASE_MODES:
             step_size = 0.0
         elif step_size > 0.0:
             if step_max <= step_start:
@@ -4059,7 +4119,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             fmod_shape = 'OFF'
         # Só TOUCH executa o perfil — nos outros modos manda OFF explícito
         # para que o `ros2 topic echo` não sugira uma onda que não roda.
-        if self.mode_var.get() != 'TOUCH':
+        if self.mode_var.get() not in FMOD_MODES:
             fmod_shape = 'OFF'
         if fmod_shape != 'OFF':
             _amp = 0.5 * (fmod_max - fmod_min)

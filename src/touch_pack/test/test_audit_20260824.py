@@ -175,7 +175,16 @@ def test_gui_separa_falha_do_estop_real_do_sucesso():
     src = Path(gui.__file__).read_text()
     corpo = re.search(r'def _estop_engage.*?(?=\n    def )', src, re.S).group(0)
     assert 'hw_ok' in corpo, 'sucesso e falha do hardware indistinguíveis'
-    assert 'FAILED' in corpo
+    assert 'NOT alarmed' in corpo, 'o texto de falha perdeu a ressalva'
+    # E `hw_ok` tem de NASCER False: o default otimista fazia a GUI anunciar
+    # "robot disabled and alarmed" nos caminhos que nem chegaram a falar com
+    # o controlador — sem driver, ou durante a janela de reconexão.
+    assert 'hw_ok = False' in corpo, 'hw_ok voltou a nascer otimista'
+    # E a tentativa não pode ser condicionada a `_robot_connected`: é
+    # justamente com ele False (reconexão em curso) que o braço pode estar
+    # executando o que já está na fila de motion.
+    assert '_robot_connected' not in corpo.split('hw_ok = False')[1].split(
+        'elif')[0], 'a chamada do E-STOP voltou a exigir conexão viva'
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -185,12 +194,38 @@ def test_gui_separa_falha_do_estop_real_do_sucesso():
 def test_start_limpa_stop_e_freeze_pendentes(explorer):
     """Um STOP no fim do run (quando `_joint_batch_to` sai pela porta rápida
     e não consome o Event) matava a PRIMEIRA fase do run seguinte, sem causa
-    visível para o operador."""
+    visível para o operador.
+
+    A limpeza mora em `_cb_start`, sob o `_start_lock` e ANTES do
+    `_busy.set()` — por isso o teste entra pela porta de verdade."""
     explorer._stop_requested.set()
     explorer._freeze_requested.set()
-    _start(explorer)
+    explorer._pause_requested.set()
+    _cb_start(explorer)
     assert not explorer._stop_requested.is_set()
     assert not explorer._freeze_requested.is_set()
+    assert not explorer._pause_requested.is_set()
+
+
+def test_freeze_durante_o_parsing_do_start_nao_e_apagado(explorer):
+    """A janela que existia: o `_busy` era marcado, o parsing corria (
+    set_parameters, validação da matriz, lookup do aprendizado) e SÓ ENTÃO os
+    Events eram limpos. Um E-STOP apertado nesse intervalo era marcado e
+    depois apagado, e o run arrancava como se ninguém tivesse apertado nada.
+
+    É a única mensagem do sistema que não pode ser perdida por uma janela de
+    milissegundos."""
+    original = explorer._start_from_msg
+
+    def _parsing_lento(msg):
+        # O operador aperta o E-STOP no meio do parsing.
+        explorer._cb_freeze(None)
+        return original(msg)
+
+    explorer._start_from_msg = _parsing_lento
+    _cb_start(explorer)
+    assert explorer._freeze_requested.is_set(), (
+        'o FREEZE apertado durante o parsing do Start foi descartado')
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -422,6 +457,29 @@ def _ft_probe():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def _cb_start(node, **campos):
+    """Entra pela porta real (`_cb_start`), que é onde mora o checar-e-marcar
+    do `_busy` e a limpeza dos Events."""
+    node._busy.clear()
+    node._cb_start(_msg(**campos))
+    if node._protocol_thread is not None:
+        node._protocol_thread.join(timeout=2.0)
+    node._busy.clear()
+
+
+def _msg(**campos):
+    from touch_pack_msgs.msg import PalpationStart
+    msg = PalpationStart()
+    msg.depth_mm = 10.0
+    msg.force_n = 2.0
+    msg.slide_dist_mm = 10.0
+    msg.speed_mms = 10.0
+    msg.mode = 'TOUCH'
+    for k, v in campos.items():
+        setattr(msg, k, v)
+    return msg
 
 
 def _start(node, **campos):

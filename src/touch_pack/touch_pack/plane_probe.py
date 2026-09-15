@@ -19,9 +19,10 @@ Convenções (todas no MUNDO URDF, metros):
                 é a normal ESPERADA quando o alvo está perpendicular à home.
 
 API pública:
-    probe_pattern(n_points, radius_m)   → offsets XY (n, 2)
+    probe_pattern(n_points, radius_m, with_center=False) → offsets XY
+    sagitta_m(fit, point)               → desvio do centro contra o plano (m)
     probe_ring_from_grid(nodes_xy, …)   → offsets XY (4, 2)
-    fit_plane(points, ref_normal=+Z)    → PlaneFit
+    fit_plane(points, ref_normal=+Z)    → PlaneFit (.tilt_deg ± .tilt_unc_deg)
     attack_dir_from_normal(normal)      → (3,) unitário
     angle_between_deg(a, b)             → float
     validate_fit(fit, ...)              → (ok, motivo)
@@ -60,6 +61,14 @@ RMS_MAX_M_DEFAULT = 5.0e-4
 # matematicamente, mas a normal gira descontroladamente com poucos µm de
 # ruído — é o caso degenerado que precisa ser recusado, não ajustado.
 SPREAD_MIN_DEFAULT = 0.10
+# Sagitta máxima do toque CENTRAL contra o plano do anel (ver sagitta_m). O
+# valor é o mesmo do resíduo RMS e pelo mesmo motivo — "o que não fecha em
+# meio milímetro não é um plano" — mas aplicado à medida DIRETA em vez da
+# média diluída, o que o torna ~2,5x mais apertado na prática para um anel
+# de 4 pontos. Acima disso a superfície tem curvatura, e alinhar o ataque a
+# um plano ajustado deixa de significar coisa alguma: uma calota não tem uma
+# normal, tem uma por ponto.
+SAGITTA_MAX_M_DEFAULT = RMS_MAX_M_DEFAULT
 
 # Fração do passo que o anel de sondagem fica FORA do último nó da grade
 # (ver probe_ring_from_grid). Meio passo é a menor folga que garante que
@@ -77,6 +86,7 @@ class PlaneFit(NamedTuple):
     tilt_deg  desvio angular entre `normal` e a referência (graus)
     spread    σ₂/σ₁ dos pontos centrados ∈ [0, 1]; 0 = colineares
     n_points  quantidade de pontos usados no ajuste
+    lever_m   maior braço de alavanca NO PLANO (centroide → toque, m)
     """
     normal: np.ndarray
     centroid: np.ndarray
@@ -84,12 +94,32 @@ class PlaneFit(NamedTuple):
     tilt_deg: float
     spread: float
     n_points: int
+    lever_m: float = 0.0
 
     @property
     def least_squares(self) -> bool:
         """True quando o ajuste teve graus de liberdade sobrando (N > 3) —
         é o caso em que `rms_m` mede alguma coisa."""
         return self.n_points > MIN_PROBE_POINTS
+
+    @property
+    def tilt_unc_deg(self) -> float:
+        """Incerteza angular da normal medida, em graus.
+
+        Um desvio só é CONHECIDO até onde a medição o resolve: com resíduo
+        ortogonal RMS σ e braço de alavanca L, inclinar o plano de
+        atan(σ/L) reproduz os mesmos toques dentro do próprio ruído. É o
+        número que separa "o alvo está reto" de "o alvo parece reto porque
+        a sondagem não enxerga melhor que isso".
+
+        `inf` quando o resíduo não mede nada: com N == 3 o plano passa
+        EXATO pelos três pontos e σ sai estruturalmente zero, o que faria
+        esta conta anunciar certeza absoluta a partir de nenhuma evidência.
+        Idem para braço de alavanca nulo.
+        """
+        if not self.least_squares or self.lever_m <= 0.0:
+            return math.inf
+        return math.degrees(math.atan2(float(self.rms_m), float(self.lever_m)))
 
 
 def _unit(v) -> np.ndarray:
@@ -108,24 +138,57 @@ def angle_between_deg(a, b) -> float:
     return math.degrees(math.acos(float(np.clip(ua @ ub, -1.0, 1.0))))
 
 
-def probe_pattern(n_points: int, radius_m: float) -> np.ndarray:
-    """Offsets XY (n, 2) dos toques de sonda: polígono regular de raio
-    `radius_m` centrado no ponto de aproximação inicial.
+def probe_pattern(n_points: int, radius_m: float, *,
+                  with_center: bool = False) -> np.ndarray:
+    """Offsets XY dos toques de sonda: polígono regular de raio `radius_m`
+    em torno do ponto de aproximação, opcionalmente com o CENTRO à frente.
 
     O polígono regular é a distribuição mais bem condicionada para o mesmo
     número de toques — σ₁ ≈ σ₂ nos pontos centrados, ou seja, a normal fica
     igualmente determinada nas duas direções do plano. Uma linha de pontos,
     pelo mesmo custo em tempo de robô, deixaria um eixo indeterminado.
 
-    O centro NÃO entra no padrão: ele não acrescenta nada à normal (está no
-    centroide) e custaria uma identação a mais na amostra.
+    `with_center=True` põe [0, 0] como PRIMEIRO offset. Ele não entra no
+    ajuste da normal — está no centroide e não acrescenta braço de alavanca
+    nenhum — mas é o único toque que enxerga CURVATURA, e a curvatura é o
+    modo cego do anel: numa calota simétrica todos os pontos do anel caem na
+    MESMA altura, então o ajuste devolve um plano perfeito (desvio 0,000°,
+    resíduo 0,000 mm, espalhamento 1,00) sobre uma superfície que não é
+    plana. Com raio de 15 mm e curvatura de R = 200 mm o centro fica 0,56 mm
+    acima desse plano — muito além da reserva de indentação (alvo/K, dezenas
+    de µm contra contato rígido) — e a ponteira encosta no ÁPICE, que é
+    exatamente o contato de canto que a calibração existe para evitar.
+
+    Ver `sagitta_m`: é ele que transforma esse toque em número.
     """
     n = max(MIN_PROBE_POINTS, int(n_points))
     r = float(radius_m)
     if not math.isfinite(r) or r <= 0.0:
         raise ValueError(f'raio de sondagem inválido: {radius_m!r}')
     ang = 2.0 * math.pi * np.arange(n) / n
-    return np.column_stack([r * np.cos(ang), r * np.sin(ang)])
+    anel = np.column_stack([r * np.cos(ang), r * np.sin(ang)])
+    if not with_center:
+        return anel
+    return np.vstack([np.zeros((1, 2)), anel])
+
+
+def sagitta_m(fit: PlaneFit, point) -> float:
+    """Distância ASSINADA de `point` ao plano ajustado, ao longo da normal.
+
+    Positivo = o ponto está ACIMA do plano, do lado de onde a ferramenta
+    chega — é o caso da amostra abaulada, e o sinal importa: uma depressão
+    no centro (negativo) não faz a ponteira encostar no ápice.
+
+    Por que não deixar isso para o resíduo RMS do próprio ajuste: incluir o
+    centro entre os pontos ajustados DILUI o desvio em vez de medi-lo. Com 4
+    pontos de anel, uma sagitta de 1,13 mm vira um RMS de 0,45 mm — que
+    ainda passa no teto de 0,5 mm e ainda parece ruído de medição. Medida
+    direta contra o plano do ANEL, ela aparece inteira.
+    """
+    p = np.asarray(point, dtype=float).flatten()
+    if p.shape != (3,):
+        raise ValueError(f'ponto deve ter 3 coordenadas, tem {p.shape}')
+    return float((p - np.asarray(fit.centroid, float)) @ _unit(fit.normal))
 
 
 def _axis_geometry(v: np.ndarray) -> tuple[float, float, float]:
@@ -261,6 +324,12 @@ def fit_plane(points, ref_normal=Z_UP) -> PlaneFit:
     resid = Q @ normal
     rms_m = float(np.sqrt(float(np.mean(resid * resid))))
 
+    # Braço de alavanca NO PLANO: a componente normal é justamente o resíduo,
+    # então descontá-la deixa a distância que realmente alavanca o ajuste.
+    # É o L de tilt_unc_deg — sem ele o resíduo é um número sem escala.
+    in_plane = Q - np.outer(resid, normal)
+    lever_m = float(np.max(np.linalg.norm(in_plane, axis=1)))
+
     return PlaneFit(
         normal=normal,
         centroid=centroid,
@@ -268,6 +337,7 @@ def fit_plane(points, ref_normal=Z_UP) -> PlaneFit:
         tilt_deg=angle_between_deg(normal, ref),
         spread=spread,
         n_points=int(len(P)),
+        lever_m=lever_m,
     )
 
 

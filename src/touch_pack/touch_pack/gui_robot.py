@@ -446,6 +446,22 @@ class RobotMixin:
         self._robot_reconnecting = False
         self._real_driver = drv
         self._robot_connected = True
+        # Ponto ÚNICO em que um driver novo entra em serviço — e portanto o
+        # único lugar onde a trava de E-STOP pode ser reimposta nele. Sem
+        # isto o `_estop_engaged` do driver nasce False e o E-STOP que o
+        # operador engatou some junto com o objeto antigo.
+        if getattr(self, '_estop_latched', False):
+            try:
+                drv.emergency_stop()
+            except CR10RealDriverError as exc:
+                self.get_logger().error(
+                    f'[ROBOT] não foi possível reimpor o E-STOP no driver '
+                    f'reconectado: {exc}')
+            self._set_status(
+                'CR10 reconnected with E-STOP still ENGAGED — the arm stays '
+                'disabled. Press E-STOP again to release and re-enable.',
+                DANGER)
+            self._refresh_estop_button()
         # (Re)conexão pode significar remontagem/reboot — invalida a
         # calibração de frame do modo MovL (refeita na próxima HOME).
         # Robô acabou de (re)conectar — drag nunca está ativo no hardware a
@@ -715,7 +731,19 @@ class RobotMixin:
                 cfg = CR10RealDriverConfig(ip=ip)
                 drv = CR10RealDriver(ip=ip, dry_run=False, config=cfg)
                 drv.connect()
-                drv.enable()
+                # E-STOP travado: NÃO reabilitar. `enable()` faz PowerOn +
+                # EnableRobot e espera o modo 5 — isto é, a reconexão
+                # automática rearmava o braço por conta própria, com a trava
+                # da GUI ainda acesa e o operador lendo "RECONECTAR" no
+                # botão. Como o driver é NOVO, a trava de software do antigo
+                # também se perdia: o braço voltava aceitando ServoJ.
+                if getattr(self, '_estop_latched', False):
+                    self.get_logger().warn(
+                        '[ROBOT] reconectado com E-STOP TRAVADO — braço '
+                        'deixado desabilitado. Solte o E-STOP (segundo toque) '
+                        'para rearmar.')
+                else:
+                    drv.enable()
                 time.sleep(1.5)
                 mode_raw = drv.robot_mode() or ''
                 self.root.after(
@@ -816,15 +844,30 @@ class RobotMixin:
         #    a chave no CONTROLADOR. Se o EmergencyStop(1) não chegou, o braço
         #    pode continuar habilitado — dizer "robot disabled and alarmed"
         #    ali é afirmar sobre o hardware algo que não se verificou.
-        hw_ok = True
-        hw_err = ''
-        if self._real_driver is not None and self._robot_connected:
+        #    A condição é `driver existe`, NÃO `_robot_connected`. Durante a
+        #    janela de reconexão automática (heartbeat caiu, worker tentando
+        #    de novo com backoff de até 30 s) `_robot_connected` é False e o
+        #    braço pode estar executando o que já está na fila de motion — era
+        #    exatamente aí que o E-STOP não fazia NADA no hardware e ainda
+        #    anunciava "robot disabled and alarmed". Chamar sempre também arma
+        #    a trava local do driver, que é o que impede o streaming de
+        #    recomeçar quando a conexão voltar.
+        hw_ok = False
+        hw_err = 'no driver object — nothing was sent to the controller'
+        if self._real_driver is not None:
             try:
-                self._real_driver.emergency_stop()
+                hw_ok = self._real_driver.emergency_stop()
+                if not hw_ok:
+                    hw_err = ('EmergencyStop(1) did not reach the controller '
+                              '(no dashboard session)')
             except CR10RealDriverError as exc:
                 hw_ok = False
                 hw_err = str(exc)
                 self.get_logger().error(f'E-STOP real falhou: {exc}')
+        elif self._robot_mode != 'MIRROR':
+            # Sem braço real configurado não há hardware a alarmar, e dizer
+            # que houve seria pior que não dizer nada.
+            hw_err = 'simulation only — there is no real arm to alarm'
 
         # 4. Abre a mão via ECI.
         if self._eci_enabled and self._cli_eci_grip is not None \
@@ -845,12 +888,17 @@ class RobotMixin:
             self._set_status(
                 'E-STOP ENGAGED — robot disabled and alarmed. Press E-STOP '
                 'again to release and re-enable.', DANGER)
+        elif self._real_driver is None and self._robot_mode != 'MIRROR':
+            self._set_status(
+                'E-STOP ENGAGED — palpation frozen in place. No real arm is '
+                'connected, so nothing was sent to a controller.', DANGER)
         else:
             self._set_status(
-                f'E-STOP: EmergencyStop(1) FAILED ({hw_err}). Motion is '
-                'blocked in software (driver + explorer frozen), but the '
-                'controller may NOT be alarmed — the arm can still be '
-                'enabled. Use the physical E-Stop.', DANGER)
+                f'E-STOP: the controller was NOT alarmed ({hw_err}). Motion '
+                'is blocked in software (driver + explorer frozen) and will '
+                'stay blocked through a reconnect, but anything already in '
+                'the motion queue KEEPS RUNNING. Use the physical E-Stop.',
+                DANGER)
     def _estop_release(self) -> None:
         """Segundo toque: solta a chave e rearma o braço.
 

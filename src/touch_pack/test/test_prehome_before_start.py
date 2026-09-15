@@ -43,8 +43,8 @@ class _Fake:
     def _set_status(self, texto, _cor=None):
         self.status.append(texto)
 
-    def _prehome_worker(self, payload):    # alvo da thread; não roda aqui
-        pass
+    def _prehome_worker(self, payload, sync_only=False):
+        pass                               # alvo da thread; não roda aqui
 
 
 def _chamar(fake, payload=None, monkeypatch=None):
@@ -87,6 +87,43 @@ def test_mirror_conectado_segura_o_start(monkeypatch):
     assert len(f.threads) == 1
     assert f.threads[0]['daemon'] is True
     assert f._prehoming is True
+
+
+def test_matrix_nao_passa_pela_home(monkeypatch):
+    """MATRIX_MAP parte da pose de JOG em que o operador deixou a sonda,
+    logo acima do primeiro ponto — é o único modo que NÃO passa pela home.
+
+    Até 15/09/2026 o pré-home só olhava `_robot_mode`, nunca o modo de
+    palpação: com o braço real conectado, iniciar uma matriz mandava o
+    MovJ da home e destruía exatamente a pose que o modo existe para usar.
+    A origem passava a ser procurada no XY da home e o run abortava por
+    'no_contact' ao esgotar depth_mm em ar livre.
+    """
+    f = _Fake(driver=object(), connected=True, mode='MIRROR')
+    assert _chamar(f, {'mode': 'MATRIX_MAP'}, monkeypatch) is True
+    assert not f.home_aplicada, 'a matriz foi levada à home — perdeu o jog'
+
+
+def test_matrix_ainda_verifica_o_sincronismo(monkeypatch):
+    """O que o pré-home protege continua valendo: o degrau de ServoJ no
+    primeiro tick do mirror depende de sim e real CONCORDAREM, não de
+    concordarem NA HOME. Então a matriz assume o start do mesmo jeito — só
+    que para conferir, sem mover nada."""
+    f = _Fake(driver=object(), connected=True, mode='MIRROR')
+    assert _chamar(f, {'mode': 'MATRIX_MAP'}, monkeypatch) is True
+    assert len(f.threads) == 1
+    assert f.threads[0]['args'][1] is True, 'worker não entrou em sync_only'
+    assert f._prehoming is True
+
+
+def test_os_demais_modos_continuam_indo_a_home(monkeypatch):
+    """A exceção é só do MATRIX: TOUCH, SLIDE e MANUAL descem a partir da
+    home e têm de continuar sendo pré-homeados."""
+    for modo in ('TOUCH', 'SLIDE', 'MANUAL'):
+        f = _Fake(driver=object(), connected=True, mode='MIRROR')
+        assert _chamar(f, {'mode': modo}, monkeypatch) is True
+        assert f.home_aplicada, f'{modo} deixou de passar pela home'
+        assert f.threads[0]['args'][1] is False
 
 
 def test_nao_reentra_enquanto_faz_home(monkeypatch):

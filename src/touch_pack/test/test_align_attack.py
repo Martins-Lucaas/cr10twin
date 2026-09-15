@@ -162,10 +162,14 @@ def test_probe_pattern_is_the_polygon_outside_matrix(node):
     sondando o polígono do raio, com a contagem de pontos da GUI."""
     node._mode = 'SINGLE'
     node._matrix_wps = _wps(4, 4, 0.005)
-    off, label = node._align_offsets(_cfg(n=5))
-    assert off.shape == (5, 2)
-    assert np.allclose(np.linalg.norm(off, axis=1), 0.015)
-    assert 'raio' in label
+    off, label, tem_centro = node._align_offsets(_cfg(n=5))
+    # 5 pontos de anel + o CENTRO, que vem PRIMEIRO: ele é o alvo do ensaio
+    # e é o único toque que enxerga curvatura (ver sagitta_m).
+    assert tem_centro is True
+    assert off.shape == (6, 2)
+    assert np.allclose(off[0], 0.0)
+    assert np.allclose(np.linalg.norm(off[1:], axis=1), 0.015)
+    assert 'CENTRO' in label and 'raio' in label
 
 
 def test_matrix_probes_a_ring_derived_from_the_grid(node):
@@ -174,18 +178,22 @@ def test_matrix_probes_a_ring_derived_from_the_grid(node):
     30 mm de ponta a ponta, fora da amostra."""
     node._mode = 'MATRIX_MAP'
     node._matrix_wps = _wps(4, 4, 0.005)
-    off, label = node._align_offsets(_cfg())
+    off, label, tem_centro = node._align_offsets(_cfg())
     assert off.shape == (4, 2)
     assert off.min(axis=0) == pytest.approx([-0.0025, -0.0025])
     assert off.max(axis=0) == pytest.approx([0.0175, 0.0175])
     assert 'grade' in label
+    # Sem centro no MATRIX: o meio do anel cai dentro da grade e poderia
+    # pré-condicionar um ponto que ainda será medido. A curvatura ali sai da
+    # penetração de cada waypoint, que já vai para o matrix.csv.
+    assert tem_centro is False
 
 
 def test_ring_never_lands_on_a_waypoint(node):
     node._mode = 'MATRIX_MAP'
     wps = _wps(4, 4, 0.005)
     node._matrix_wps = wps
-    off, _label = node._align_offsets(_cfg())
+    off, _label, _c = node._align_offsets(_cfg())
     nodes = np.vstack([np.zeros((1, 2)), wps])
     for o in off:
         assert float(np.min(np.linalg.norm(nodes - o, axis=1))) > 1e-6
@@ -196,16 +204,17 @@ def test_short_grid_falls_back_to_the_polygon(node):
     inclinação que o ruído dos toques — cai no raio da GUI."""
     node._mode = 'MATRIX_MAP'
     node._matrix_wps = _wps(2, 2, 0.001)
-    off, label = node._align_offsets(_cfg())
-    assert np.allclose(np.linalg.norm(off, axis=1), 0.015)
+    off, label, tem_centro = node._align_offsets(_cfg())
+    assert tem_centro is True            # caiu no polígono, que traz o centro
+    assert np.allclose(np.linalg.norm(off[1:], axis=1), 0.015)
     assert 'raio' in label
 
 
 def test_matrix_without_grid_falls_back_to_the_polygon(node):
     node._mode = 'MATRIX_MAP'
     node._matrix_wps = np.zeros((0, 2))
-    off, _label = node._align_offsets(_cfg())
-    assert np.allclose(np.linalg.norm(off, axis=1), 0.015)
+    off, _label, _c = node._align_offsets(_cfg())
+    assert np.allclose(np.linalg.norm(off[1:], axis=1), 0.015)
 
 
 # ── Plano do deslize entregue pela medição ────────────────────────────

@@ -64,7 +64,18 @@ static uint8_t row_mask = 0x1E;
 //#define D_CN 31.761f
 //#define G_CN 6.310e+09f
 
-#define DT 0.10f
+// Passo de integração dos Izhikevich, em MILISSEGUNDOS. Tem de ser o período
+// real da ISR: TIM6 a 1 MHz com período 199 dispara a cada 200 us, e cada
+// disparo roda um izhikevich_step por taxel. O valor antigo (0,10f) fazia o
+// modelo andar a METADE do tempo real — todas as taxas de disparo saíam com
+// fator 2. As constantes de ganho (G_RA, G_SA, G_CN*) foram ajustadas na
+// bancada CONTRA o passo errado: precisam de nova calibração.
+#define DT 0.20f
+
+// Período de um frame 5x5 completo, em milissegundos: 5 linhas x 200 us.
+// É o intervalo real entre duas visitas à MESMA linha, e é isso que separa
+// duas amostras consecutivas de I_buffer.
+#define FRAME_PERIOD_MS 1.0f
 
 #define VTH 30.0f
 #define V_MIN 0.0f
@@ -83,79 +94,17 @@ static uint8_t row_mask = 0x1E;
 // Linha de diagnóstico "STAT,drop=<n>,t=<us>". Período em ms; 0 desliga. [5]
 #define USB_STAT_PERIOD_MS  1000
 
-#define TS_64BIT 0
+#define TS_64BIT 1
 
 //#define SEND_INTERVAL_MS 100  // envio ADC a cada 10 ms
 
-// Para neuronio de segunda ordem
-#define TAU_SYN 4.0f
 #define G_MAX 1.0f
-
-#define W_INB 0.0f /////0.19450982f // peso inibitorio, é o mesmo para todos
-/////////////
 
 #define TEMPLATE_SIZE 20
 
 
-#define HX711_DOUT_PORT GPIOC
-#define HX711_DOUT_PIN  GPIO_PIN_6
-
-#define HX711_SCK_PORT  GPIOC
-#define HX711_SCK_PIN   GPIO_PIN_7
-
-#define HX711_SAMPLE_FREQ 80.0f
-#define HX711_CUTOFF_FREQ 30.0f
-
-// Datasheet do HX711: PD_SCK em nível alto tem mínimo de 0,2 us (T2) e
-// MÁXIMO de 60 us — acima disso o chip entra em power-down. Dois
-// HAL_GPIO_WritePin consecutivos a 168 MHz davam ~40 ns, abaixo do mínimo.
-// 60 ciclos a 168 MHz = 0,36 us, com folga sobre os 0,2 us. [6]
-#define HX711_SCK_DELAY_CYC 60
-
-// Teto da espera por DOUT em nível baixo, em MILISSEGUNDOS de relógio real. A
-// 80 SPS uma amostra nova chega a cada 12,5 ms; 100 ms cobre isso com folga e
-// devolve o controle rápido quando o chip não responde.
-#define HX711_READY_TIMEOUT_MS 100
-
-// Tara: amostras somadas e janela máxima para consegui-las. Se o HX711 não
-// entregar as amostras dentro da janela, o firmware desiste, segue com o
-// offset que tiver e AVISA — nunca fica preso esperando a célula.
-#define HX711_TARE_SAMPLES   200
-#define HX711_TARE_WINDOW_MS 8000
-// Tempo após o boot antes de começar a tara, para o HX711 estabilizar.
-#define HX711_TARE_DELAY_MS  1000
-
-#define HX711_CALIBRATION_FACTOR 260.6f
-
-#define GRAMS_TO_NEWTONS 0.00980665f
-
 
 float g_template[TEMPLATE_SIZE];
-
-float gain_RA[NUM_TAXELS];
-float gain_SA[NUM_TAXELS];
-
-float gain_SA_init[NUM_TAXELS] = {
-
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0
-
-    };
-
-float gain_RA_init[NUM_TAXELS] = {
-
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0
-    };
-
-
-float I_inh = 0.0f;
 
 //  ESTRUTURAS
 typedef struct {
@@ -164,8 +113,6 @@ typedef struct {
 
     float v_SA;
     float u_SA;
-
-    float I;
 } Taxel;
 
 typedef struct {
@@ -211,40 +158,16 @@ volatile uint16_t last_adc[NUM_TAXELS] = {0};
 float I_buffer[NUM_TAXELS][DIFF_BUFFER] = {0}; // corrente excitatória
 uint8_t I_index[NUM_TAXELS] = {0};
 
-float I_inh_buffer[NUM_TAXELS][DIFF_BUFFER] = {0}; // corrente inibitória
-uint8_t I_inh_index[NUM_TAXELS] = {0};
-
 uint8_t usb_tx_buffer[USB_TX_BUFFER_SIZE];
 volatile uint16_t usb_head = 0;
 volatile uint16_t usb_tail = 0;
 volatile uint32_t usb_dropped = 0;   // linhas descartadas por buffer cheio [5]
 
-float g_syn_RA[NUM_TAXELS] = {0};
-float g_syn_SA[NUM_TAXELS] = {0};
-
 uint8_t template_idx_RA[NUM_TAXELS] = {0};
 uint8_t template_idx_SA[NUM_TAXELS] = {0}; // em qual posição do template cada neurônio está
 
-uint8_t template_idx_INH_RA[NUM_TAXELS] = {0};
-uint8_t template_idx_INH_SA[NUM_TAXELS] = {0};
-
 bool izhikevich_step(float *v, float *u, float I,
                      float a, float b, float c, float d);
-// =====================================================
-// VARIÁVEIS HX711
-// =====================================================
-
-volatile int32_t hx711_offset = 0;
-
-volatile float force_raw = 0.0f;
-volatile float force_filtered = 0.0f;
-
-float hx711_alpha = 0.0f;
-
-volatile uint8_t hx711_ready = 0;
-volatile float grams = 0.0f;
-uint32_t last_force_time = 0;
-
 CuneateNeuron CN;
 CuneateNeuronFast CNF;
 CuneateNeuronSlow CNS;
@@ -258,20 +181,11 @@ void MX_TIM6_Init(void);
 void MX_TIM2_Init(void);
 void select_row(uint8_t row);
 void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx);
-bool process_spikes(void);
+void process_spikes(void);
 bool usb_buffer_write(const char *data, uint16_t len);
 void usb_buffer_process(void);
 
 void send_adc_frame(uint64_t tstamp);
-
-void HX711_Init(void);
-bool HX711_IsReady(void);
-int32_t HX711_Read(void);
-float HX711_ReadForce(void);
-void HX711_Update(void);
-
-float update_synapse(float *g_syn, bool spike);
-float compute_Isyn(float g_syn);
 
 
 // =====================================================
@@ -280,8 +194,9 @@ float compute_Isyn(float g_syn);
 //
 // Salva e restaura o PRIMASK em vez de chamar __enable_irq() cego. Sem isto,
 // uma seção crítica aninhada dentro de outra reabilitaria as interrupções ao
-// sair da interna — exatamente o que aconteceria entre o ring buffer e a
-// leitura do HX711.
+// sair da interna — e aqui há aninhamento real: process_spikes() fecha as
+// interrupções para ler os flags e chama usb_buffer_write(), que as fecha de
+// novo.
 
 static inline uint32_t irq_save(void)
 {
@@ -295,86 +210,6 @@ static inline void irq_restore(uint32_t primask)
     if (primask == 0U)
     {
         __enable_irq();
-    }
-}
-
-
-// =====================================================
-// ATRASO POR CICLOS (DWT) — COM VERIFICAÇÃO E RESERVA
-// =====================================================
-//
-// O contador de ciclos do DWT é a forma barata de temporizar sub-microssegundo
-// (o SysTick tem resolução de 1 ms), mas ligá-lo NÃO é garantido:
-//
-//  • no Cortex-M7 o bloco DWT é CoreSight e tem Lock Access Register. Sem
-//    escrever a chave em LAR, as escritas em DWT->CTRL são simplesmente
-//    IGNORADAS e CYCCNT nunca sai de zero;
-//  • um depurador anexado (ou que esteve anexado) pode deixar o TRCENA em
-//    estado diferente do esperado.
-//
-// Se CYCCNT não anda, um laço `while (CYCCNT - start < n)` NUNCA TERMINA. Como
-// esse atraso é usado dentro de HX711_Read, que roda no boot durante a tara, o
-// firmware travaria ANTES do laço principal — o USB continuaria enumerando
-// (é interrupção) e o dispositivo ficaria mudo para sempre. É uma falha que se
-// parece exatamente com "a placa não envia nada".
-//
-// Duas defesas: a chave do LAR + verificação de que o contador anda, e um laço
-// de reserva por NOP quando ele não anda. Nenhum dos dois pode ser infinito.
-
-#ifndef DWT_LAR_KEY
-#define DWT_LAR_KEY 0xC5ACCE55U
-#endif
-// LAR fica em 0xE0001FB0 (base do DWT + 0xFB0). Nem toda versão do CMSIS o
-// expõe na struct DWT_Type, então o acesso é pelo endereço. O harness de host
-// redefine este macro para uma variável — no PC o endereço absoluto seria um
-// acesso inválido.
-#ifndef DWT_LAR_ADDR
-#define DWT_LAR_ADDR (*(volatile uint32_t *)0xE0001FB0U)
-#endif
-
-static bool dwt_ok = false;
-// Ciclos de CPU por iteração do laço de reserva. Medido de forma conservadora
-// (o laço é NOP + comparação + salto); errar para MENOS só deixa o pulso mais
-// longo, e o teto do HX711 é 60 us — folga de sobra sobre os 0,36 us pedidos.
-#define FALLBACK_CYCLES_PER_ITER 3U
-
-static void dwt_delay_init(void)
-{
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT_LAR_ADDR = DWT_LAR_KEY;      // destrava as escritas (Cortex-M7)
-    DWT->CYCCNT = 0;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-
-    // Verificação: o contador precisa ANDAR. Sem isto, um DWT que ignorou a
-    // habilitação viraria travamento no primeiro atraso.
-    uint32_t c0 = DWT->CYCCNT;
-    for (volatile int i = 0; i < 64; i++)
-    {
-        __NOP();
-    }
-    dwt_ok = (DWT->CYCCNT != c0);
-}
-
-/* Espera `cycles` ciclos de CPU. Sempre TERMINA: com o DWT vivo, o laço tem
- * teto de iterações; sem ele, cai no laço de reserva, que é contado. */
-static inline void dwt_delay_cycles(uint32_t cycles)
-{
-    if (dwt_ok)
-    {
-        uint32_t start = DWT->CYCCNT;
-        // Teto de iterações: mesmo que CYCCNT congele no meio do caminho (por
-        // um depurador, por exemplo), este laço sai.
-        uint32_t guard = cycles * 4U + 64U;
-        while (((DWT->CYCCNT - start) < cycles) && guard--)
-        {
-            __NOP();
-        }
-        return;
-    }
-
-    for (uint32_t i = 0; i < (cycles / FALLBACK_CYCLES_PER_ITER) + 1U; i++)
-    {
-        __NOP();
     }
 }
 
@@ -477,15 +312,41 @@ static uint16_t u64_to_dec(uint64_t v, char *out)
     return n;
 }
 
-/* Fecha uma linha com ",t=<micros>\r\n" (ou "t=..." se `comma` for false). */
-static uint16_t append_ts(char *buf, uint16_t off, uint64_t t)
+/* Fecha uma linha com "t=<micros>\r\n".
+ *
+ * `cap` é o tamanho do buffer e NÃO é decorativo: snprintf_len() devolve
+ * cap-1 quando o snprintf trunca, e escrever o timestamp a partir dali
+ * passaria 24 bytes do fim do array. Quando o timestamp não cabe no que
+ * sobrou, o OFFSET é recuado para que ele caiba: a linha perde caracteres do
+ * payload mas continua terminando em "t=<n>\r\n", que é o que o parser do PC
+ * procura (`parts[-1]` em touch_source.py). Linha curta o host conta como
+ * frame ruim; linha sem timestamp ele não conta de jeito nenhum. */
+#define APPEND_TS_MAX 24U   /* "t=" + 20 digitos + CRLF */
+
+static uint16_t append_ts(char *buf, uint16_t off, uint16_t cap, uint64_t t)
 {
-    buf[off++] = 't';
-    buf[off++] = '=';
-    off += u64_to_dec(t, buf + off);
-    buf[off++] = '\r';
-    buf[off++] = '\n';
-    return off;
+    char ts[APPEND_TS_MAX];
+    uint16_t k = 0;
+
+    ts[k++] = 't';
+    ts[k++] = '=';
+    k += u64_to_dec(t, ts + k);
+    ts[k++] = '\r';
+    ts[k++] = '\n';
+
+    if (cap < k)
+    {
+        return off;                 // buffer menor que o timestamp: impossível
+    }
+
+    if ((uint32_t)off + k > cap)
+    {
+        off = (uint16_t)(cap - k);  // recua o payload para o timestamp caber
+    }
+
+    memcpy(buf + off, ts, k);
+
+    return (uint16_t)(off + k);
 }
 
 /* snprintf devolve o tamanho que a string TERIA — pode passar do buffer.
@@ -505,279 +366,6 @@ static uint16_t snprintf_len(int n, size_t cap)
     return (uint16_t)n;
 }
 
-
-// =====================================================
-// HX711 - INICIALIZAÇÃO apagar
-// =====================================================
-
-void HX711_Init(void)
-{
-    GPIO_InitTypeDef g = {0};
-
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-
-    // DOUT - entrada
-    g.Pin = HX711_DOUT_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(HX711_DOUT_PORT, &g);
-
-    // SCK - saída
-    g.Pin = HX711_SCK_PIN;
-    g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(HX711_SCK_PORT, &g);
-
-    HAL_GPIO_WritePin(
-        HX711_SCK_PORT,
-        HX711_SCK_PIN,
-        GPIO_PIN_RESET
-    );
-}
-
-
-// =====================================================
-// VERIFICA SE HX711 ESTÁ PRONTO
-// =====================================================
-
-bool HX711_IsReady(void)
-{
-    return HAL_GPIO_ReadPin(
-        HX711_DOUT_PORT,
-        HX711_DOUT_PIN
-    ) == GPIO_PIN_RESET;
-}
-
-
-// =====================================================
-// UM PULSO DE PD_SCK
-// =====================================================
-//
-// A janela sem interrupção cobre SÓ o pulso, não a leitura inteira. Manter
-// os 25 pulsos dentro de um único __disable_irq() bloqueava a ISR do ADC de
-// 5 kHz; deixá-los completamente livres arriscava uma ISR longa (o
-// update_taxels chega a formatar linhas) segurar o SCK em nível alto por
-// mais de 60 us, o que coloca o HX711 em power-down. [6]
-
-static inline bool hx711_pulse(void)
-{
-    uint32_t primask = irq_save();
-
-    HAL_GPIO_WritePin(HX711_SCK_PORT, HX711_SCK_PIN, GPIO_PIN_SET);
-    dwt_delay_cycles(HX711_SCK_DELAY_CYC);
-
-    bool bit = (HAL_GPIO_ReadPin(HX711_DOUT_PORT,
-                                 HX711_DOUT_PIN) == GPIO_PIN_SET);
-
-    HAL_GPIO_WritePin(HX711_SCK_PORT, HX711_SCK_PIN, GPIO_PIN_RESET);
-
-    irq_restore(primask);
-
-    dwt_delay_cycles(HX711_SCK_DELAY_CYC);   // T3: nível baixo >= 0,2 us
-
-    return bit;
-}
-
-
-// =====================================================
-// LEITURA DE 24 BITS DO HX711
-// GANHO 128 - CANAL A
-// =====================================================
-
-int32_t HX711_Read(void)
-{
-    uint32_t data = 0;
-
-    // Timeout em TEMPO, não em iterações. O contador de 1.000.000 antigo
-    // valia um número de voltas, não uma duração: quanto mais rápido o
-    // núcleo, mais curta a espera, e ninguém sabia dizer quanto ela durava.
-    // Aqui o teto é explícito e independente do clock.
-    uint32_t t_start = HAL_GetTick();
-
-    while (!HX711_IsReady())
-    {
-        if ((HAL_GetTick() - t_start) >= HX711_READY_TIMEOUT_MS)
-        {
-            return 0;
-        }
-    }
-
-    for (int i = 0; i < 24; i++)
-    {
-        data = data << 1;
-
-        if (hx711_pulse())
-        {
-            data |= 1;
-        }
-    }
-
-    // Pulso adicional:
-    // 1 pulso = ganho 128, canal A
-    (void)hx711_pulse();
-
-    // Conversão de complemento de dois de 24 bits
-    if (data & 0x800000)
-    {
-        data |= 0xFF000000;
-    }
-
-    return (int32_t)data;
-}
-
-
-// =====================================================
-// MÉDIA DE LEITURAS
-// =====================================================
-
-// =====================================================
-// TARA — NÃO-BLOQUEANTE
-// =====================================================
-//
-// A tara antiga rodava ANTES do laço principal, somando 200 leituras de
-// uma vez. Enquanto ela durava, usb_buffer_process() não era chamado: o
-// dispositivo enumerava (isso é interrupção) mas não transmitia UM BYTE —
-// nem o banner de boot. Se a célula não respondesse, o mudo se estendia por
-// toda a janela de espera; se qualquer coisa lá dentro travasse, o mudo era
-// permanente. Do lado do PC os dois casos são indistinguíveis de "a placa
-// está morta", e foi exatamente esse o sintoma que custou uma sessão de
-// diagnóstico.
-//
-// Agora a tara acontece DENTRO do laço, uma amostra por volta e só quando o
-// chip avisa que tem dado. O USB fala desde o primeiro milissegundo, aconteça
-// o que acontecer com o HX711 — inclusive ele não estar conectado.
-
-static bool     tare_done   = false;
-static uint16_t tare_taken  = 0;
-static int64_t  tare_sum    = 0;
-static uint32_t tare_t0_ms  = 0;
-
-
-/*Errado retirar depois*/
-/* Um passo da tara. Retorna imediatamente se não há amostra pronta. */
-static void HX711_TareStep(void)
-{
-    if (tare_done)
-    {
-        return;
-    }
-
-    uint32_t now = HAL_GetTick();
-
-    if ((now - tare_t0_ms) < HX711_TARE_DELAY_MS)
-    {
-        return;                       // janela de estabilização do chip
-    }
-
-    if (HX711_IsReady())
-    {
-        tare_sum += HX711_Read();
-        tare_taken++;
-    }
-
-    if (tare_taken >= HX711_TARE_SAMPLES)
-    {
-        hx711_offset = (int32_t)(tare_sum / tare_taken);
-        tare_done = true;
-        usb_buffer_write("HX711 TARE OK\r\n",
-                         (uint16_t)strlen("HX711 TARE OK\r\n"));
-        return;
-    }
-
-    // Desistência por tempo: sem célula (ou com ela muda) a tara nunca
-    // completaria, e o resto do firmware ficaria esperando por ela.
-    if ((now - tare_t0_ms) >= (HX711_TARE_DELAY_MS + HX711_TARE_WINDOW_MS))
-    {
-        hx711_offset = (tare_taken > 0)
-                       ? (int32_t)(tare_sum / tare_taken)
-                       : 0;
-        tare_done = true;
-
-        char msg[80];
-        int raw = snprintf(msg, sizeof(msg),
-                           "HX711 TARE TIMEOUT,%u,%u,",
-                           (unsigned)tare_taken,
-                           (unsigned)HX711_TARE_SAMPLES);
-        uint16_t n = snprintf_len(raw, sizeof(msg));
-        n = append_ts(msg, n, micros64());
-        usb_buffer_write(msg, n);
-    }
-}
-
-
-// =====================================================
-// LEITURA DA FORÇA EM NEWTONS
-// =====================================================
-
-/*Errado retirar depois*/
-float HX711_ReadForce(void)
-{
-    int32_t raw_value;
-
-    raw_value = HX711_Read();
-
-    /*
-     * Conversão para gramas
-     *
-     * Se o peso aplicado produzir aumento no valor bruto:
-     *
-     * raw_value - hx711_offset
-     *
-     * Se a força aparecer negativa, troque a ordem.
-     */
-
-    float grams_local =
-        ((float)(raw_value - hx711_offset))
-        /
-        HX711_CALIBRATION_FACTOR;
-
-    float force =
-        grams_local * GRAMS_TO_NEWTONS;
-
-    return force;
-}
-
-
-// =====================================================
-// ATUALIZAÇÃO DO HX711
-// =====================================================
-//
-// Sem gate por milissegundos. O antigo calculava
-// (uint32_t)(1000.0f / 80.0f) = 12, truncando 12,5 ms: a amostragem real
-// ficava em 83,3 Hz enquanto o alpha do IIR era calculado para 80 Hz. Quem
-// dita a cadência é o próprio HX711 (~80 SPS pelo pino RATE); basta ler
-// quando ele avisa que tem amostra. HX711_IsReady() é não-bloqueante, então
-// isto não segura o laço principal. [7]
-
-
-/*Errado*/
-void HX711_Update(void)
-{
-    if (!tare_done)
-    {
-        return;          // o offset ainda não vale; ver HX711_TareStep
-    }
-
-    if (!HX711_IsReady())
-    {
-        return;
-    }
-
-    // Leitura bruta
-    float current_force =
-        HX711_ReadForce();
-
-    force_raw =
-        current_force;
-
-    // Filtro passa-baixa IIR
-    force_filtered =
-        hx711_alpha * force_raw
-        +
-        (1.0f - hx711_alpha)
-        * force_filtered;
-}
 
 // VER VALOR POSIÇÃO DA PRIMEIRA
 void init_template(void)
@@ -947,15 +535,36 @@ const uint8_t row_masks[ROWS] = {
     0b01111
 };
 
-/* ATENÇÃO — o parâmetro `row` NÃO é usado: a função roda uma máscara
- * estática em vez de selecionar a linha pedida. Isso está PRESERVADO de
- * propósito. Amarrar a máscara a `row` mudaria qual taxel físico responde
- * por cada índice do frame 5x5, invalidando a calibração e as gravações já
- * existentes. É uma correção de bancada, com o sensor na mão, não de
- * escrivaninha — está anotada no CHANGELOG.md. */
+/* ATENÇÃO — o parâmetro `row` NÃO seleciona a linha: a função roda uma
+ * máscara estática. Isso está PRESERVADO de propósito. Amarrar a máscara a
+ * `row` mudaria qual taxel físico responde por cada índice do frame 5x5,
+ * invalidando a calibração e as gravações já existentes. É uma correção de
+ * bancada, com o sensor na mão, não de escrivaninha — está no CHANGELOG.md.
+ *
+ * O que `row` passou a fazer é VIGIAR essa escolha. `row_mask` roda por conta
+ * própria e `current_row` roda por conta própria; um callback de ADC perdido
+ * ou repetido desfasa os dois PERMANENTEMENTE, e o frame 5x5 continua saindo
+ * bem formado — só que com os taxels rotacionados. Era a única falha aqui que
+ * não tinha sintoma. Agora tem: uma linha "ROWSYNC ERR", uma vez.
+ *
+ * A máscara escrita é sempre a da PRÓXIMA linha (a escrita de agora vale para
+ * a conversão seguinte), então em fase vale
+ *     row_mask == row_masks[(row + 1) % ROWS].
+ * A chamada de priming do main() entra fora de fase por construção, daí o
+ * `armed`. */
 void select_row(uint8_t row)
 {
-    (void)row;
+    static bool armed = false;
+    static bool reported = false;
+
+    if (armed && !reported &&
+        (row >= ROWS || row_mask != row_masks[(row + 1U) % ROWS]))
+    {
+        reported = true;
+        usb_buffer_write("ROWSYNC ERR\r\n", 13);
+    }
+
+    armed = true;
 
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_10, (row_mask & (1<<0)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_5,  (row_mask & (1<<1)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
@@ -981,24 +590,6 @@ bool izhikevich_step(float *v, float *u, float I,
     }
 
     return false;
-}
-
-float update_synapse(float *g_syn, bool spike)
-{
-    // decaimento
-    *g_syn -= (DT / TAU_SYN) * (*g_syn);
-
-    // incremento por spike
-    if (spike)
-        *g_syn += G_MAX;
-
-
-    return *g_syn;
-}
-
-float compute_Isyn(float g_syn)
-{
-    return g_syn;
 }
 
 void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
@@ -1036,15 +627,22 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         I_index[global_idx] =
             (idx + 1) % DIFF_BUFFER;
 
+        // I_old é a amostra de DIFF_BUFFER FRAMES atrás, e um frame dura
+        // FRAME_PERIOD_MS (1 ms) — a linha só é revisitada a cada 5 disparos
+        // de 200 us. Dividir por (DIFF_BUFFER * DT) supunha 2,5 ms em vez de
+        // 25 ms e inflava dI — e portanto I_RA — em 10x.
         float dI =
             fabsf(I_raw - I_old) /
-            (DIFF_BUFFER * DT);
+            (DIFF_BUFFER * FRAME_PERIOD_MS);
 
-        if (fabsf(dI) < 0.01f)
+        // Dead-band de ruído. O limiar acompanhou a correção da escala acima
+        // (0,01 -> 0,001) para continuar cortando exatamente a mesma variação
+        // física de I_raw que cortava antes.
+        if (dI < 0.001f)
             dI = 0.0f;
 
         float I_RA =
-            (G_RA * fabsf(dI));
+            (G_RA * dI);
 
         float I_SA =
             (G_SA * I_raw);
@@ -1066,12 +664,7 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         if (spike_ra)
         {
             spike_flags_RA[global_idx] = 1;
-
-            // excitatória
             template_idx_RA[global_idx] = 1;
-
-            // inibitória
-            template_idx_INH_RA[global_idx] = 1;
         }
 
         // =====================================================
@@ -1091,12 +684,7 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         if (spike_sa)
         {
             spike_flags_SA[global_idx] = 1;
-
-            // excitatória
             template_idx_SA[global_idx] = 1;
-
-            // inibitória
-            template_idx_INH_SA[global_idx] = 1;
         }
 
         // =====================================================
@@ -1110,9 +698,7 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
 
         if(idx_ra > 0)
         {
-            I_ra =
-                gain_RA[global_idx] *
-                g_template[idx_ra];
+            I_ra = g_template[idx_ra];
 
             idx_ra++;
 
@@ -1135,9 +721,7 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
 
         if(idx_sa > 0)
         {
-            I_sa =
-                gain_SA[global_idx] *
-                g_template[idx_sa];
+            I_sa = g_template[idx_sa];
 
             idx_sa++;
 
@@ -1172,62 +756,6 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         uint64_t tstamp = micros64();
 
         // =====================================================
-        // CORRENTE INIBITÓRIA GLOBAL
-        // =====================================================
-
-        float I_inh = 0.0f;
-
-        // ---------- INIBIÇÃO RA ----------
-
-        for(int k = 0; k < NUM_TAXELS; k++)
-        {
-            uint8_t idx_inh_ra =
-                template_idx_INH_RA[k];
-
-            if(idx_inh_ra > 0)
-            {
-                I_inh -=
-                    W_INB *
-                    g_template[idx_inh_ra];
-
-                idx_inh_ra++;
-
-                if(idx_inh_ra >= TEMPLATE_SIZE)
-                {
-                    idx_inh_ra = 0;
-                }
-
-                template_idx_INH_RA[k] =
-                    idx_inh_ra;
-            }
-        }
-
-        // ---------- INIBIÇÃO SA ----------
-
-        for(int k = 0; k < NUM_TAXELS; k++)
-        {
-            uint8_t idx_inh_sa =
-                template_idx_INH_SA[k];
-
-            if(idx_inh_sa > 0)
-            {
-                I_inh -=
-                    W_INB *
-                    g_template[idx_inh_sa];
-
-                idx_inh_sa++;
-
-                if(idx_inh_sa >= TEMPLATE_SIZE)
-                {
-                    idx_inh_sa = 0;
-                }
-
-                template_idx_INH_SA[k] =
-                    idx_inh_sa;
-            }
-        }
-
-        // =====================================================
         // NORMALIZAÇÃO
         // =====================================================
 
@@ -1252,14 +780,11 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         I_total_SA /= NUM_TAXELS;
         I_total_MM /= (NUM_TAXELS*2);
 
-        float I_final_MM =
-            (I_total_MM + I_inh) * G_CN;
+        float I_final_MM = I_total_MM * G_CN;
 
-        float I_final_RA =
-            (I_total_RA + I_inh) * G_CNF;
+        float I_final_RA = I_total_RA * G_CNF;
 
-        float I_final_SA =
-            (I_total_SA + I_inh) * G_CNS;
+        float I_final_SA = I_total_SA * G_CNS;
 
         // =====================================================
         // CUNEIFORME MULTIMODAL
@@ -1320,21 +845,21 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
             if (spike_mm)
             {
                 memcpy(msg, "CN_MM,", 6);
-                n = append_ts(msg, 6, tstamp);
+                n = append_ts(msg, 6, sizeof(msg), tstamp);
                 usb_buffer_write(msg, n);
             }
 
             if (spike_fast)
             {
                 memcpy(msg, "CN_RA,", 6);
-                n = append_ts(msg, 6, tstamp);
+                n = append_ts(msg, 6, sizeof(msg), tstamp);
                 usb_buffer_write(msg, n);
             }
 
             if (spike_slow)
             {
                 memcpy(msg, "CN_SA,", 6);
-                n = append_ts(msg, 6, tstamp);
+                n = append_ts(msg, 6, sizeof(msg), tstamp);
                 usb_buffer_write(msg, n);
             }
         }
@@ -1358,7 +883,7 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
 }
 
 // PROCESS SPIKES
-bool process_spikes(void)
+void process_spikes(void)
 {
     // 25 taxels x 2 (RA+SA) x ~40 B = ~2 KB no pior caso. O buffer tem folga,
     // mas o limite passou a ser verificado: a versão antiga fazia memcpy no
@@ -1368,19 +893,25 @@ bool process_spikes(void)
 
     char msg[80];
     uint64_t tstamp = micros64();
-    bool has_spike = false;
 
     for (int i = 0; i < NUM_TAXELS; i++)
     {
-        if (spike_flags_RA[i])
-        {
-            spike_flags_RA[i] = 0;
-            has_spike = true;
+        // Ler e zerar tem de ser ATÔMICO: a ISR do ADC marca estes flags. Um
+        // spike que chegasse entre o teste e o zeramento era perdido sem
+        // deixar rastro — `volatile` ordena o acesso, não o torna indivisível.
+        uint32_t primask = irq_save();
+        bool had_ra = spike_flags_RA[i];
+        spike_flags_RA[i] = 0;
+        bool had_sa = spike_flags_SA[i];
+        spike_flags_SA[i] = 0;
+        irq_restore(primask);
 
+        if (had_ra)
+        {
             int raw = snprintf(msg, sizeof(msg),
                                "RA,idx=%d,adc=%d,", i, last_adc[i]);
             uint16_t n = snprintf_len(raw, sizeof(msg));
-            n = append_ts(msg, n, tstamp);
+            n = append_ts(msg, n, sizeof(msg), tstamp);
 
             if ((size_t)(batch_count + n) <= sizeof(batch_msg))
             {
@@ -1389,15 +920,12 @@ bool process_spikes(void)
             }
         }
 
-        if (spike_flags_SA[i])
+        if (had_sa)
         {
-            spike_flags_SA[i] = 0;
-            has_spike = true;
-
             int raw = snprintf(msg, sizeof(msg),
                                "SA,idx=%d,adc=%d,", i, last_adc[i]);
             uint16_t n = snprintf_len(raw, sizeof(msg));
-            n = append_ts(msg, n, tstamp);
+            n = append_ts(msg, n, sizeof(msg), tstamp);
 
             if ((size_t)(batch_count + n) <= sizeof(batch_msg))
             {
@@ -1412,8 +940,6 @@ bool process_spikes(void)
         usb_buffer_write(batch_msg, batch_count);
         batch_count = 0;
     }
-
-    return has_spike;
 }
 
 /* "ADC,v0,...,v24,t=<us>\r\n" — mesmos caracteres de antes, montados sem as
@@ -1435,7 +961,7 @@ void send_adc_frame(uint64_t tstamp)
         msg[off++] = ',';
     }
 
-    off = append_ts(msg, off, tstamp);
+    off = append_ts(msg, off, sizeof(msg), tstamp);
 
     usb_buffer_write(msg, off);
 }
@@ -1451,14 +977,13 @@ static void send_stat_line(void)
     memcpy(msg, "STAT,drop=", 10);
     off = 10;
 
-    uint32_t primask = irq_save();
+    // Leitura de 32 bits alinhada já é indivisível no Cortex-M7.
     uint32_t dropped = usb_dropped;
-    irq_restore(primask);
 
     off += u32_to_dec(dropped, msg + off);
     msg[off++] = ',';
 
-    off = append_ts(msg, off, micros64());
+    off = append_ts(msg, off, sizeof(msg), micros64());
 
     usb_buffer_write(msg, off);
 }
@@ -1487,8 +1012,6 @@ int main(void)
 
     SystemClock_Config();
 
-    dwt_delay_init();     // contador de ciclos p/ o temporizador do HX711
-
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
     MX_GPIO_Init();
@@ -1509,27 +1032,8 @@ int main(void)
 
     init_template();
 
-    hx711_alpha =
-        (2.0f * 3.14159265359f * HX711_CUTOFF_FREQ)
-        /
-        (
-            2.0f * 3.14159265359f * HX711_CUTOFF_FREQ
-            +
-            HX711_SAMPLE_FREQ
-        );
-
     // O TIM2 precisa estar rodando antes de qualquer micros64().
     HAL_TIM_Base_Start(&htim2);
-
-    // Marca o início da janela da tara. Ela acontece no LAÇO, não aqui — ver
-    // HX711_TareStep. Nada entre este ponto e o while(1) pode bloquear, senão
-    // o dispositivo volta a enumerar mudo.
-    tare_t0_ms = HAL_GetTick();
-
-    usb_buffer_write(
-        "HX711 TARE START\r\n",
-        strlen("HX711 TARE START\r\n")
-    );
 
     for (int i = 0; i < NUM_TAXELS; i++)
     {
@@ -1540,14 +1044,6 @@ int main(void)
         taxels[i].v_SA = -30.0f;
         taxels[i].u_SA =
             B_SA * taxels[i].v_SA;
-
-        taxels[i].I = 0.0f;
-
-        gain_RA[i] =
-            gain_RA_init[i];
-
-        gain_SA[i] =
-            gain_SA_init[i];
     }
 
     select_row(0);
@@ -1565,52 +1061,24 @@ int main(void)
         9
     );
 
-    static uint32_t last_force_send = 0;
-    static uint32_t last_stat_send  = 0;
+    static uint32_t last_stat_send = 0;
 
     while (1)
     {
         process_spikes();
 
-        HX711_TareStep();   // no-op depois que a tara termina
-        HX711_Update();
-
         uint32_t now = HAL_GetTick();
 
-        if ((now - last_force_send) >= 10U)
-        {
-            last_force_send = now;
-
-            char msg[100];
-
-            // %.6f depende do printf de ponto flutuante e é caro, mas o
-            // formato da linha FORCE é contrato com o PC — fica como está.
-            int raw = snprintf(
-                msg,
-                sizeof(msg),
-                "FORCE,%.6f,%.6f,",
-                force_raw,
-                force_filtered
-            );
-
-            uint16_t n = snprintf_len(raw, sizeof(msg));
-            n = append_ts(msg, n, micros64());
-
-            usb_buffer_write(msg, n);
-        }
-
-#if USB_STAT_PERIOD_MS > 0
-        if ((now - last_stat_send) >= (uint32_t)USB_STAT_PERIOD_MS)
+        if ((now - last_stat_send) >= USB_STAT_PERIOD_MS)
         {
             last_stat_send = now;
             send_stat_line();
         }
-#endif
 
-        // Drenar mais de uma vez por volta do laço: cada chamada só consegue
-        // enfileirar uma transferência, e o resto da volta (HX711, snprintf
-        // de float) é lento o bastante para deixar o endpoint ocioso.
-        usb_buffer_process();
+        // Uma chamada por volta. A segunda que existia aqui era placebo: ela
+        // caía no `if (!usb_tx_ready()) return`, porque TxState só volta a
+        // zero quando a transferência anterior completa, microssegundos
+        // depois, dentro da interrupção do OTG.
         usb_buffer_process();
     }
 }
@@ -1618,6 +1086,11 @@ int main(void)
 void MX_GPIO_Init(void)
 {
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    // GPIOB estava sendo ligado LÁ EMBAIXO, depois do HAL_GPIO_Init de PB1.
+    // Escrita em periférico com o clock fechado é descartada: PB1 (ADC9, a
+    // quinta coluna) ficava no modo de reset — entrada digital, buffer
+    // Schmitt ligado — em vez de analógica, em todos os frames desde sempre.
+    __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOF_CLK_ENABLE();
 
@@ -1645,44 +1118,12 @@ void MX_GPIO_Init(void)
 
     ///////////////////////////////////////////////////////////
 
-    __HAL_RCC_GPIOB_CLK_ENABLE(); //// DEFINIÇÃO DE GPIO COMO OUTPUT
-
-
     g.Mode = GPIO_MODE_OUTPUT_PP;
     g.Pull = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 
     g.Pin = DEBUG_ADC_PIN | DEBUG_IZH_PIN;
     HAL_GPIO_Init(GPIOB, &g);
-
-    // =====================================================
-    // HX711
-    // PC6 = DOUT
-    // PC7 = SCK
-    // =====================================================
-
-    g.Pin = HX711_DOUT_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
-
-    HAL_GPIO_Init(GPIOC, &g);
-
-
-    g.Pin = HX711_SCK_PIN;
-    g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
-
-    HAL_GPIO_Init(GPIOC, &g);
-
-    HAL_GPIO_WritePin(
-        HX711_SCK_PORT,
-        HX711_SCK_PIN,
-        GPIO_PIN_RESET
-    );
-
-
-    /////////////////////////////////////////////////////////////////
 }
 
 // DMA
@@ -1704,7 +1145,12 @@ void MX_DMA_Init(void)
     HAL_DMA_Init(&hdma_adc1);
     __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
 
-    HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+    // Prioridade 5, não 0. Na 0 esta ISR era a mais alta do sistema, acima
+    // do OTG_FS: a cada 1 ms ela roda o passo de 25 neurônios e monta os 153
+    // bytes do frame ADC, e enquanto isso o USB não era atendido. Agora o
+    // OTG_FS (que fica na 0 por padrão do CubeMX) a preempta; a ISR do ADC
+    // continua com 200 us de folga para terminar.
+    HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 }
 

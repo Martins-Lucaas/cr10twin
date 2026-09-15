@@ -105,12 +105,6 @@ void HAL_Init(void);
 void HAL_Delay(uint32_t);
 uint32_t HAL_GetTick(void);
 /* CMSIS core bits */
-typedef struct { uint32_t DEMCR; } CoreDebug_Type;
-typedef struct { uint32_t CTRL; uint32_t CYCCNT; } DWT_Type;
-extern CoreDebug_Type *CoreDebug;
-extern DWT_Type *DWT;
-#define CoreDebug_DEMCR_TRCENA_Msk (1u<<24)
-#define DWT_CTRL_CYCCNTENA_Msk (1u<<0)
 uint32_t __get_PRIMASK(void);
 void __disable_irq(void);
 void __enable_irq(void);

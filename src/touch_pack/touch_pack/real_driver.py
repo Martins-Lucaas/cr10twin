@@ -481,26 +481,47 @@ class CR10RealDriver:
         """True enquanto a chave de E-Stop estiver PRESSIONADA por software."""
         return self._estop_engaged
 
-    def emergency_stop(self) -> None:
+    def emergency_stop(self) -> bool:
         """Pressiona a chave de E-Stop — EmergencyStop(1). Idempotente.
 
         O braço fica desabilitado e em alarme; nenhum movimento é aceito até
         `release_emergency_stop()`. Deliberadamente NÃO desconecta: soltar a
         chave exige a mesma sessão de dashboard.
+
+        Devolve True quando o EmergencyStop(1) CHEGOU ao controlador, e False
+        quando só a trava de software foi armada (sem dashboard, socket
+        perdido, dry-run). São coisas diferentes e não podem ser anunciadas
+        como uma: sem o comando no controlador o braço pode seguir executando
+        o que já estava na fila de motion, e quem chama precisa dizer isso ao
+        operador em vez de "robot disabled and alarmed".
+
+        A trava local é armada ANTES de qualquer I/O — ela é o que faz
+        `_send_motion`, `servo_j` e `drag_teach` recusarem comando na mesma
+        hora, sem depender da rede.
         """
         self._estop_engaged = True
         self._enabled = False
         if self.dry_run:
             log.info('[DRY-RUN dash] EmergencyStop(1)')
-            return
+            return False
         if self._dash is None:
             log.warning('[DASH] EmergencyStop(1) sem dashboard — só o estado '
-                        'local foi travado.')
-            return
-        resp = self._send_dash('EmergencyStop(1)')
+                        'local foi travado. O braço NÃO foi alarmado: se '
+                        'houver movimento na fila, ele continua.')
+            return False
+        try:
+            resp = self._send_dash('EmergencyStop(1)')
+        except CR10RealDriverError as exc:
+            # A trava local já está armada; o que falhou foi só o alcance ao
+            # controlador. Não propaga: quem chama tem de seguir com o resto
+            # do E-STOP (mão, mirror, trava da GUI) e avisar.
+            log.error('[DASH] EmergencyStop(1) NÃO chegou ao controlador '
+                      '(%s) — trava só em software.', exc)
+            return False
         log.warning('[DASH] EmergencyStop(1) → %s — chave PRESSIONADA; '
                     'rearmar exige EmergencyStop(0) + ClearError + enable.',
                     resp)
+        return True
 
     def release_emergency_stop(self) -> None:
         """Solta a chave e REARMA o braço — EmergencyStop(0) + ClearError +

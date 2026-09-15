@@ -432,6 +432,18 @@ def run_stamp_from_msg_time(stamp) -> str:
 
 
 RUN_MODES = ('SLIDE', 'TOUCH', 'MANUAL', 'MATRIX_MAP')
+
+# ── Quais modos EXECUTAM cada recurso opcional ────────────────────────
+# Aqui e em nenhum outro lugar. A GUI decide com estas duas tuplas tanto o
+# que MOSTRA (qual painel aparece) quanto o que ENVIA (quais campos vão
+# preenchidos na PalpationStart), e o explorer despacha pelos mesmos
+# conjuntos. Enquanto cada um desses três pontos carregava o seu próprio
+# literal, eles podiam divergir — e divergiram: o painel da escada aparecia
+# em MATRIX_MAP e o Start a zerava com um `!= 'MANUAL'`, então o operador
+# configurava o mapa de histerese e recebia identações de patamar único,
+# sem aviso nenhum. Um conjunto só é a única forma de isso não voltar.
+STAIRCASE_MODES = ('MANUAL', 'MATRIX_MAP')   # _phase_hold_staircase
+FMOD_MODES      = ('TOUCH',)                 # _phase_hold_modulated
 # Gravação avulsa pelo botão "Record data", fora de qualquer run: não tem
 # modo, mas também não pode cair na raiz junto das pastas de modo.
 REC_DIR_NAME = 'RECORDING'

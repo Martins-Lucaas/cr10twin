@@ -142,6 +142,8 @@ from .plane_probe import (
     attack_dir_from_normal as _attack_dir_from_normal,
     fit_plane as _fit_plane,
     probe_pattern as _probe_pattern,
+    sagitta_m as _sagitta_m,
+    SAGITTA_MAX_M_DEFAULT as _SAGITTA_MAX_M,
     probe_ring_from_grid as _probe_ring_from_grid,
     slope_along_deg as _slope_along_deg,
     validate_fit as _validate_fit,
@@ -188,6 +190,8 @@ from .constants import (   # noqa: F401 — alguns só são reexportados
     PROBE_ALIGN_TILT_MAX_DEG_DEFAULT as _ALIGN_TILT_MAX_DEG,
     PROBE_ALIGN_TILT_HARD_MAX_DEG as _ALIGN_TILT_HARD_MAX_DEG,
     STEP_MAX_LEVELS,
+    STAIRCASE_MODES,
+    FMOD_MODES,
     staircase_levels,
 )
 
@@ -288,6 +292,18 @@ class TactileExplorer(Node):
         self.declare_parameter('probe_align_force_n', _ALIGN_PROBE_FORCE_N)
         self.declare_parameter('probe_align_retract_mm', _ALIGN_RETRACT_MM)
         self.declare_parameter('probe_align_tilt_max_deg', _ALIGN_TILT_MAX_DEG)
+        # CONFERÊNCIA do ângulo de ataque: re-sonda o plano DEPOIS de girar o
+        # punho e recusa o ensaio se a face não estiver perpendicular ao eixo
+        # corrigido. É a única checagem de ÂNGULO de ponta a ponta — todo o
+        # resto confere elos isolados (a solução da IK, a pose entregue) e
+        # supõe que a primeira medição estava certa.
+        #
+        # Custa outra rodada de toques na amostra, por isso fica desligada:
+        # é a troca entre certificar o alinhamento e não marcar a peça duas
+        # vezes. Ligue quando o valor absoluto da força for o resultado —
+        # num contato de canto a célula mede a PROJEÇÃO da força normal.
+        #   ros2 param set /tactile_explorer probe_align_verify true
+        self.declare_parameter('probe_align_verify', False)
 
         self._phase: str = 'IDLE'
         self._busy = threading.Event()
@@ -1016,6 +1032,21 @@ class TactileExplorer(Node):
                     f'Recebido /palpation/start mas explorer está em '
                     f'{self._phase}. Ignorando.')
                 return
+            # Os três Events são limpos AQUI, antes de marcar o _busy, e não
+            # no fim do parsing. `_cb_stop`, `_cb_freeze` e `_cb_pause` só
+            # marcam com o _busy setado, então este é o único ponto em que
+            # limpar é atômico: nada pode marcá-los antes do _busy.set()
+            # logo abaixo, e tudo o que marcar DEPOIS sobrevive.
+            #
+            # Limpar no fim do _start_from_msg abria uma janela em que um
+            # FREEZE (E-STOP) chegado durante o parsing — set_parameters,
+            # validação da matriz, lookup do aprendizado — era marcado e
+            # depois APAGADO, e o run arrancava como se ninguém tivesse
+            # apertado nada. É a única mensagem do sistema que não pode ser
+            # perdida por causa de uma janela de milissegundos.
+            self._pause_requested.clear()
+            self._stop_requested.clear()
+            self._freeze_requested.clear()
             self._busy.set()
         started = False
         try:
@@ -1075,8 +1106,17 @@ class TactileExplorer(Node):
                 float(getattr(msg, 'slide_slope_deg', 0.0) or 0.0),
                 -_SLIDE_SLOPE_MAX_DEG, _SLIDE_SLOPE_MAX_DEG))
             mode = str(msg.mode).upper().strip()
-            self._mode = (mode if mode in ('SLIDE', 'TOUCH', 'MANUAL',
-                                           'MATRIX_MAP') else 'SLIDE')
+            if mode not in ('SLIDE', 'TOUCH', 'MANUAL', 'MATRIX_MAP'):
+                # Todo campo vizinho que sofre fallback avisa; este não
+                # avisava, e um typo num `ros2 topic pub` rodava um DESLIZE
+                # que ninguém pediu — com a lateral inteira sobre a amostra.
+                self.get_logger().warn(
+                    f'mode inválido "{mode or "(vazio)"}" — usando SLIDE. '
+                    'Os modos válidos são SLIDE, TOUCH, MANUAL e MATRIX_MAP; '
+                    'se você queria um deles, PARE agora: este run vai '
+                    'deslizar sobre a amostra.')
+                mode = 'SLIDE'
+            self._mode = mode
             # ── MANUAL em DEGRAU ────────────────────────────────────
             # Campos ausentes (mensagem antiga) ⇒ 0 ⇒ escada desligada e
             # MANUAL segue sendo o HOLD infinito de antes.
@@ -1259,17 +1299,9 @@ class TactileExplorer(Node):
                 self._wp_index = 0
                 self._wp_total = 0
 
-        self._pause_requested.clear()
-        # STOP e FREEZE também: os dois são Events, e um pedido que chegou
-        # depois da última fase tê-los consultado sobrevive ao fim do run.
-        # O caminho real é o STOP no instante em que _retreat_and_home já
-        # chegou à home — `_joint_batch_to` devolve True pela saída rápida
-        # (max_d < 1 mm) sem consumir o flag, e o `finally` do _run_protocol
-        # libera o _busy com ele ainda setado. O run SEGUINTE então morria na
-        # primeira fase que olhasse o Event, sem causa visível para o
-        # operador. Limpar aqui fecha a classe inteira, não só esse caminho.
-        self._stop_requested.clear()
-        self._freeze_requested.clear()
+        # Os Events já foram limpos em _cb_start, sob o _start_lock e antes
+        # do _busy.set() — ver o bloco lá. Limpá-los aqui de novo apagaria um
+        # FREEZE legítimo chegado durante este parsing.
         self._protocol_thread = threading.Thread(
             target=self._run_protocol, daemon=True)
         self._protocol_thread.start()
@@ -2229,8 +2261,18 @@ class TactileExplorer(Node):
                               lock_perp: bool = False) -> str:
         """Pré-computa todos os waypoints via Jacobiano iterado e envia em
         UMA JointTrajectory (JTC planeja a S-curve sobre o conjunto inteiro).
-        Não monitora força — use _cartesian_stream para fases reativas.
-        Retorna 'done' | 'stop' | 'error'."""
+
+        A trajetória não é replanejada durante a execução, mas a espera É
+        vigiada: força, frescor da célula, STOP e PAUSA são checados a cada
+        tick, e qualquer um deles substitui o goal do JTC (via _settle ou
+        _pause_gate), o que PARA o braço no meio do percurso. Sem isso um
+        relevo mais alto que a folga de trânsito era percorrido inteiro
+        contra a peça antes de alguém notar — e a checagem de força de quem
+        chama só via o estrago no fim.
+
+        Retorna 'done' | 'stop' | 'force' | 'stale' | 'paused'  | 'error'.
+        'paused' = a pausa foi servida e o goal se perdeu com ela: quem
+        chama tem de replanejar o que faltava (ver _move_linear_world)."""
         d = np.asarray(direction, dtype=float).flatten()
         nd = float(np.linalg.norm(d))
         if nd < 1e-9 or total_m <= 0.0:
@@ -2333,6 +2375,23 @@ class TactileExplorer(Node):
                 self._stop_requested.clear()
                 self._settle()
                 return 'stop'
+            if self._pause_requested.is_set():
+                # _pause_gate segura a posição, o que descarta o resto da
+                # trajetória: devolve 'paused' para quem chama replanejar.
+                if not self._pause_gate():
+                    return 'stop'
+                return 'paused'
+            if self._force_stale_abort('TRANSIT'):
+                self._settle()
+                return 'stale'
+            if self._force_over_limit():
+                self._settle()          # substitui o goal: PARA no lugar
+                self.get_logger().error(
+                    f'SEGURANÇA [TRANSIT]: força {self._fz_corrected():+.1f} N '
+                    f'além da margem de {_FORCE_SAFE_LIMIT_N:.0f} N durante um '
+                    'trânsito em ar livre — algo está no caminho. Trajetória '
+                    'interrompida no lugar.')
+                return 'force'
             time.sleep(_CTRL_DT)
         return 'done'
 
@@ -2359,12 +2418,31 @@ class TactileExplorer(Node):
 
     # HOME: trajectória batch (uma mensagem multi-ponto → JTC planeia S-curve)
     def _joint_batch_to(self, q_target: np.ndarray) -> bool:
-        """Envia uma única JointTrajectory com todos os waypoints ao JTC."""
+        """Leva as juntas a `q_target`, replanejando depois de cada pausa.
+
+        Segurar posição durante a pausa substitui o goal do JTC, então o que
+        faltava do percurso morre com ela. Como o alvo articular é fixo,
+        retomar é só reemitir a partir de onde o braço parou — sem isso o ⏸
+        no meio de um retorno à HOME deixava o braço a meio caminho e a fase
+        seguinte começava de uma pose que ninguém escolheu.
+        """
+        for _ in range(self._LINEAR_REPLAN_MAX):
+            out = self._joint_batch_once(q_target)
+            if out != 'paused':
+                return out == 'done'
+        self.get_logger().error(
+            f'[HOME] {self._LINEAR_REPLAN_MAX} pausas seguidas sem concluir '
+            'o movimento articular — abortando.')
+        return False
+
+    def _joint_batch_once(self, q_target: np.ndarray) -> str:
+        """Uma tentativa: envia uma única JointTrajectory com todos os
+        waypoints ao JTC. Retorna 'done' | 'stop' | 'paused'."""
         q_from = self._q_now()
         delta = np.asarray(q_target, float) - q_from
         max_d = float(np.max(np.abs(delta)))
         if max_d < 0.001:
-            return True
+            return 'done'
         n_steps = max(2, int(math.ceil(max_d / (self._home_v_rad_s() * _CTRL_DT))))
         v_lim = (self._speed_factor_pct / 100.0) * _MAX_JOINT_VEL_RAD_S
         vel_peak = np.clip(delta / n_steps / _CTRL_DT, -v_lim, v_lim)
@@ -2392,15 +2470,19 @@ class TactileExplorer(Node):
 
         self._arm_traj_pub.publish(msg)
 
-        # Aguardar a execução, monitorizando stop a cada tick.
+        # Aguardar a execução, monitorizando stop e PAUSA a cada tick.
         t_end = time.monotonic() + n_steps * _CTRL_DT + 0.3
         while time.monotonic() < t_end:
             if self._stop_requested.is_set():
                 self._stop_requested.clear()
                 self._settle()
-                return False
+                return 'stop'
+            if self._pause_requested.is_set():
+                if not self._pause_gate():
+                    return 'stop'
+                return 'paused'
             time.sleep(_CTRL_DT)
-        return True
+        return 'done'
 
     # Fases
     def _phase_goto_home(self) -> bool:
@@ -2536,7 +2618,7 @@ class TactileExplorer(Node):
                 1.0, _ALIGN_TILT_HARD_MAX_DEG)),
         }
 
-    def _align_offsets(self, cfg: dict) -> tuple[np.ndarray, str]:
+    def _align_offsets(self, cfg: dict) -> tuple[np.ndarray, str, bool]:
         """Onde a sonda vai encostar (offsets XY relativos à referência) e a
         frase que descreve isso no log.
 
@@ -2551,6 +2633,15 @@ class TactileExplorer(Node):
         geometria possível. Grade curta demais também cai nele: um braço de
         alavanca menor que o piso do próprio raio deixaria a inclinação
         enterrada no ruído dos toques.
+
+        O terceiro elemento diz se o PRIMEIRO offset é o centro (0, 0). Ele
+        vem no polígono e não no anel da grade: no polígono o centro é o
+        próprio alvo do ensaio — que a descida de trabalho vai identar logo
+        depois de qualquer jeito — enquanto no MATRIX o centro do anel cai
+        no meio da grade, possivelmente sobre um ponto que ainda será medido,
+        e pré-condicioná-lo tiraria esse ponto da comparação. A curvatura no
+        MATRIX aparece sozinha: a penetração de CADA waypoint contra o plano
+        da origem já vai para o matrix.csv.
         """
         with self._params_lock:
             wps = self._matrix_wps.copy()
@@ -2570,10 +2661,11 @@ class TactileExplorer(Node):
                 return ring, (
                     f'{len(ring)} toques nos cantos da grade, meio passo '
                     f'para fora ({(hi[0]-lo[0])*1e3:.1f} × '
-                    f'{(hi[1]-lo[1])*1e3:.1f} mm)')
-        return (_probe_pattern(cfg['n'], cfg['radius_m']),
-                f'{cfg["n"]} toques num círculo de '
-                f'{cfg["radius_m"]*1e3:.1f} mm de raio')
+                    f'{(hi[1]-lo[1])*1e3:.1f} mm)'), False
+        return (_probe_pattern(cfg['n'], cfg['radius_m'], with_center=True),
+                f'1 toque no CENTRO (o alvo) + {cfg["n"]} num círculo de '
+                f'{cfg["radius_m"]*1e3:.1f} mm de raio em torno dele',
+                True)
 
     def _probe_plane(self, p_ref: np.ndarray, offsets: np.ndarray,
                      cfg: dict) -> tuple[str, list]:
@@ -2609,7 +2701,7 @@ class TactileExplorer(Node):
                                p_ref[2]])
             out = self._move_linear_world(
                 target - self._tcp_now(), _ALIGN_TRANSIT_MS, lock_z=True,
-                label=f'ALIGN-XY{k}', timeout_s=90.0)
+                label=f'ALIGN-XY{k}')
             if out != 'done':
                 return out, pts
 
@@ -2629,7 +2721,7 @@ class TactileExplorer(Node):
             self._set_phase('CALIBRATING')
             out = self._move_linear_world(
                 np.array([0.0, 0.0, float(p_ref[2] - p_hit[2])]),
-                _ALIGN_TRANSIT_MS, label=f'ALIGN-UP{k}', timeout_s=60.0)
+                _ALIGN_TRANSIT_MS, label=f'ALIGN-UP{k}')
             if out != 'done':
                 return out, pts
 
@@ -2647,6 +2739,49 @@ class TactileExplorer(Node):
                 self._contact_depths.clear()
 
         return 'ok', pts
+
+    def _attack_axis_err_deg(self, attack_dir: np.ndarray) -> float:
+        """Desvio ENTREGUE: ângulo entre o eixo Z do TCP calculado da pose
+        MEDIDA em /joint_states e o eixo de ataque pedido."""
+        z_tcp = forward_kinematics(
+            self._q_now(), T_end=T_TOUCH_TOOL_ATTACH)[:3, 2]
+        return _angle_between_deg(z_tcp, attack_dir)
+
+    def _verify_attack_axis(self, attack_dir: np.ndarray, label: str) -> bool:
+        """Confere no BRAÇO que o eixo de ataque é o que se pediu.
+
+        Tudo o que vinha antes disto é intenção: a IK resolve, a FK da
+        SOLUÇÃO confirma que a solução aponta certo, e o comando é
+        publicado. Nada media o que o braço fez com ele. Entre o comando e a
+        pose real cabem um limite de junta alcançado na execução, um JTC que
+        não fechou o último grau, o lock de orientação (proporcional, ver
+        _ORI_GAIN) cedendo durante um trânsito linear, e o braço real
+        atrasado em relação ao simulado.
+
+        Falhar em silêncio aqui é o pior desfecho possível da fase: a
+        descida, a regulação de força e o alívio de emergência passam todos
+        a correr sobre `_attack_dir`, um eixo que a ferramenta não tem. O
+        contato sai de canto, a célula lê a PROJEÇÃO da força normal — mede
+        menos do que aplica — e nada no log denuncia.
+
+        Roda sobre /joint_states, sem mover nada e sem tocar a amostra.
+        """
+        err_deg = self._attack_axis_err_deg(attack_dir)
+        if err_deg > _ALIGN_ORI_TOL_DEG:
+            self.get_logger().error(
+                f'[{label}] eixo de ataque NÃO confirmado no braço: a pose '
+                f'medida erra o eixo pedido em {err_deg:.2f}° (tolerância '
+                f'{_ALIGN_ORI_TOL_DEG:.1f}°). O comando foi aceito mas a '
+                'pose entregue é outra — limite de junta na execução, JTC '
+                'que não fechou, ou o braço real atrasado em relação ao '
+                'simulado. Abortando: descer sobre um eixo que a ferramenta '
+                'não tem faz a célula ler a projeção da força normal, sem '
+                'nenhum sintoma no log.')
+            return False
+        self.get_logger().info(
+            f'[{label}] eixo de ataque CONFIRMADO na pose medida — erro '
+            f'{err_deg:.2f}° (tolerância {_ALIGN_ORI_TOL_DEG:.1f}°).')
+        return True
 
     def _rotate_to_attack(self, attack_dir: np.ndarray, *,
                           label: str = 'ALIGN') -> str:
@@ -2671,7 +2806,7 @@ class TactileExplorer(Node):
             return 'error'
         # A IK SATURA nos limites articulares em vez de falhar, então
         # convergência não é o mesmo que apontar para onde se pediu:
-        # confere a pose ENTREGUE antes de mandar o braço para ela.
+        # confere a SOLUÇÃO antes de mandar o braço para ela.
         z_tcp = forward_kinematics(q_target, T_end=T_TOUCH_TOOL_ATTACH)[:3, 2]
         err_deg = _angle_between_deg(z_tcp, attack_dir)
         if err_deg > _ALIGN_ORI_TOL_DEG:
@@ -2684,6 +2819,10 @@ class TactileExplorer(Node):
         if not self._joint_stream_to(q_target):
             return 'stop'
         self._settle(ticks=_SETTLE_TICKS * 2)
+        # E agora a pose ENTREGUE, que é outra coisa: a checagem acima olhou
+        # a solução da IK, não o que o braço fez com ela.
+        if not self._verify_attack_axis(attack_dir, label):
+            return 'error'
         return 'ok'
 
     def _reapply_attack_orientation(self) -> bool:
@@ -2726,7 +2865,7 @@ class TactileExplorer(Node):
         # passa DENTRO da peça e cisalha a ponteira.
         out = self._move_linear_world(
             np.array([0.0, 0.0, float(retract_m)]), _ALIGN_TRANSIT_MS,
-            label='ALIGN-RETRACT', timeout_s=60.0)
+            label='ALIGN-RETRACT')
         if out != 'done':
             return out
 
@@ -2741,8 +2880,15 @@ class TactileExplorer(Node):
         # `depth_mm` que o usuário pediu — só que agora ao longo da normal.
         out = self._move_linear_world(
             p_ref - self._tcp_now(), _ALIGN_TRANSIT_MS,
-            label='ALIGN-RETURN', timeout_s=90.0)
-        return 'ok' if out == 'done' else out
+            label='ALIGN-RETURN')
+        if out != 'done':
+            return out
+        # O lock de orientação do trânsito é PROPORCIONAL (_ORI_GAIN): ele
+        # persegue R0, não a garante. Uma deriva acumulada no percurso sai
+        # daqui direto para a descida de trabalho — este é o último ponto
+        # antes disso em que ainda dá para recusar.
+        return 'ok' if self._verify_attack_axis(
+            attack_dir, 'ALIGN-RETURN') else 'error'
 
     def _phase_calibrate_attack(self) -> str:
         """CALIBRATING — palpação espacial do alvo e correção do ataque.
@@ -2761,7 +2907,7 @@ class TactileExplorer(Node):
         self._set_phase('CALIBRATING')
         self._settle()
         p_ref = self._tcp_now()
-        offsets, padrao = self._align_offsets(cfg)
+        offsets, padrao, tem_centro = self._align_offsets(cfg)
         with self._params_lock:
             # A sonda nunca é mais pesada que o próprio ensaio: com setpoint
             # de 0,5 N, sondar a 1 N marcaria a amostra antes da medição.
@@ -2799,20 +2945,72 @@ class TactileExplorer(Node):
                 f'pontos ({out}) — sem plano, sem correção de ataque.')
             return out
 
+        # O CENTRO não entra no ajuste da normal — está no centroide e não
+        # acrescenta braço de alavanca. Ele serve para a única coisa que o
+        # anel não enxerga: CURVATURA. Ver _probe_pattern/sagitta_m.
+        p_centro = np.asarray(pts[0], float) if tem_centro else None
+        pts_anel = pts[1:] if tem_centro else pts
         try:
-            fit = _fit_plane(np.asarray(pts, dtype=float))
+            fit = _fit_plane(np.asarray(pts_anel, dtype=float))
         except ValueError as exc:
             self.get_logger().error(
                 f'[ALIGN] ajuste do plano falhou: {exc}.')
             return 'error'
 
+        # ── Curvatura: o centro contra o plano do anel ───────────────
+        if p_centro is not None:
+            sag = _sagitta_m(fit, p_centro)
+            self.get_logger().info(
+                f'[ALIGN] toque central {sag * 1e3:+.3f} mm '
+                f'{"ACIMA" if sag > 0 else "abaixo"} do plano do anel '
+                f'(teto {_SAGITTA_MAX_M * 1e3:.3f} mm) — é a medida de '
+                'curvatura, e o anel sozinho é cego para ela.')
+            if abs(sag) > _SAGITTA_MAX_M:
+                self.get_logger().error(
+                    f'[ALIGN] calibração RECUSADA: o centro está a '
+                    f'{sag * 1e3:+.3f} mm do plano ajustado pelos '
+                    f'{fit.n_points} toques do anel, acima do teto de '
+                    f'{_SAGITTA_MAX_M * 1e3:.3f} mm. A superfície é CURVA, '
+                    'não inclinada, e uma calota não tem uma normal — tem '
+                    'uma por ponto. Alinhar o ataque a um plano ajustado '
+                    'aqui não significa nada: a ponteira encostaria no '
+                    'ápice de qualquer jeito, que é o contato de canto que '
+                    'esta fase existe para evitar. Repare que o ANEL passou '
+                    f'em tudo (desvio {fit.tilt_deg:.3f}°, resíduo '
+                    f'{fit.rms_m*1e3:.3f} mm) — numa calota simétrica todos '
+                    'os pontos dele caem na mesma altura. Reduza o raio de '
+                    'sondagem para uma região que seja plana, ou calce a '
+                    'peça.')
+                return 'error'
+
+        # O desvio sozinho não diz se o alvo está reto: ele só é conhecido
+        # até onde a sondagem o resolve (ver PlaneFit.tilt_unc_deg).
+        unc = fit.tilt_unc_deg
+        unc_txt = (f'± {unc:.2f}°' if math.isfinite(unc)
+                   else '± INDETERMINADO')
         self.get_logger().info(
             f'[ALIGN] plano ajustado com {fit.n_points} pontos por '
             f'{"mínimos quadrados" if fit.least_squares else "solução exata"}'
             f': normal=({fit.normal[0]:+.4f}, {fit.normal[1]:+.4f}, '
-            f'{fit.normal[2]:+.4f})  desvio da vertical={fit.tilt_deg:.2f}°  '
-            f'resíduo RMS={fit.rms_m*1e3:.3f} mm  '
+            f'{fit.normal[2]:+.4f})  desvio da vertical={fit.tilt_deg:.2f}° '
+            f'{unc_txt}  resíduo RMS={fit.rms_m*1e3:.3f} mm  '
+            f'braço={fit.lever_m*1e3:.1f} mm  '
             f'espalhamento={fit.spread:.2f}.')
+        if not math.isfinite(unc):
+            self.get_logger().warn(
+                f'[ALIGN] com {fit.n_points} pontos o plano passa EXATO por '
+                'eles e o resíduo sai estruturalmente zero: o desvio medido '
+                'não tem barra de erro. O ajuste vale, mas ele não certifica '
+                f'perpendicularidade nenhuma. Use {_ALIGN_POINTS_DEFAULT}+ '
+                'toques para que o resíduo passe a medir alguma coisa.')
+        elif unc > _ALIGN_ORI_TOL_DEG:
+            self.get_logger().warn(
+                f'[ALIGN] a sondagem resolve o desvio só até ±{unc:.2f}°, '
+                f'PIOR que a tolerância de {_ALIGN_ORI_TOL_DEG:.1f}° com que '
+                'ela decide girar ou não o punho: dentro dessa barra o alvo '
+                'pode estar reto ou torto e a medida não separa os dois '
+                'casos. Compra-se resolução aumentando o braço (raio de '
+                'sondagem) ou reduzindo o resíduo — ela cai com σ/braço.')
 
         ok, motivo = _validate_fit(fit, tilt_max_deg=cfg['tilt_max_deg'])
         if not ok:
@@ -2835,14 +3033,29 @@ class TactileExplorer(Node):
             # Já alinhado dentro do que a própria IK entrega: girar o punho
             # por menos que isso é movimento (e risco) sem ganho.
             self.get_logger().info(
-                f'[ALIGN] desvio de {fit.tilt_deg:.2f}° dentro da tolerância '
-                f'de {_ALIGN_ORI_TOL_DEG:.1f}° — o alvo já está perpendicular '
-                'à home; ataque mantido na vertical (o plano medido segue '
-                'valendo para o deslize).')
+                f'[ALIGN] desvio de {fit.tilt_deg:.2f}° {unc_txt} dentro da '
+                f'tolerância de {_ALIGN_ORI_TOL_DEG:.1f}° — o alvo já está '
+                'perpendicular à home; ataque mantido na vertical (o plano '
+                'medido segue valendo para o deslize). O ataque entra na '
+                f'descida com ERRO RESIDUAL de {fit.tilt_deg:.2f}° contra a '
+                'face: é o preço aceito por não girar o punho.')
+            # Aqui nada foi comandado, então não há "pose entregue" a checar
+            # — mas a descida vai supor a vertical do mundo, e quem entrega
+            # essa vertical é a HOME. Vale medir e dizer, sem abortar: uma
+            # home fora de esquadro é assunto de _phase_goto_home.
+            vert_err = self._attack_axis_err_deg(np.array([0.0, 0.0, -1.0]))
+            if vert_err > _ALIGN_ORI_TOL_DEG:
+                self.get_logger().warn(
+                    f'[ALIGN] a ferramenta está {vert_err:.2f}° fora da '
+                    'vertical do mundo nesta pose, e é nessa vertical que a '
+                    'descida vai correr. O erro contra a face é a SOMA deste '
+                    f'com o desvio do plano ({fit.tilt_deg:.2f}°), não o '
+                    'desvio sozinho — revise a home antes de confiar no '
+                    'valor de força.')
             self._set_phase('CALIBRATING')
             out = self._move_linear_world(
                 p_ref - self._tcp_now(), _ALIGN_TRANSIT_MS,
-                label='ALIGN-RETURN', timeout_s=90.0)
+                label='ALIGN-RETURN')
             return 'ok' if out == 'done' else out
 
         self._set_phase('CALIBRATING')
@@ -2869,10 +3082,110 @@ class TactileExplorer(Node):
             # falsa. Recomeça com o palpite conservador.
             self._contact_depths.clear()
         self.get_logger().info(
-            f'[ALIGN] ataque corrigido em {fit.tilt_deg:.2f}° — eixo '
-            f'({attack[0]:+.4f}, {attack[1]:+.4f}, {attack[2]:+.4f}). '
+            f'[ALIGN] ataque corrigido em {fit.tilt_deg:.2f}° {unc_txt} — '
+            f'eixo ({attack[0]:+.4f}, {attack[1]:+.4f}, {attack[2]:+.4f}), '
+            f'CONFERIDO na pose medida com erro '
+            f'{self._attack_axis_err_deg(attack):.2f}°. Perpendicularidade '
+            f'garantida até a soma dos dois: o erro da medição do plano '
+            f'({unc_txt.replace("± ", "")}) mais o da pose entregue. '
             'A descida de trabalho, a regulação de força e o alívio de '
             'emergência passam a correr sobre este eixo.')
+        return self._verify_attack_plane(p_ref, offsets, cfg)
+
+    def _verify_attack_plane(self, p_ref: np.ndarray, offsets: np.ndarray,
+                             cfg: dict) -> str:
+        """CONFERÊNCIA de ponta a ponta: re-sonda o plano JÁ com o ataque
+        corrigido e mede o ângulo que sobrou entre a ferramenta e a face.
+
+        Tudo o que roda antes disto confere um ELO: a solução da IK aponta
+        certo, a pose entregue é a comandada, o ajuste do plano fecha dentro
+        do resíduo. Nenhum deles confere o PRODUTO — que a ferramenta esteja
+        perpendicular à peça — porque todos partem da mesma primeira medição
+        e herdam o erro dela. Um calço que cedeu entre a sondagem e a
+        rotação, uma amostra que escorregou, um offset de ferramenta errado
+        no T_TOUCH_TOOL_ATTACH: nada disso aparece nos elos, e todos aparecem
+        aqui.
+
+        A conta é direta: os novos contatos são colhidos DESCENDO sobre o
+        eixo corrigido, então o ângulo entre −_attack_dir e a normal do
+        segundo ajuste é o desvio residual do ataque. Zero = perpendicular.
+
+        Custa outra rodada de toques, por isso é opt-in
+        (`probe_align_verify`). Devolve 'ok' quando desligada — o contrato
+        de quem chama não muda.
+        """
+        try:
+            if not bool(self.get_parameter('probe_align_verify').value):
+                return 'ok'
+        except Exception:
+            return 'ok'
+
+        attack = self._attack_dir
+        if attack is None:                 # não girou: nada a conferir
+            return 'ok'
+
+        self.get_logger().info(
+            '[ALIGN-VERIFY] re-sondando o plano com o ataque JÁ corrigido — '
+            'é a única medição que enxerga o ângulo ENTRE a ferramenta e a '
+            'face, em vez de conferir os elos que levaram até ele.')
+        self._set_phase('CALIBRATING')
+        with self._params_lock:
+            saved = (self._home_key_cur, self._home_deg_cur,
+                     self._learned_contact_m, self._target_force_n,
+                     self._contact_depths.copy())
+            # Mesmo isolamento da primeira sondagem: estes toques partem de
+            # outros XY e não pertencem ao histórico de nenhuma home.
+            self._home_key_cur = None
+            self._home_deg_cur = None
+            self._learned_contact_m = None
+            self._contact_depths.clear()
+            self._target_force_n = min(cfg['force_n'],
+                                       float(self._target_force_n))
+        try:
+            out, pts = self._probe_plane(p_ref, offsets, cfg)
+        finally:
+            with self._params_lock:
+                (self._home_key_cur, self._home_deg_cur,
+                 self._learned_contact_m, self._target_force_n,
+                 self._contact_depths) = saved
+        if out != 'ok':
+            self.get_logger().error(
+                f'[ALIGN-VERIFY] a conferência parou em {len(pts)}/'
+                f'{len(offsets)} pontos ({out}) — sem conferência não há '
+                'garantia de perpendicularidade, e o ensaio foi pedido COM '
+                'ela. Abortando.')
+            return out
+
+        try:
+            fit2 = _fit_plane(np.asarray(pts, dtype=float))
+        except ValueError as exc:
+            self.get_logger().error(
+                f'[ALIGN-VERIFY] ajuste da conferência falhou: {exc}.')
+            return 'error'
+
+        # Desvio RESIDUAL: ângulo entre o eixo que a ferramenta está usando
+        # e a normal recém-medida da face. É o número que o ensaio queria.
+        resid_deg = _angle_between_deg(-np.asarray(attack, float), fit2.normal)
+        unc2 = fit2.tilt_unc_deg
+        unc2_txt = (f'± {unc2:.2f}°' if math.isfinite(unc2)
+                    else '± INDETERMINADO')
+        if resid_deg > _ALIGN_ORI_TOL_DEG:
+            self.get_logger().error(
+                f'[ALIGN-VERIFY] REPROVADO: com o ataque corrigido a face '
+                f'ainda faz {resid_deg:.2f}° {unc2_txt} com a ferramenta '
+                f'(tolerância {_ALIGN_ORI_TOL_DEG:.1f}°). A primeira '
+                'sondagem e a rotação fecharam cada uma por si, mas o '
+                'produto não é perpendicular — peça que se moveu entre as '
+                'duas medições, calço que cedeu sob o toque, ou offset de '
+                'ferramenta errado. Abortando: a célula leria a projeção da '
+                'força normal, medindo menos do que aplica.')
+            return 'error'
+        self.get_logger().info(
+            f'[ALIGN-VERIFY] APROVADO: ataque perpendicular à face dentro de '
+            f'{resid_deg:.2f}° {unc2_txt} (tolerância '
+            f'{_ALIGN_ORI_TOL_DEG:.1f}°), medido por {fit2.n_points} contatos '
+            f'novos com resíduo RMS de {fit2.rms_m*1e3:.3f} mm. Este é o '
+            'ângulo ENTRE ferramenta e peça, não a soma dos elos.')
         return 'ok'
 
     def _align_set_slide_plane(self, fit) -> None:
@@ -5113,30 +5426,57 @@ class TactileExplorer(Node):
         return forward_kinematics(
             self._q_now(), T_end=T_TOUCH_TOOL_ATTACH)[:3, 3].copy()
 
+    # Quantas vezes um trânsito linear pode ser replanejado depois de uma
+    # PAUSA. Segurar posição substitui o goal do JTC, então o que faltava do
+    # percurso morre com ele e precisa ser reemitido do ponto onde parou.
+    # O teto existe só para que pausar em loop não vire movimento eterno.
+    _LINEAR_REPLAN_MAX = 20
+
     def _move_linear_world(self, delta_m: np.ndarray, v_ms: float, *,
                            lock_z: bool = False,
-                           label: str = 'LINEAR',
-                           timeout_s: float = 90.0) -> str:
+                           label: str = 'LINEAR') -> str:
         """Translação retilínea do TCP por `delta_m` (vetor XYZ no mundo
         URDF, metros), à velocidade `v_ms`, com a orientação travada.
 
         Retorna 'done' | 'stop' | 'force' | 'stale' | 'error'.
         """
         d = np.asarray(delta_m, dtype=float).flatten()
-        dist = float(np.linalg.norm(d))
-        if dist < 1e-5:          # < 10 µm: já está lá
+        if float(np.linalg.norm(d)) < 1e-5:   # < 10 µm: já está lá
             return 'done'
-        u = d / dist
+        # ALVO, não deslocamento: uma pausa no meio do caminho mata o que
+        # restava da trajetória, e reemitir `delta_m` a partir de onde o
+        # braço parou andaria o percurso duas vezes.
+        target = self._tcp_now() + d
         v_ms = max(1e-4, float(v_ms))
 
-        out = self._cartesian_batch_to(
-            u, dist, v_const_ms=v_ms, lock_ori=True, lock_z=lock_z)
-        # _cartesian_batch_to não monitora força (é uma fase não-reativa);
-        # a checagem pós-movimento é a rede de segurança do trânsito.
+        out = 'done'
+        for _ in range(self._LINEAR_REPLAN_MAX):
+            rest = target - self._tcp_now()
+            dist = float(np.linalg.norm(rest))
+            if dist < 1e-5:
+                out = 'done'
+                break
+            out = self._cartesian_batch_to(
+                rest / dist, dist, v_const_ms=v_ms, lock_ori=True,
+                lock_z=lock_z)
+            if out != 'paused':
+                break
+            self.get_logger().info(
+                f'[{label}] retomado após pausa — replanejando os '
+                f'{dist * 1e3:.1f} mm que faltavam.')
+        else:
+            self.get_logger().error(
+                f'[{label}] {self._LINEAR_REPLAN_MAX} pausas seguidas sem '
+                'concluir o trânsito — abortando.')
+            return 'error'
+        # Rede de segurança do trânsito: o monitor de força de
+        # _cartesian_batch_to para o braço no tick em que a carga aparece,
+        # mas um contato que se firma DEPOIS do último waypoint só é visto
+        # aqui.
         if out == 'done' and self._force_over_limit():
             self.get_logger().error(
-                f'[MATRIX] {label}: força {self._fz_corrected():+.1f} N '
-                f'após o trânsito — contato inesperado no Safe Z.')
+                f'[{label}] força {self._fz_corrected():+.1f} N após o '
+                'trânsito — contato inesperado em ar livre.')
             return 'force'
         return out
 
@@ -5205,7 +5545,7 @@ class TactileExplorer(Node):
         # A subida de alívio usa a velocidade de trânsito, não a de descida:
         # sair do contato depressa reduz o tempo sob carga.
         return self._move_linear_world(
-            n * d_m, self._matrix_transit_ms, label=label, timeout_s=60.0)
+            n * d_m, self._matrix_transit_ms, label=label)
 
     def _move_to_wp_safe(self, wp_xy: np.ndarray) -> str:
         """Trânsito no ar até a pose de Safe Z do waypoint `wp_xy`
@@ -5225,7 +5565,7 @@ class TactileExplorer(Node):
         return self._move_linear_world(
             delta, self._matrix_transit_ms,
             lock_z=(horizontal and abs(delta[2]) < 1e-4),
-            label='TRANSIT', timeout_s=90.0)
+            label='TRANSIT')
 
     def _matrix_find_origin(self) -> str:
         """Descida exploratória inicial: acha o plano e define a ORIGEM.
@@ -5410,19 +5750,6 @@ class TactileExplorer(Node):
                 'trânsito. A curva de cada ponto sai do samples.csv filtrando '
                 'por wp_index e setpoint_n.')
 
-        # A grade identifica com HOLD de força CONSTANTE. O despacho para o
-        # HOLD modulado (e a troca MovL→streaming que a onda exige) existe só
-        # no caminho de TOUCH, então um perfil configurado aqui era descartado
-        # sem uma linha de log — o operador recebia identações estáticas
-        # achando que tinha medido a onda em cada ponto.
-        if self._fmod_configured():
-            self.get_logger().warn(
-                '[MATRIX] há um perfil trigonométrico configurado, mas o '
-                'MATRIX_MAP identa com força CONSTANTE: a onda NÃO vai rodar '
-                'em nenhum ponto da grade. Use o modo TOUCH para ensaios '
-                'modulados, ou desligue a modulação para silenciar este '
-                'aviso.')
-
         # A sonda começa onde o usuário a deixou — NÃO passamos pela HOME,
         # que é onde os outros modos calibram o frame mundo→DOBOT.
         # Mão na pose de palpação (Index estendido), como faz a HOME.
@@ -5601,6 +5928,27 @@ class TactileExplorer(Node):
             _ok_sp, _porque_sp = setpoint_resolvable(_tgt, _tol_run)
             if not _ok_sp:
                 self.get_logger().warn(f'[SETPOINT] {_porque_sp}')
+            # Recurso PEDIDO que este modo não executa: avisa uma vez, aqui,
+            # antes de qualquer movimento. A GUI já zera os campos fora dos
+            # modos que os rodam, mas ela não é o único publisher — por
+            # `ros2 topic pub` um perfil de onda ou uma escada chegavam e
+            # eram descartados sem uma linha de log, e o ensaio saía estático
+            # com o operador achando que tinha medido a onda.
+            with self._params_lock:
+                _step_pedido = float(self._step_size_n) > 0.0
+            if _step_pedido and mode not in STAIRCASE_MODES:
+                self.get_logger().warn(
+                    f'[DEGRAU] escada configurada, mas o modo {mode} identa '
+                    f'com força CONSTANTE: ela NÃO vai rodar. A escada existe '
+                    f'em {" e ".join(STAIRCASE_MODES)}.')
+            if self._fmod_configured() and mode not in FMOD_MODES:
+                self.get_logger().warn(
+                    f'[FMOD] perfil trigonométrico configurado, mas o modo '
+                    f'{mode} identa com força CONSTANTE: a onda NÃO vai '
+                    f'rodar. A modulação existe em '
+                    f'{" e ".join(FMOD_MODES)} — desligue-a para silenciar '
+                    'este aviso.')
+
             # Em TOUCH, cada "ciclo" é um toque (descida → hold → recuo).
             label = 'TOQUE' if mode == 'TOUCH' else 'CICLO'
 
@@ -5704,7 +6052,11 @@ class TactileExplorer(Node):
                         f'[{label}] {cycle}/{repeats}')
 
                 if not self._phase_goto_home():
-                    self._set_phase('ABORTED'); return
+                    # FREEZE também chega aqui (ele seta _stop_requested para
+                    # quebrar os laços): sem passar pelo _finalize_interrupt a
+                    # fase saía ABORTED e o E-STOP não aparecia nem no status
+                    # nem no CSV.
+                    self._finalize_interrupt('ABORTED'); return
 
                 # A calibração mede o plano UMA vez por experimento: a peça
                 # não se move entre repetições, e refazê-la a cada ciclo
@@ -5730,7 +6082,8 @@ class TactileExplorer(Node):
                 # constante dá lugar ao HOLD modulado (que começa fazendo o
                 # HOLD normal na força média). Qualquer outro modo, ou perfil
                 # OFF, segue no caminho de sempre.
-                fmod = self._force_profile() if mode == 'TOUCH' else None
+                fmod = (self._force_profile()
+                        if mode in FMOD_MODES else None)
                 out = (self._phase_hold_modulated(fmod) if fmod is not None
                        else self._phase_hold())
                 if out in ('force', 'stale', 'timeout', 'error', 'target_lost'):
@@ -5752,7 +6105,7 @@ class TactileExplorer(Node):
                     # RETRACT — o HOME já afasta da superfície ao subir, e o
                     # próximo ciclo refaz a re-aproximação a partir da home.
                     if not self._phase_goto_home():
-                        self._set_phase('ABORTED'); return
+                        self._finalize_interrupt('ABORTED'); return
                     # Stop pedido durante o retorno → não inicia o próximo.
                     if self._stop_requested.is_set():
                         self._stop_requested.clear()

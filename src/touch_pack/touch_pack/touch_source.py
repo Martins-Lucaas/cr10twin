@@ -401,8 +401,9 @@ class TouchSensorSource:
         # o teste startswith("RA"/"SA") não os pega.
         elif (line.startswith("CN_MM") or line.startswith("CN_RA")
               or line.startswith("CN_SA")):
-            # Os plotters standalone registram o spike SÓ pelo prefixo da
-            # linha — o firmware NÃO emite "t=" nas linhas CN.
+            # O firmware EMITE "t=" nas linhas CN ("CN_MM,t=<us>\r\n"), mas
+            # os plotters standalone registram o spike só pelo prefixo — daí
+            # o timestamp ser opcional aqui.
             m = RE_POST.search(line)
             if m:
                 self._note_time(int(m.group(1)) / 1e6)

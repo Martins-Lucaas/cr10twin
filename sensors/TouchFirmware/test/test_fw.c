@@ -1,8 +1,4 @@
 /* Harness de host: inclui o firmware inteiro e exercita a cadeia USB. */
-/* O LAR do DWT vive num endereco absoluto do Cortex-M7; no PC isso seria um
- * acesso invalido, entao o harness aponta o macro para uma variavel. */
-extern volatile unsigned int stub_dwt_lar;
-#define DWT_LAR_ADDR stub_dwt_lar
 #define main firmware_main
 #include "../main.c"
 #undef main
@@ -14,14 +10,10 @@ extern volatile unsigned int stub_dwt_lar;
 static GPIO_TypeDef g_a, g_b, g_c, g_f;
 GPIO_TypeDef *GPIOA = &g_a, *GPIOB = &g_b, *GPIOC = &g_c, *GPIOF = &g_f;
 uint32_t stub_tim_counter = 0;
-volatile unsigned int stub_dwt_lar = 0;
-static CoreDebug_Type cd; static DWT_Type dw;
-CoreDebug_Type *CoreDebug = &cd; DWT_Type *DWT = &dw;
 
 void HAL_GPIO_Init(GPIO_TypeDef *p, GPIO_InitTypeDef *i) { (void)p;(void)i; }
 void HAL_GPIO_WritePin(GPIO_TypeDef *p, uint16_t n, GPIO_PinState s) { (void)p;(void)n;(void)s; }
-static int dout_level = 0;
-GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *p, uint16_t n) { (void)p;(void)n; return dout_level ? GPIO_PIN_SET : GPIO_PIN_RESET; }
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *p, uint16_t n) { (void)p;(void)n; return GPIO_PIN_RESET; }
 void HAL_DMA_Init(DMA_HandleTypeDef *h) { (void)h; }
 void HAL_DMA_IRQHandler(DMA_HandleTypeDef *h) { (void)h; }
 void HAL_ADC_Init(ADC_HandleTypeDef *h) { (void)h; }
@@ -266,56 +258,50 @@ static void t_not_configured_keeps_data(void)
     printf("[ok] dado preservado ate o CDC configurar\n");
 }
 
-/* O atraso do HX711 NUNCA pode ser infinito. Um DWT que ignora a habilitação
- * (Cortex-M7 sem a chave do LAR) deixa CYCCNT em zero, e o laço antigo
- * `while (CYCCNT - start < n)` travava para sempre — dentro do boot, o que
- * fazia o dispositivo enumerar e ficar mudo. Aqui os dois caminhos são
- * exercitados; se algum não terminar, o teste trava e o timeout do harness
- * pega. */
-static void t_delay_always_terminates(void)
+/* append_ts nunca pode escrever fora do buffer, mesmo recebendo o offset mais
+ * perigoso que snprintf_len() sabe produzir (cap-1). */
+static void t_append_ts_never_overruns(void)
 {
-    /* CYCCNT congelado: dwt_delay_init tem de DETECTAR e cair na reserva. */
-    dw.CYCCNT = 0;
-    dwt_delay_init();
-    CHECK(dwt_ok == false, "DWT congelado deveria ser detectado");
-    for (int i = 0; i < 200; i++) dwt_delay_cycles(HX711_SCK_DELAY_CYC);
-    printf("[ok] CYCCNT congelado: detectado, reserva por NOP termina\n");
+    char buf[40];
+    const char canary = 0x7E;
 
-    /* Agora um CYCCNT que anda: o caminho normal. */
-    dwt_ok = true;
-    dw.CYCCNT = 0;
-    for (int i = 0; i < 200; i++) { dw.CYCCNT += 1000; dwt_delay_cycles(HX711_SCK_DELAY_CYC); }
-    printf("[ok] CYCCNT normal: caminho do DWT termina\n");
-
-    /* CYCCNT que PARA no meio (depurador anexado): o teto de iterações salva. */
-    dwt_ok = true;
-    dw.CYCCNT = 5;
-    for (int i = 0; i < 50; i++) dwt_delay_cycles(HX711_SCK_DELAY_CYC);
-    printf("[ok] CYCCNT que para no meio: teto de iteracoes termina\n");
+    for (size_t cap = APPEND_TS_MAX; cap < sizeof(buf); cap++) {
+        memset(buf, canary, sizeof(buf));
+        /* offset = cap-1: o que snprintf_len devolve quando o snprintf trunca */
+        uint16_t out = append_ts(buf, (uint16_t)(cap - 1), (uint16_t)cap,
+                                 18446744073709551615ULL);
+        CHECK(out <= cap, "append_ts devolveu offset alem do buffer");
+        for (size_t k = cap; k < sizeof(buf); k++)
+            CHECK(buf[k] == canary, "append_ts escreveu alem de cap");
+        CHECK(buf[out - 1] == '\n' && buf[out - 2] == '\r',
+              "linha deveria terminar em CRLF");
+    }
+    printf("[ok] append_ts respeita o teto do buffer\n");
 }
 
-/* A tara não pode bloquear o laço: sem HX711 respondendo, ela tem de desistir
- * sozinha e o USB tem de seguir falando o tempo todo. */
-static void t_tare_never_blocks(void)
+/* A mascara de linha desfasada do indice do frame era a unica falha sem
+ * sintoma: o 5x5 continuava bem formado, com os taxels rotacionados. */
+static void t_rowsync_is_reported(void)
 {
     usb_setup();
-    tare_done = false; tare_taken = 0; tare_sum = 0; tare_t0_ms = 0;
-    dout_level = 1;                 /* DOUT alto = chip NUNCA pronto */
+    row_mask = 0x1E;
+    select_row(0);                      /* priming: nunca acusa */
+    for (uint8_t r = 0; r < ROWS; r++)  /* em fase: silencio */
+        select_row(r);
+    drain_all();
+    CHECK(wire_len == 0, "acusou desfasagem que nao existe");
 
-    stub_tick = 0;
-    for (int i = 0; i < 5; i++) { HX711_TareStep(); CHECK(!tare_done, "tara cedo demais"); }
-
-    stub_tick = HX711_TARE_DELAY_MS + HX711_TARE_WINDOW_MS + 1;
-    HX711_TareStep();
-    CHECK(tare_done, "tara deveria ter desistido por tempo");
-    CHECK(hx711_offset == 0, "sem amostras, offset deve ser 0");
-
+    row_mask = row5(row_mask);          /* pula uma posicao = desfasado */
+    select_row(0);
     drain_all();
     wire[wire_len] = 0;
-    CHECK(strstr((char *)wire, "HX711 TARE TIMEOUT,0,200,") != NULL,
-          "desistencia deveria ser reportada pelo USB");
-    printf("[ok] tara desiste sozinha e avisa (celula ausente)\n");
-    dout_level = 0;
+    CHECK(strstr((char *)wire, "ROWSYNC ERR") != NULL, "desfasagem nao acusada");
+
+    size_t once = wire_len;
+    for (int i = 0; i < 20; i++) select_row(0);
+    drain_all();
+    CHECK(wire_len == once, "ROWSYNC deveria sair UMA vez, nao inundar o ring");
+    printf("[ok] desfasagem de linha e acusada uma vez\n");
 }
 
 int main(void)
@@ -330,8 +316,8 @@ int main(void)
     t_timestamp_never_wraps();
     t_snprintf_len_clamps();
     t_not_configured_keeps_data();
-    t_delay_always_terminates();
-    t_tare_never_blocks();
+    t_append_ts_never_overruns();
+    t_rowsync_is_reported();
     printf(fails ? "\n%d VERIFICACAO(OES) FALHARAM\n" : "\nTodas as verificacoes passaram\n", fails);
     return fails ? 1 : 0;
 }
