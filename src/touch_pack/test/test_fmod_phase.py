@@ -425,6 +425,7 @@ def test_bins_do_ilc_acompanham_os_pontos_comandados():
     assert 'ilc_bins = int(min(max(round(pts_a_priori), 4)' in src
     assert 'n_bins=ilc_bins' in src
     # A regra em si, com os dois extremos reais da bancada.
+
     def bins(pts):
         return int(min(max(round(pts), 4), _FMOD_ILC_BINS))
     assert bins(_FMOD_MIN_PTS_PER_CYCLE) == 5      # 10 Hz, tick de 20 ms

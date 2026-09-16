@@ -144,16 +144,16 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
         want_s = 1.0 / (prof.freq_hz * _FMOD_MIN_PTS_PER_CYCLE)
         hw_max_hz = _fmod_max_freq_hz(_SERVOJ_T_MIN_S)
         if want_s < _SERVOJ_T_MIN_S:
-            out.append(('error',
+            out.append(('error', (
                 f'[FMOD] {prof.freq_hz:.2f} Hz não é alcançável em NENHUMA '
                 f'configuração: exigiria ServoJ com t={want_s*1e3:.1f} ms, '
                 f'abaixo do mínimo de {_SERVOJ_T_MIN_S*1e3:.0f} ms do '
                 f'firmware do CR10 (faixa [0.02, 3600] s). O teto absoluto da '
                 f'bancada é {hw_max_hz:.2f} Hz com '
                 f'{_FMOD_MIN_PTS_PER_CYCLE} pontos por período. Baixe a '
-                f'frequência. Modulação cancelada.'))
+                f'frequência. Modulação cancelada.')))
         else:
-            out.append(('error',
+            out.append(('error', (
                 f'[FMOD] {prof.freq_hz:.2f} Hz é mais do que o laço ServoJ '
                 f'consegue rastrear: com '
                 f'servoj_period_s={servoj_period_s*1e3:.0f} ms o teto é '
@@ -162,7 +162,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
                 f'servoj_period_s:={want_s:.3f} — um argumento só, que ajusta '
                 f'explorer, GUI e mirror_node juntos: publicar a onda mais '
                 f'rápido do que o braço é comandado não entrega mais onda, '
-                f'entrega uma reamostrada. Modulação cancelada.'))
+                f'entrega uma reamostrada. Modulação cancelada.')))
 
     # ── 2. o que a AMOSTRAGEM come, devolvido na amplitude ───────────
     # Malha aberta e conhecido de antemão — não faz sentido deixar a adaptação
@@ -172,13 +172,13 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
     samp_gain = _fmod_sampling_gain(pts)
     amp_pre = 1.0 / max(samp_gain, 0.5)
     if amp_pre > 1.01:
-        out.append(('info',
+        out.append(('info', (
             f'[FMOD] {pts:.1f} pontos por período entregam '
             f'{100*samp_gain:.1f} % da fundamental (sinc² da interpolação) — '
             f'a amplitude comandada sai multiplicada por {amp_pre:.3f} para '
             f'compensar. A DISTORÇÃO que a mesma interpolação gera (~7 % de '
             f'THD a 5 pontos, ~2 % a 8) não tem como ser compensada em '
-            f'amplitude; ela vai medida no log de fim.'))
+            f'amplitude; ela vai medida no log de fim.')))
 
     # ── 3. VELOCIDADE de pico ────────────────────────────────────────
     # A amplitude em POSIÇÃO é imposta pelo material: a faixa de força pedida
@@ -204,7 +204,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
             2.0 * math.pi * prof.freq_hz * amp_pre)
         amp_ok_n = math.floor(100.0 * amp_ok_m * (
             prof.amp_n / amp_m if amp_m > 1e-12 else k_nm)) / 100.0
-        out.append(('error',
+        out.append(('error', (
             f'[FMOD] a faixa {prof.f_min_n:.2f}–{prof.f_max_n:.2f} N vale '
             f'{2*amp_m*1e3:.2f} mm de curso NESTE material; percorrê-la a '
             f'{prof.freq_hz:.2f} Hz pede {v_peak_mms:.1f} mm/s de pico, acima '
@@ -213,15 +213,15 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
             f'{prof.freq_hz:.2f} Hz estreitando a faixa para ±{amp_ok_n:.2f} '
             f'N em torno de {prof.mean_n:.2f} N '
             f'({prof.mean_n - amp_ok_n:.2f}–{prof.mean_n + amp_ok_n:.2f} N). '
-            f'Modulação cancelada.'))
+            f'Modulação cancelada.')))
     elif v_peak_mms > _FMOD_V_PEAK_WARN_MMS:
-        out.append(('warn',
+        out.append(('warn', (
             f'[FMOD] velocidade de pico {v_peak_mms:.1f} mm/s '
             f'({2*amp_m*1e3:.2f} mm p-p a {prof.freq_hz:.2f} Hz) acima de '
             f'{_FMOD_V_PEAK_WARN_MMS:.0f} mm/s — a onda é rápida para uma '
             f'ponteira de palpação. É o que a faixa de força pedida custa '
             f'neste material; estreite a faixa ou baixe a frequência se não '
-            f'for intencional.'))
+            f'for intencional.')))
 
     # ── 4. a onda é MEDÍVEL nesta frequência? ────────────────────────
     # Tudo o que audita o ensaio — amplitude da fundamental, THD, bins de fase
@@ -230,7 +230,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
     # fim imprime números que não descrevem onda nenhuma.
     need_rate_hz = prof.freq_hz * _FMOD_MIN_MEAS_RATE_MULT
     if 0.0 < meas_rate_hz < need_rate_hz:
-        out.append(('error',
+        out.append(('error', (
             f'[FMOD] a célula entrega {meas_rate_hz:.0f} Hz e uma onda de '
             f'{prof.freq_hz:.2f} Hz precisa de {need_rate_hz:.0f} Hz '
             f'({_FMOD_MIN_MEAS_RATE_MULT:.0f} amostras por período) para ser '
@@ -240,7 +240,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
             f'não descreveria a onda. Baixe a frequência para '
             f'≤{meas_rate_hz/_FMOD_MIN_MEAS_RATE_MULT:.2f} Hz, ou use a '
             f'FA7155 (~400 Hz) no lugar da HX711 (24 Hz). Modulação '
-            f'cancelada.'))
+            f'cancelada.')))
 
     # ── 5. existe correção de FORMA nesta frequência? ────────────────
     # O ILC é a única coisa que corrige centro, fase e forma; `fx_gain` é um
@@ -253,7 +253,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
     # ligar o canal cru.
     meas_gain = 1.0 if has_raw else fmod_measure_gain(prof.freq_hz)
     if meas_gain < _FMOD_ILC_MIN_MEAS_GAIN:
-        out.append(('error',
+        out.append(('error', (
             f'[FMOD] a {prof.freq_hz:.2f} Hz o pipeline de medida entrega '
             f'{100*meas_gain:.0f} % da amplitude (One-Euro travado em '
             f'{_ONE_EURO_MAXCUTOFF_HZ:.0f} Hz), abaixo dos '
@@ -263,7 +263,7 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
             f'ft_receiver já publica; confira lc_raw_scale_n_per_unit) e o '
             f'ganho da medida vira 1,00 em qualquer frequência. Sem ele o '
             f'teto útil é {_ONE_EURO_MAXCUTOFF_HZ:.0f} Hz. Modulação '
-            f'cancelada.'))
+            f'cancelada.')))
 
     # ── 6. a onda cabe ACIMA da banda morta do ServoJ? ───────────────
     # O espelho só reenvia ServoJ quando o alvo mudou mais que a banda morta,
@@ -272,32 +272,32 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
     # um degrau e meio por semiciclo. A onda sai — quadrada. Avisa e não
     # recusa: é escolha de ponteira, não erro de configuração.
     if amp_m * amp_pre < _FMOD_DEADBAND_MIN_RATIO * deadband_tcp_m:
-        out.append(('warn',
+        out.append(('warn', (
             f'[FMOD] amplitude de {amp_m*amp_pre*1e6:.0f} µm contra uma banda '
             f'morta de ServoJ de {deadband_tcp_m*1e6:.0f} µm de TCP — a onda '
             f'comandada sai quantizada em '
             f'~{2*amp_m*amp_pre/max(deadband_tcp_m, 1e-12):.0f} degraus por '
             f'período e a forma vai sofrer. É a ponteira: nesta rigidez a '
             f'faixa de força pedida vale pouco curso. Use uma ponteira mais '
-            f'mole ou uma faixa mais larga se a FORMA importa neste ensaio.'))
+            f'mole ou uma faixa mais larga se a FORMA importa neste ensaio.')))
 
     # Estimativa a priori: assume tick EXATO de wave_dt. O tick real é sempre
     # maior (o sleep vem depois do Jacobiano/publish), então isto é o MELHOR
     # CASO — a contagem medida sai no fim, e o aviso de verdade vem dela.
     if pts < _FMOD_MIN_PTS_PER_CYCLE:
-        out.append(('warn',
+        out.append(('warn', (
             f'[FMOD] {prof.freq_hz:.1f} Hz dá {pts:.1f} pontos por período NO '
             f'MELHOR CASO, com o tick já no piso de '
             f'{max(_FMOD_DT_MIN_S, servoj_period_s)*1e3:.0f} ms. Confira a '
-            f'frequência ENTREGUE no log de fim: é ela que vale.'))
+            f'frequência ENTREGUE no log de fim: é ela que vale.')))
 
-    out.append(('info',
+    out.append(('info', (
         f'[FMOD] {prof.describe()} — média {prof.mean_n:.2f} N, amplitude '
         f'±{prof.amp_n:.2f} N = ±{amp_m*1e6:.0f} µm de penetração '
         f'({"curva F(x)" if use_curve else f"K={k_nm/1e3:.2f} N/mm"}), pico '
         f'{v_peak_mms:.1f} mm/s, tick {wave_dt*1e3:.1f} ms → {pts:.1f} '
         f'pts/período (ServoJ {servoj_period_s*1e3:.0f} ms, teto '
-        f'{f_max_hz:.2f} Hz).'))
+        f'{f_max_hz:.2f} Hz).')))
     return amp_pre, out
 
 
