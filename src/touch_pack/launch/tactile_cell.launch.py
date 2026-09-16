@@ -79,6 +79,12 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+# Piso do `t` do ServoJ e período padrão. Importados do driver para não virarem
+# um QUARTO lugar onde o número do firmware está escrito à mão.
+from touch_pack.real_driver import SERVOJ_T_MIN_S
+
+_SERVOJ_PERIOD_DEFAULT_S = 0.030
+
 
 # Helpers de saneamento do URDF combinado
 def _fix_virtual_link_inertia(urdf_body: str) -> str:
@@ -458,6 +464,18 @@ def launch_setup(context, *args, **kwargs):
     if force_source not in ('real', 'sim'):
         force_source = 'real'
 
+    # Período do ServoJ: um número do FIRMWARE, não uma preferência por nó.
+    # Saturado aqui para que explorer, GUI e mirror recebam todos o MESMO
+    # valor legal — se cada um saturasse por conta própria, um valor inválido
+    # daria três taxas diferentes no mesmo braço.
+    try:
+        servoj_period_s = float(
+            LaunchConfiguration('servoj_period_s').perform(context))
+    except ValueError:
+        servoj_period_s = _SERVOJ_PERIOD_DEFAULT_S
+    servoj_period_s = min(max(servoj_period_s, SERVOJ_T_MIN_S),
+                          _SERVOJ_PERIOD_DEFAULT_S)
+
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
     pkg_touch  = get_package_share_directory('touch_pack')
@@ -515,6 +533,7 @@ def launch_setup(context, *args, **kwargs):
             'arm_base_z':   0.78,
             'use_sim_time': True,
             'learned_contact_persist': learned_contact_persist,
+            'servoj_period_s': servoj_period_s,
         }])
 
     gui_node = Node(
@@ -537,7 +556,12 @@ def launch_setup(context, *args, **kwargs):
                      'force_source': force_source,
                      # URDF completo (com <visual>) que foi para o Gazebo —
                      # a aba "3D Manipulation" renderiza ESTE modelo.
-                     'robot_description_path': urdf_spawn_path}],
+                     'robot_description_path': urdf_spawn_path,
+                     # Com a GUI aberta é o poll loop DELA que manda ServoJ
+                     # (conexão única ao CR10), então o período tem de chegar
+                     # aqui também — senão o explorer publica a 50 Hz e a GUI
+                     # reamostra a 33, que é o teto de 6,67 Hz de volta.
+                     'servoj_period_s': servoj_period_s}],
         condition=UnlessCondition(LaunchConfiguration('no_gui')))
 
     # A grade vai para o logger pelo MESMO parâmetro da GUI: se as duas
@@ -599,7 +623,8 @@ def launch_setup(context, *args, **kwargs):
     if robot_mode == 'MIRROR' and no_gui:
         early_nodes.append(Node(
             package='touch_pack', executable='mirror_node',
-            parameters=[{'robot_ip': robot_ip}]))
+            parameters=[{'robot_ip': robot_ip,
+                         'servoj_period_s': servoj_period_s}]))
     # Explorer precisa da action do cr10_group_controller — sobe por último.
     late_nodes  = [explorer_node]
 
@@ -721,5 +746,16 @@ def generate_launch_description():
                         'força contínua, inclusive em repouso | true cancela '
                         'deriva térmica, mas prende a leitura em zero exato '
                         'dentro da banda de 0,30 N enquanto nada encosta.'),
+        DeclareLaunchArgument(
+            'servoj_period_s', default_value='0.030',
+            description='Período do ServoJ, em segundos — a taxa que governa '
+                        'o braço REAL. É o teto de frequência da onda '
+                        'trigonométrica: f_max = 1/(t·5), ou seja 6,67 Hz com '
+                        'os 0,030 padrão e 10,0 Hz com 0,020, que é o mínimo '
+                        'do firmware do CR10 (guia V4.5.1, ServoJ: t em '
+                        '[0.02, 3600] s). Este argumento vai para o explorer, '
+                        'a GUI e o mirror_node JUNTOS — publicar a onda mais '
+                        'rápido do que o braço é comandado não entrega mais '
+                        'onda, entrega uma reamostrada.'),
         OpaqueFunction(function=launch_setup),
     ])

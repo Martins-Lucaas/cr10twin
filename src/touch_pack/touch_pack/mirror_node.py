@@ -42,7 +42,9 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory
 from touch_pack_msgs.msg import PalpationStatus
 
-from .constants import ARM_JOINTS, PHASE_CODES, ROBOT_CONFIG_FILE
+from .constants import (
+    ARM_JOINTS, PHASE_CODES, ROBOT_CONFIG_FILE, SERVOJ_DEADBAND_RAD,
+)
 from .kinematics import urdf_to_dobot
 from .real_driver import (
     CR10RealDriver, CR10RealDriverConfig, CR10RealDriverError,
@@ -51,16 +53,11 @@ from .real_driver import (
 
 _PERIOD_S = 0.030          # 33 Hz — mesmo período do streaming do explorer
 _MOVJ_DEBOUNCE_S = 0.08    # coalesce de publicações em rajada no jog
-# Banda morta do ServoJ: abaixo dela o alvo é considerado igual ao anterior e
-# o comando não é reenviado. Era 1e-4 rad — que num CR10 de ~1,2 m de alcance
-# vale ~120 µm de TCP. Isso é da ORDEM da onda trigonométrica inteira: uma
-# amplitude de 700 µm sairia quantizada em ~6 degraus, e qualquer onda menor
-# seria suprimida por completo, silenciosamente.
-#
-# 1e-5 rad ≈ 12 µm de TCP, ainda acima do ruído de encoder (~1,7e-5 rad por
-# LSB de 0,001°) mas fino o bastante para a onda. Reenviar um ServoJ
-# redundante é barato — o envio é fire-and-forget.
-_SERVOJ_DEADBAND_RAD = 1.0e-5
+# Banda morta do ServoJ — importada de constants.py, onde mora a fonte única
+# (a palpation_gui comanda o MESMO braço e o tactile_explorer avisa quando a
+# onda pedida é menor que ela). O alias local existe porque este módulo e os
+# testes já a chamam assim.
+_SERVOJ_DEADBAND_RAD = SERVOJ_DEADBAND_RAD
 _RECONNECT_BACKOFF_S = (2.0, 5.0, 10.0, 30.0)
 
 # Fases em que o braço NÃO está sendo comandado pelo explorer. Tudo o que não

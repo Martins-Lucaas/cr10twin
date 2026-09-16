@@ -496,6 +496,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             'eci_prefix', '/covvi/hand').value or '/covvi/hand')
         self._param_robot_ip   = self.declare_parameter('robot_ip',   '').value
         self._param_robot_mode = self.declare_parameter('robot_mode', '').value
+        # Período do ServoJ. Com a GUI aberta é o poll loop DELA que comanda o
+        # braço real (conexão única ao CR10), então este número é o que governa
+        # a taxa do braço — e o teto de frequência da onda trigonométrica
+        # (f_max = 1/(t·FMOD_MIN_PTS_PER_CYCLE)). Era uma constante local de
+        # 30 ms no `_mirror_poll_loop`, o que fazia 10 Hz ser impossível pela
+        # GUI por mais que o explorer fosse configurado.
+        self._servoj_period_s = float(np.clip(
+            float(self.declare_parameter(
+                'servoj_period_s', FMOD_CTRL_DT_S).value or FMOD_CTRL_DT_S),
+            SERVOJ_T_MIN_S, FMOD_CTRL_DT_S))
         # Efetuador final vindo do launch (hand | touch_tool) REGRA (até o
         # usuário pedir o contrário): o modo Palpação só fica disponível
         # quando a célula é aberta COM o touch_tool.
@@ -1410,14 +1420,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                               'the real arm runs at 33 Hz by default, so the '
                               'trackable ceiling is 6.7 Hz (5 points per '
                               'cycle). Above that the explorer REFUSES the '
-                              'wave instead of resampling it — raise both '
-                              'mirror_node and tactile_explorer with '
-                              'servoj_period_s to go faster. 10 Hz is the '
-                              'hardware ceiling and needs servoj_period_s '
-                              '= 0.020, the CR10 firmware minimum: at that '
-                              'point a cycle IS 5 points, and the ~12% of '
-                              'amplitude the interpolation eats is added '
-                              'back to the command automatically.')
+                              'wave instead of resampling it. Relaunch with '
+                              'servoj_period_s:=0.020 — one argument that '
+                              'sets explorer, GUI and mirror_node together — '
+                              'and the ceiling becomes 10 Hz, the CR10 '
+                              'firmware minimum for ServoJ t. At 10 Hz a '
+                              'cycle IS 5 points: the ~12% of amplitude the '
+                              'interpolation eats is added back to the '
+                              'command automatically, and the ~7% of THD it '
+                              'creates is not compensable — it is reported '
+                              'in the end-of-wave log.')
         self._param_row(self._fmod_group, label='Modulation — Cycles',
                          unit='×', var=self.fmod_cycles_var,
                          vmin=FMOD_CYCLES_MIN, vmax=FMOD_CYCLES_MAX, step=1,
@@ -3226,7 +3238,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             return
 
         dur = cycles / hz
-        dt = fmod_wave_dt(hz)
+        # O período do ServoJ CONFIGURADO nesta sessão, não o default do
+        # módulo: é ele que fixa o teto de frequência, e um preview que
+        # ignorasse o parâmetro prometeria 6,67 Hz numa bancada de 10.
+        servoj_s = float(getattr(self, '_servoj_period_s', FMOD_CTRL_DT_S))
+        dt = fmod_wave_dt(hz, servoj_s)
         pts = 1.0 / max(hz * dt, 1e-9)
         first = mean + amp if shape == 'COSINE' else mean
         txt = (f'{shape.title()} {f_min:g}–{f_max:g} N: mean {mean:.2f} N '
@@ -3243,13 +3259,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             # equivale a hz acima de fmod_max_freq_hz. Antes o painel dizia
             # que a onda rodaria mesmo assim — não roda mais, e prometer o
             # contrário só faria o operador descobrir no log de erro.
+            want_s = min(max(1.0 / (hz * FMOD_MIN_PTS_PER_CYCLE),
+                             SERVOJ_T_MIN_S), FMOD_CTRL_DT_S)
             txt += (f' Only {pts:.1f} points per cycle with the ServoJ loop '
-                    f'at {FMOD_CTRL_DT_S*1e3:.0f} ms (needs '
+                    f'at {servoj_s*1e3:.0f} ms (needs '
                     f'{FMOD_MIN_PTS_PER_CYCLE}). The explorer will REFUSE '
                     f'this wave: the ceiling is '
-                    f'{fmod_max_freq_hz():.2f} Hz. Lower the frequency, or '
-                    f'raise mirror_node AND tactile_explorer with '
-                    f'servoj_period_s:={1.0/(hz*FMOD_MIN_PTS_PER_CYCLE):.3f}.')
+                    f'{fmod_max_freq_hz(servoj_s):.2f} Hz. Lower the '
+                    f'frequency, or relaunch with '
+                    f'servoj_period_s:={want_s:.3f} — one launch argument '
+                    f'now sets explorer, GUI and mirror_node together.')
             colour = DANGER
         else:
             rate_hz, cell, medida = self._force_cell_rate()

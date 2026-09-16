@@ -709,6 +709,50 @@ _FMOD_ILC_MIN_MEAS_GAIN = 0.70
 # defensável agora.
 _FMOD_BAND_TOL_FRAC = 0.15     # da amplitude pedida
 _FMOD_BAND_TOL_MIN_N = 0.10    # N: piso, para amplitudes pequenas
+# Acima deste atraso (fração do período) o limitador POR PASSO é desligado e
+# quem guarda a excursão é só o recuo POR CICLO.
+#
+# O limitador por passo pergunta "a força AGORA está fora da faixa?" e corta o
+# passo AGORA. Isso só faz sentido enquanto a leitura e o comando estão na
+# mesma parte do ciclo. O transporte medido é de ~85 ms constantes: 14° a
+# 0,5 Hz, 29° a 1 Hz, 65° a 2 Hz — e 306° a 10 Hz. Naquele ponto a leitura
+# que autoriza o corte veio de quase um ciclo inteiro atrás e não tem relação
+# com o passo que está sendo cortado: o guarda passa a abrir entalhes em fase
+# aleatória, que é exatamente o que derruba a fundamental sem derrubar o
+# pico-a-pico.
+#
+# Em 25 % do período (90°) o corte ainda morde o lado certo da onda. Acima
+# disso o guarda de excursão continua existindo, só que na única forma que
+# sobrevive ao atraso: estatística de CICLO (ver o recuo por limit_scale), que
+# é insensível a fase por construção.
+_FMOD_CLIP_LAG_FRAC = 0.25
+# Recuperação do recuo de amplitude. `limit_scale` só descia: um único ciclo
+# ruim no warmup — quando K ainda não adaptou e a onda ainda está na rampa —
+# encolhia o ensaio INTEIRO de forma irreversível, e o operador recebia uma
+# senoide de outra amplitude sem ter mudado nada. Depois de
+# _FMOD_LIMIT_RECOVER_CYCLES ciclos LIMPOS consecutivos ele volta a subir,
+# devagar (a subida é lenta de propósito: descer é segurança, subir é
+# conveniência, e as duas não podem ter a mesma pressa).
+_FMOD_LIMIT_RECOVER_CYCLES = 3
+_FMOD_LIMIT_RECOVER_STEP = 0.05
+# Amostras da CÉLULA por período exigidas para o ensaio ser medível. Não é
+# Nyquist (que pediria 2): é o que a análise precisa. A fundamental por
+# lock-in, os harmônicos 2º e 3º do relatório de FORMA e os bins de fase do
+# ILC saem todos da mesma sequência, e o 3º harmônico já exige 6 amostras por
+# período para não dobrar sobre os outros. Com 8 a conta fecha com margem.
+#
+# É este número que separa as duas células a 10 Hz: a FA7155 entrega ~400 Hz
+# (40 amostras por período, folgado) e a HX711 entrega 24 Hz — menos de 3 por
+# período, abaixo até de Nyquist para o 2º harmônico. Uma onda de 10 Hz medida
+# a 24 Hz não sai "imprecisa", sai ALIASADA: o log de fim imprimiria números
+# que não descrevem onda nenhuma.
+_FMOD_MIN_MEAS_RATE_MULT = 8.0
+# Razão mínima entre a amplitude em POSIÇÃO e a banda morta do ServoJ. Abaixo
+# dela a onda comandada sai quantizada em poucos degraus: a banda morta vale
+# ~12 µm de TCP (ver SERVOJ_DEADBAND_RAD), e uma onda de 18 µm de pico — que é
+# o que ±0,5 N dão numa ponteira rígida — teria ~1,5 degrau por semiciclo.
+# A onda ainda sai, mas quadrada; por isso avisa e não recusa.
+_FMOD_DEADBAND_MIN_RATIO = 5.0
 # Velocidade de PICO da onda (2·π·f·amp). Diferente de _FMOD_V_MAX_MMS, que
 # corta passo a passo DENTRO do laço: estes dois são checados ANTES de a onda
 # abrir, quando ainda dá para recusar o ensaio em vez de executá-lo errado.

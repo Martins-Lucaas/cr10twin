@@ -14,6 +14,25 @@ import os
 # Cadeia do braço CR10 (convenção URDF).
 ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 
+# ── ServoJ: números do BRAÇO, não de cada nó ──────────────────────────
+# Banda morta do espelhamento: abaixo dela o alvo conta como o mesmo ponto e
+# o ServoJ não é reenviado. Era 1e-4 rad — que num CR10 de ~1,2 m de alcance
+# vale ~120 µm de TCP, da ORDEM da onda trigonométrica inteira: uma amplitude
+# de 700 µm sairia quantizada em ~6 degraus e qualquer onda menor seria
+# suprimida em silêncio. 1e-5 rad ≈ 12 µm de TCP, ainda acima do ruído de
+# encoder (~1,7e-5 rad por LSB de 0,001°) e fino o bastante para a onda.
+#
+# Mora AQUI porque três módulos precisam do mesmo número por motivos
+# diferentes: o mirror_node e a palpation_gui para decidir o reenvio (os dois
+# comandam o MESMO braço, e uma banda maior num deles engoliria a onda que o
+# outro deixa passar), e o tactile_explorer para avisar quando a onda pedida é
+# tão pequena que sai QUANTIZADA por ela.
+SERVOJ_DEADBAND_RAD = 1.0e-5
+# Alcance usado para converter a banda morta acima em micrômetros de TCP. É
+# ordem de grandeza para mensagem de aviso, não cinemática — quem precisa do
+# número exato chama o Jacobiano.
+ARM_REACH_M = 1.2
+
 # Pose "apontar para a mesa": home default da GUI e seed POINTING do explorer.
 POINTING_SEED_DEG = {'joint1': 0.0, 'joint2': 0.0, 'joint3': -90.0,
                      'joint4': 0.0, 'joint5': 90.0, 'joint6': 0.0}

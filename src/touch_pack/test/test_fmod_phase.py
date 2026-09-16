@@ -299,3 +299,296 @@ def test_limites_de_seguranca_da_onda_seguem_ativos():
             ('_FMOD_V_MAX_MMS', 'teto de velocidade'),
             ('step_cap_m', 'teto de ΔF por passo')]:
         assert trava in src, f'trava ausente no laço da onda: {o_que}'
+
+
+# ── 10 Hz: a cadeia de comando inteira ────────────────────────────────
+
+def test_launch_expoe_servoj_period_s():
+    """O teto de frequência da onda é 1/(t·5), e `t` estava escrito à mão em
+    TRÊS lugares sem nenhum argumento de launch por cima. 10 Hz era
+    inalcançável pela configuração padrão, e a única receita documentada
+    (`servoj_period_s:=…`) não existia como argumento."""
+    import re
+    from pathlib import Path
+    import touch_pack
+    src = (Path(touch_pack.__file__).parent.parent
+           / 'launch' / 'tactile_cell.launch.py')
+    if not src.exists():          # instalado sem os launch/ ao lado
+        pytest.skip('launch não disponível neste layout')
+    txt = src.read_text()
+    assert re.search(r"DeclareLaunchArgument\(\s*\n?\s*'servoj_period_s'", txt)
+    # E ele tem de chegar aos TRÊS nós: publicar mais rápido do que o braço é
+    # comandado não entrega mais onda, entrega uma reamostrada.
+    assert txt.count("'servoj_period_s': servoj_period_s") == 3
+
+
+def test_gui_nao_prende_o_servoj_em_30ms():
+    """O poll loop da GUI é quem comanda o braço real quando ela está aberta.
+    Com `_PERIOD` numa constante local de 30 ms, 10 Hz era impossível pela GUI
+    por mais que o explorer fosse configurado."""
+    import inspect
+    from touch_pack import gui_robot
+    src = inspect.getsource(gui_robot.RobotMixin._mirror_poll_loop)
+    assert '_PERIOD = 0.030' not in src
+    assert '_servoj_period_s' in src
+    # E o `t=` do ServoJ tem de acompanhar o período do laço: mandar pontos a
+    # cada 20 ms com t=30 ms faz o controlador interpolar noutra grade.
+    full = inspect.getsource(gui_robot)
+    assert full.count('servoj_period_s=getattr(') == 2
+
+
+def test_banda_morta_tem_fonte_unica():
+    """Eram dois literais iguais, em módulos que comandam o MESMO braço,
+    mantidos em sincronia por um teste em vez de por uma definição — e o
+    explorer não tinha como consultá-la para avisar sobre quantização."""
+    from touch_pack.constants import SERVOJ_DEADBAND_RAD as BASE
+    from touch_pack.mirror_node import _SERVOJ_DEADBAND_RAD
+    from touch_pack.palpation_gui import SERVOJ_DEADBAND_RAD as GUI
+    assert _SERVOJ_DEADBAND_RAD is BASE
+    assert GUI is BASE
+
+
+def test_teto_de_10hz_com_o_piso_do_firmware(P):
+    """O contrato do ensaio de 10 Hz: t=20 ms dá exatamente 5 pontos por
+    período, e o tick da onda desce até lá."""
+    from touch_pack.tactile_explorer import (
+        _fmod_max_freq_hz, _SERVOJ_T_MIN_S, _FMOD_MIN_PTS_PER_CYCLE)
+    assert _fmod_max_freq_hz(_SERVOJ_T_MIN_S) == pytest.approx(10.0)
+    p = P('SINE', 0.5, 1.5, 10.0, 20)
+    assert p.wave_dt(_SERVOJ_T_MIN_S) == pytest.approx(_SERVOJ_T_MIN_S)
+    assert p.pts_per_cycle_at(p.wave_dt(_SERVOJ_T_MIN_S)) == \
+        pytest.approx(_FMOD_MIN_PTS_PER_CYCLE)
+
+
+# ── 10 Hz: o que a precisão exige ─────────────────────────────────────
+
+def test_medida_e_drenada_por_amostra_e_nao_por_tick():
+    """A 10 Hz o laço roda a 50 Hz e a célula a ~400. Ler a célula NO TICK
+    amostra 400 Hz a 50, e os harmônicos que a interpolação do comando gera
+    (4f e 6f, com 5 pontos por período) dobram sobre a própria fundamental —
+    o lock-in mediria a amplitude contaminada pela distorção que ele existe
+    para denunciar."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert '_lc_raw_since(lc_drained_at)' in src
+    # A acumulação da FORÇA não pode ter voltado para o tick.
+    assert 'cyc_fi += fz_meas' not in src
+    assert 'tot_h[_h][0] += fz_meas' not in src
+    # Dois contadores: normalizar um lock-in pelo contador do outro erra a
+    # amplitude pela razão entre as taxas (fator 8 a 10 Hz).
+    assert 'cyc_xn' in src
+
+
+def test_lock_in_por_amostra_recupera_a_amplitude_aliasada():
+    """O motivo do buffer, em números: uma senoide reconstruída por
+    interpolação linear de 5 pontos por período, medida NO TICK (5 amostras
+    por período), tem a fundamental contaminada; medida a 40 amostras por
+    período, não."""
+    import math
+    f, amp, cycles = 10.0, 1.0, 20
+
+    def wave(t):
+        """Onda como o braço a executa: linear entre os pontos comandados."""
+        n = 5
+        dt = 1.0 / (f * n)
+        i = math.floor(t / dt)
+        a, b = math.sin(2*math.pi*f*i*dt), math.sin(2*math.pi*f*(i+1)*dt)
+        return amp * (a + (b - a) * (t / dt - i))
+
+    def fundamental(rate):
+        n = int(cycles * rate / f)
+        si = sum(wave(k/rate) * math.sin(2*math.pi*f*k/rate) for k in range(n))
+        sq = sum(wave(k/rate) * math.cos(2*math.pi*f*k/rate) for k in range(n))
+        return 2.0 * math.hypot(si, sq) / n
+
+    # No tick do comando (5 amostras/período) a leitura é MUITO maior que a
+    # fundamental verdadeira — é o alias de 4f e 6f caindo sobre f.
+    no_tick = fundamental(f * 5)
+    # Na taxa da célula (40 amostras/período) ela converge para o sinc².
+    na_celula = fundamental(f * 40)
+    esperado = amp * (math.sin(math.pi/5) / (math.pi/5)) ** 2
+    assert na_celula == pytest.approx(esperado, rel=0.02)
+    assert no_tick > na_celula * 1.10, (
+        f'amostrar no tick deveria inflar a fundamental: {no_tick:.3f} vs '
+        f'{na_celula:.3f}')
+
+
+def test_bins_do_ilc_acompanham_os_pontos_comandados():
+    """Correção indexada numa grade mais fina que a grade em que o comando
+    existe não dá resolução — dá graus de liberdade que só o ruído preenche.
+    A 10 Hz o período tem 5 pontos, então são 5 bins e não 24."""
+    import inspect
+    from touch_pack.tactile_explorer import (
+        TactileExplorer, _FMOD_ILC_BINS, _FMOD_MIN_PTS_PER_CYCLE)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'ilc_bins = int(min(max(round(pts_a_priori), 4)' in src
+    assert 'n_bins=ilc_bins' in src
+    # A regra em si, com os dois extremos reais da bancada.
+    def bins(pts):
+        return int(min(max(round(pts), 4), _FMOD_ILC_BINS))
+    assert bins(_FMOD_MIN_PTS_PER_CYCLE) == 5      # 10 Hz, tick de 20 ms
+    assert bins(33.0) == _FMOD_ILC_BINS            # 1 Hz, tick do QS
+
+
+def test_corte_por_passo_se_cala_quando_a_medida_sai_de_fase():
+    """O corte por passo pergunta 'a força AGORA está fora da faixa?'. Com
+    ~85 ms de transporte isso vale 29° a 1 Hz e 306° a 10 Hz: lá ele corta em
+    fase aleatória e abre entalhes, que é o que derruba a fundamental sem
+    derrubar o pico-a-pico."""
+    import inspect
+    from touch_pack.tactile_explorer import (
+        TactileExplorer, _FMOD_CLIP_LAG_FRAC)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'clip_in_phase' in src
+    lag_s = 0.085                      # transporte medido em bancada
+    assert lag_s * 1.0 <= _FMOD_CLIP_LAG_FRAC     # 1 Hz: guarda ativo
+    assert lag_s * 10.0 > _FMOD_CLIP_LAG_FRAC     # 10 Hz: guarda calado
+
+
+def test_guarda_de_excursao_sobrevive_ao_corte_calado():
+    """Com o corte por passo calado em alta frequência, o recuo por CICLO
+    passa a ser o único guarda de excursão — e por isso não pode mais depender
+    de ter havido corte. O gatilho é o extremo MEDIDO, insensível a fase."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'if band_clips_cycle and cyc_fz_max is not None:' not in src, (
+        'o recuo voltou a depender do corte por passo — sem guarda a 10 Hz')
+    assert '_over = max(meas.cyc_max - (prof.f_max_n + _tol_n),' in src
+
+
+def test_recuo_de_amplitude_volta_a_subir():
+    """`limit_scale` só descia: um ciclo ruim no warmup — K ainda não adaptada,
+    onda ainda na rampa — encolhia o ensaio INTEIRO de forma irreversível, e o
+    operador recebia uma senoide de outra amplitude sem ter mudado nada."""
+    import inspect
+    from touch_pack.tactile_explorer import (
+        TactileExplorer, _FMOD_LIMIT_RECOVER_CYCLES, _FMOD_LIMIT_RECOVER_STEP)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'clean_cycles' in src
+    assert _FMOD_LIMIT_RECOVER_CYCLES >= 2
+    # Subir tem de ser MAIS LENTO que descer: descer é segurança.
+    assert 0.0 < _FMOD_LIMIT_RECOVER_STEP <= 0.2
+    # Um ciclo aprendido não pode ser um ciclo em que a amplitude mudou.
+    assert 'if ilc_learning and (band_clips_cycle or limit_moved):' in src
+
+
+def _pre(hz=10.0, amp_n=0.30, k_nm=620.0, servoj_s=0.020,
+         meas_rate_hz=400.0, has_raw=True):
+    """Preflight de uma onda no silicone, com os valores da bancada."""
+    from touch_pack.force_wave import _ForceProfile, fmod_preflight
+    mean = 1.0
+    prof = _ForceProfile('SINE', mean - amp_n, mean + amp_n, hz, 20)
+    return fmod_preflight(
+        prof, servoj_period_s=servoj_s, amp_m=amp_n / k_nm, k_nm=k_nm,
+        use_curve=False, meas_rate_hz=meas_rate_hz, has_raw=has_raw,
+        deadband_tcp_m=12e-6)
+
+
+def _errs(findings):
+    return [t for lvl, t in findings if lvl == 'error']
+
+
+def test_10hz_passa_no_preflight_na_bancada_montada():
+    """O contrato do ensaio: 10 Hz com t=20 ms, FA7155 a 400 Hz e o canal cru
+    no ar é um ensaio VÁLIDO. Se este teste ficar vermelho, 10 Hz voltou a ser
+    inalcançável — que era o estado de partida."""
+    _amp_pre, findings = _pre()
+    assert _errs(findings) == [], _errs(findings)
+    assert _amp_pre == pytest.approx(1.143, rel=0.01)   # sinc² de 5 pontos
+
+
+def test_10hz_e_recusado_com_o_servoj_no_padrao():
+    """Com t=30 ms o teto é 6,67 Hz. Era o estado de partida da bancada, e a
+    onda saía reamostrada em vez de recusada."""
+    errs = _errs(_pre(servoj_s=0.030)[1])
+    assert any('6.67 Hz' in e for e in errs), errs
+    assert any('servoj_period_s:=' in e for e in errs), (
+        'a recusa tem de dizer COMO configurar, não só que não dá')
+
+
+def test_10hz_e_recusado_com_a_celula_lenta():
+    """Uma onda de 10 Hz medida pela HX711 (24 Hz) não sai imprecisa, sai
+    ALIASADA: são 2,4 amostras por período para medir fundamental e 3
+    harmônicos."""
+    errs = _errs(_pre(meas_rate_hz=24.0)[1])
+    assert any('24 Hz' in e and '80 Hz' in e for e in errs), errs
+    # A FA7155 passa com folga — é o que separa as duas células a 10 Hz.
+    assert _errs(_pre(meas_rate_hz=400.0)[1]) == []
+
+
+def test_10hz_e_recusado_sem_o_canal_cru():
+    """Sem /load_cell/sample_net a força passa pelo One-Euro travado em 2 Hz,
+    que a 10 Hz entrega 20 % da amplitude. Sem ILC não há correção de centro,
+    fase nem forma — a onda sairia em malha aberta, e isso não é 'impreciso',
+    é outro ensaio."""
+    errs = _errs(_pre(has_raw=False)[1])
+    assert any('sample_net' in e for e in errs), errs
+    # Abaixo do portão do One-Euro o filtrado ainda serve.
+    assert _errs(_pre(hz=1.0, has_raw=False, servoj_s=0.030)[1]) == []
+
+
+def test_conselho_de_velocidade_e_executavel():
+    """A mensagem calculava a frequência sugerida sobre o teto de AVISO
+    (20 mm/s) e não sobre o de RECUSA (40): mandava baixar para metade do que
+    já teria passado. O conselho tem de ser o MENOR recuo que funciona."""
+    import re
+    errs = _errs(_pre(amp_n=0.5)[1])       # ±0,5 N a 10 Hz no silicone
+    vel = [e for e in errs if 'mm/s de pico' in e]
+    assert vel, errs
+    hz_ok = float(re.search(r'frequência para ≤([\d.]+) Hz', vel[0]).group(1))
+    # Seguir o conselho tem de FUNCIONAR — e não sobrar recuo de graça.
+    assert _errs(_pre(hz=hz_ok, amp_n=0.5)[1]) == []
+    assert _errs(_pre(hz=hz_ok * 1.1, amp_n=0.5)[1]) != []
+    # A outra saída também: manter 10 Hz estreitando a faixa.
+    amp_ok = float(re.search(r'faixa para ±([\d.]+) N', vel[0]).group(1))
+    assert _errs(_pre(amp_n=amp_ok)[1]) == []
+
+
+def test_preflight_reporta_tudo_antes_de_recusar():
+    """Um ensaio pode esbarrar em dois limites ao mesmo tempo. Descobrir um
+    por run é exatamente o que o preflight existe para evitar."""
+    errs = _errs(_pre(servoj_s=0.030, meas_rate_hz=24.0, has_raw=False)[1])
+    assert len(errs) >= 3, errs
+
+
+def test_teto_de_velocidade_e_o_que_limita_a_amplitude_a_10hz():
+    """O limite REAL de amplitude a 10 Hz não é força nem firmware: é o teto
+    de velocidade de pico. Vale a pena estar no teste porque é o número que o
+    operador precisa saber antes de montar o ensaio."""
+    import math
+    from touch_pack.tactile_explorer import (
+        _FMOD_V_PEAK_MAX_MMS, _FMOD_MIN_PTS_PER_CYCLE, _fmod_sampling_gain)
+    amp_pre = 1.0 / _fmod_sampling_gain(_FMOD_MIN_PTS_PER_CYCLE)
+    amp_m = _FMOD_V_PEAK_MAX_MMS * 1e-3 / (2 * math.pi * 10.0 * amp_pre)
+    assert amp_m == pytest.approx(0.557e-3, rel=0.02)   # 0,56 mm de pico
+    # No silicone medido em bancada isso são ±0,35 N de amplitude máxima.
+    assert amp_m * 620.0 == pytest.approx(0.345, rel=0.02)
+    # E é por isso que ±0,5 N a 10 Hz no silicone é RECUSADO: o curso que a
+    # faixa pede (0,81 mm) passa do que o teto de velocidade autoriza.
+    assert 0.5 / 620.0 > amp_m
+
+
+def test_onda_micrometrica_avisa_sobre_a_banda_morta():
+    """Na ponteira rígida ±0,5 N valem 18 µm de pico contra ~12 µm de banda
+    morta de ServoJ: ~1,5 degrau por semiciclo. A onda sai — quadrada."""
+    from touch_pack.constants import SERVOJ_DEADBAND_RAD, ARM_REACH_M
+    from touch_pack.tactile_explorer import _FMOD_DEADBAND_MIN_RATIO
+    deadband_m = SERVOJ_DEADBAND_RAD * ARM_REACH_M
+    assert deadband_m == pytest.approx(12e-6, rel=0.05)
+    amp_rigida_m = 0.5 / 28_000.0
+    assert amp_rigida_m < _FMOD_DEADBAND_MIN_RATIO * deadband_m   # avisa
+    amp_silicone_m = 0.35 / 620.0
+    assert amp_silicone_m > _FMOD_DEADBAND_MIN_RATIO * deadband_m  # não avisa
+
+
+def test_onda_usa_um_relogio_so_e_monotonico():
+    """Eram dois: um de parede para a fase e um monotônico para a grade de
+    ticks. Agora a medida traz carimbos monotônicos das amostras da célula,
+    que precisam cair na MESMA régua da fase."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 't = time.monotonic() - t0_mono' in src
+    assert 'time.time() - t0' not in src

@@ -51,7 +51,9 @@ import re
 import threading
 import time
 import tkinter as tk
-from .constants import ARM_JOINTS, ROBOT_CONFIG_FILE
+from .constants import (
+    ARM_JOINTS, ROBOT_CONFIG_FILE, SERVOJ_DEADBAND_RAD,  # noqa: F401
+)
 from .gui_constants import ARM_LIMITS_DEG
 from .ui_helpers import (
     BTN_NEUTRAL,
@@ -75,10 +77,10 @@ from .gui_constants import (
 
 log = logging.getLogger('touch_pack.palpation_gui')   # mesmo canal do host
 
-# Abaixo disto o alvo é o mesmo ponto: o feedback das juntas do CR10 é
-# quantizado em 1e-5 rad, e reenviar um ServoJ que não move nada só tira do
-# controlador a janela para executar o anterior.
-SERVOJ_DEADBAND_RAD = 1.0e-5
+# Banda morta do ServoJ: reexportada de constants.py. Era um 1e-5 escrito à
+# mão aqui E no mirror_node — dois números que PRECISAM ser iguais (os dois
+# caminhos comandam o mesmo braço) mantidos em sincronia por um teste em vez
+# de por uma definição.
 
 
 class RobotMixin:
@@ -136,7 +138,12 @@ class RobotMixin:
         """Envia ServoJ ao braço real a 33 Hz APENAS durante palpação ativa."""
         _diag_count = 0
         _drag_read_failures = 0
-        _PERIOD = 0.030   # 33 Hz
+        # Período do ServoJ vindo do parâmetro `servoj_period_s` (launch), não
+        # uma constante local: é ESTA taxa que governa o braço real, e com ela
+        # presa em 30 ms a onda trigonométrica ficava limitada a 6,67 Hz
+        # enquanto a GUI estivesse aberta — por mais que o explorer fosse
+        # configurado para 20 ms, o excedente era descartado aqui.
+        _PERIOD = float(getattr(self, '_servoj_period_s', 0.030))
         _t_next = time.monotonic() + _PERIOD
         while not self._stop_event.is_set():
             # Drift-compensated sleep: corrige jitter acumulado do SO.
@@ -396,7 +403,12 @@ class RobotMixin:
         log.info('[ROBOT] Iniciando conexão com CR10 em %s', ip)
         drv = None
         try:
-            cfg = CR10RealDriverConfig(ip=ip)
+            # `t=` do ServoJ: o mesmo período do poll loop acima. Mandar
+            # pontos a cada 20 ms com t=30 ms (ou o contrário) faz o
+            # controlador interpolar sobre uma grade que não é a do produtor,
+            # e a onda sai com a amplitude cortada sem nada no log dizer.
+            cfg = CR10RealDriverConfig(
+                ip=ip, servoj_period_s=getattr(self, '_servoj_period_s', 0.030))
             log.info('[ROBOT] Config: timeout=%.1fs, speed=%d%%, '
                      'payload=%.2fkg, collision=%d',
                      cfg.connect_timeout_s, cfg.speed_factor,
@@ -728,7 +740,10 @@ class RobotMixin:
                 f'[ROBOT] Reconexão tentativa {attempt} → {ip}')
             drv = None
             try:
-                cfg = CR10RealDriverConfig(ip=ip)
+                cfg = CR10RealDriverConfig(
+                    ip=ip,
+                    servoj_period_s=getattr(
+                        self, '_servoj_period_s', 0.030))
                 drv = CR10RealDriver(ip=ip, dry_run=False, config=cfg)
                 drv.connect()
                 # E-STOP travado: NÃO reabilitar. `enable()` faz PowerOn +
