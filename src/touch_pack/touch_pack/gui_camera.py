@@ -87,8 +87,7 @@ class CameraMixin:
     def _apply_camera_curl(self, curl: dict) -> None:
         if self._cam_teleop is None or not getattr(self, 'hand_sliders', None):
             return
-        self._suppressing = True
-        try:
+        with self._suppress():
             for j in HAND_JOINTS:
                 c = curl.get(j)
                 if c is None:
@@ -96,8 +95,6 @@ class CameraMixin:
                 lo, hi = HAND_LIMITS_DEG[j]
                 deg = lo + max(0.0, min(1.0, float(c))) * (hi - lo)
                 self.hand_sliders[j].set(round(deg, 1))
-        finally:
-            self._suppressing = False
         # Ligar a câmera já move o SIM: dedos da mão + joint6. A checkbox
         # "→ real" só libera o hardware — mão COVVI real (precisa do ECI) e,
         # se o robô estiver em MIRROR, joint6 no braço real.
@@ -116,8 +113,7 @@ class CameraMixin:
         if phase not in ('IDLE', 'DONE', 'ABORTED'):
             return
         q_deg: list[float] = []
-        self._suppressing = True
-        try:
+        with self._suppress():
             for j in ARM_JOINTS:
                 lo, hi = ARM_LIMITS_DEG[j]
                 if j == 'joint6':
@@ -128,8 +124,6 @@ class CameraMixin:
                     if v is None:
                         return
                 q_deg.append(v)
-        finally:
-            self._suppressing = False
         q_rad = [_math.radians(d) for d in q_deg]
         mirror = mirror_real and self._robot_mode == 'MIRROR'
         # `_cb_arm_trajectory` lê isto para decidir se espelha no braço real.

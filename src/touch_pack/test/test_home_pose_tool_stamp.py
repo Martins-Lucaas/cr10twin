@@ -41,6 +41,9 @@ class _FakeGUI:
                             for i, j in enumerate(ARM_JOINTS)}
         self._arm_home_deg = {j: 0.0 for j in ARM_JOINTS}
         self._suppressing = False
+        # `_apply_arm_home` silencia os callbacks via PalpationGUI._suppress;
+        # o fake empresta o contextmanager real em vez de reimplementá-lo.
+        self._suppress = lambda: PalpationGUI._suppress(self)
         self.status = None
         self._home_file = str(tmp_path / 'home_pose.json')
         self.published = 0

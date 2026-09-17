@@ -661,6 +661,18 @@ class CR10RealDriver:
             raise CR10RealDriverError(
                 'E-STOP ATIVO — streaming ServoJ recusado. Solte a chave '
                 '(segundo toque no botão de E-STOP) para rearmar.')
+        # NÃO-FINITO barrado aqui, e não a montante: o deadband dos
+        # espelhamentos compara `max|q - last| < eps`, e toda comparação com
+        # NaN é falsa — um NaN vindo do /joint_states não é filtrado por ele,
+        # é justamente o que o atravessa. Sem esta guarda o comando vira o
+        # texto `ServoJ(nan,...)` e o que acontece com o braço passa a depender
+        # de como o firmware analisa a linha. Erguer o mesmo erro do E-STOP põe
+        # o caminho no tratamento que os chamadores já têm.
+        if not all(math.isfinite(v) for v in q):
+            raise CR10RealDriverError(
+                f'ServoJ recusado: junta(s) não-finita(s) em {q}. '
+                'A origem é a fonte das juntas (/joint_states ou a IK), '
+                'não o driver.')
         q_deg = [math.degrees(v) for v in q]
         # `t` SATURADO na faixa que o firmware aceita — última linha de defesa,
         # já que é aqui que o comando vira texto. "Dobot TCP/IP Remote Control

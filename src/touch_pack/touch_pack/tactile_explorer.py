@@ -477,7 +477,6 @@ class TactileExplorer(Node):
         # que é a mesma grandeza SEM filtro, e `t_us`, o relógio do firmware.
         self._lc_raw_net: float | None = None
         self._lc_raw_ts: float = 0.0
-        self._lc_raw_seq: int = 0
         # Taxa MEDIDA de chegada do sinal CRU (Hz, EMA) — separada da do
         # Float32 porque as duas podem ter fontes diferentes no fio, e é esta
         # que decide se a onda é MEDÍVEL (ver _FMOD_MIN_MEAS_RATE_MULT).
@@ -687,7 +686,6 @@ class TactileExplorer(Node):
                     else 0.98 * self._lc_raw_rate_ema_hz + 0.02 * r)
             self._lc_raw_net = val
             self._lc_raw_ts = now
-            self._lc_raw_seq += 1
             self._lc_raw_hist.append((now, val))
             # Pares (filtrado_sensor, filtrado_N) do MESMO filtro: a razão
             # entre as duas excursões é a escala N/unidade, e o filtro se
@@ -2265,12 +2263,7 @@ class TactileExplorer(Node):
                 tw = np.zeros(6)
                 tw[:3] = d * step
                 if R0 is not None:
-                    R_err = R0 @ T_iter[:3, :3].T
-                    tw[3:] = _ORI_GAIN * 0.5 * np.array([
-                        R_err[2, 1] - R_err[1, 2],
-                        R_err[0, 2] - R_err[2, 0],
-                        R_err[1, 0] - R_err[0, 1],
-                    ])
+                    tw[3:] = self._ori_twist(R0, T_iter)
                 if z0 is not None:
                     tw[2] += _Z_CORR_GAIN * (z0 - float(T_iter[2, 3]))
                 if perp_dir is not None and p0_perp is not None:
@@ -2380,12 +2373,7 @@ class TactileExplorer(Node):
             tw = np.zeros(6)
             tw[:3] = d * step
             if R0 is not None:
-                R_err = R0 @ T_iter[:3, :3].T
-                tw[3:] = _ORI_GAIN * 0.5 * np.array([
-                    R_err[2, 1] - R_err[1, 2],
-                    R_err[0, 2] - R_err[2, 0],
-                    R_err[1, 0] - R_err[0, 1],
-                ])
+                tw[3:] = self._ori_twist(R0, T_iter)
             if z0 is not None:
                 tw[2] += _Z_CORR_GAIN * (z0 - float(T_iter[2, 3]))
             if perp_dir is not None and p0_perp is not None:
@@ -5309,12 +5297,7 @@ class TactileExplorer(Node):
                 lateral   = min(step_m, remaining)
                 tw[:3] = dir_world * lateral
                 # Lock de orientação
-                R_err = R0 @ T_iter[:3, :3].T
-                tw[3:] = _ORI_GAIN * 0.5 * np.array([
-                    R_err[2, 1] - R_err[1, 2],
-                    R_err[0, 2] - R_err[2, 0],
-                    R_err[1, 0] - R_err[0, 1],
-                ])
+                tw[3:] = self._ori_twist(R0, T_iter)
                 # Lock de PROFUNDIDADE, ao longo da normal do plano: mantém a
                 # indentação que o HOLD deixou em p_start durante todo o
                 # percurso. Como o avanço (dir_world) já está NO plano, não há
@@ -5738,6 +5721,36 @@ class TactileExplorer(Node):
                 f'[MATRIX] subida de alívio terminou em {out!r} — o retorno '
                 'à HOME segue mesmo assim.')
 
+    @staticmethod
+    def _ori_twist(R0, T_iter) -> 'np.ndarray':
+        """Velocidade angular que leva a orientação atual de volta a `R0`.
+
+        Parte antissimétrica de R0 @ R^T (Rodrigues para ângulos pequenos),
+        que é o erro de orientação em eixo-ângulo sem passar por trigonometria
+        — barato o bastante para rodar dentro do laço de servo.
+        """
+        R_err = R0 @ T_iter[:3, :3].T
+        return _ORI_GAIN * 0.5 * np.array([
+            R_err[2, 1] - R_err[1, 2],
+            R_err[0, 2] - R_err[2, 0],
+            R_err[1, 0] - R_err[0, 1],
+        ])
+
+    def _matrix_bail(self, out: str) -> None:
+        """Epílogo único de aborto do MATRIX_MAP.
+
+        Aliviar e levantar vem ANTES de decidir como encerrar: em 'stop' o
+        operador já pediu parada e em falha a ponteira pode estar encostada,
+        e sair do contato é justamente o que não pode depender de qual dos
+        dois foi. Era o bloco repetido em oito saídas desta rotina — um
+        sítio novo que esquecesse o alívio deixaria o braço carregado.
+        """
+        self._matrix_relieve_and_lift()
+        if out == 'stop':
+            self._finalize_interrupt('ABORTED')
+        else:
+            self._abort_to_home()
+
     def _run_matrix_protocol(self) -> None:
         """FSM do MATRIX_MAP.
 
@@ -5803,11 +5816,7 @@ class TactileExplorer(Node):
         # toda a grade referida a ela — já nasça do ataque alinhado.
         out = self._phase_calibrate_attack()
         if out != 'ok':
-            self._matrix_relieve_and_lift()
-            if out == 'stop':
-                self._finalize_interrupt('ABORTED')
-            else:
-                self._abort_to_home()
+            self._matrix_bail(out)
             return
 
         # ── 1. Descoberta da origem ──────────────────────────────────
@@ -5836,22 +5845,16 @@ class TactileExplorer(Node):
         elif out in ('force', 'no_contact', 'stale', 'timeout', 'error', 'target_lost'):
             self.get_logger().error(
                 f'[MATRIX] falha ao encontrar a origem ({out}) — abortando.')
-            self._matrix_relieve_and_lift()
-            self._abort_to_home()
+            self._matrix_bail(out)
             return
         else:                                   # 'stop' — STOP/FREEZE
-            self._matrix_relieve_and_lift()
-            self._finalize_interrupt('ABORTED')
+            self._matrix_bail(out)
             return
 
         # ── 2. Sobe ao Safe Z antes do primeiro trânsito ─────────────
         out = self._lift_to_safe_z(label='LIFT-ORIGIN')
         if out != 'done':
-            self._matrix_relieve_and_lift()
-            if out == 'stop':
-                self._finalize_interrupt('ABORTED')
-            else:
-                self._abort_to_home()
+            self._matrix_bail(out)
             return
 
         # ── 3. Laço da matriz ────────────────────────────────────────
@@ -5870,11 +5873,7 @@ class TactileExplorer(Node):
             # deslocamento NO PLANO, folga ao longo da normal.
             out = self._move_to_wp_safe(np.asarray(wp, float))
             if out != 'done':
-                self._matrix_relieve_and_lift()
-                if out == 'stop':
-                    self._finalize_interrupt('ABORTED')
-                else:
-                    self._abort_to_home()
+                self._matrix_bail(out)
                 return
 
             # 3b. Identação: DESCENDING → HOLD (patamar único) ou ESCADA.
@@ -5894,11 +5893,7 @@ class TactileExplorer(Node):
                 self._publish_matrix_point(
                     i, wp, self._tcp_now(), self._fz_corrected(),
                     t_start, out, setpoint_n=point_sp_n)
-                self._matrix_relieve_and_lift()
-                if out == 'stop':
-                    self._finalize_interrupt('ABORTED')
-                else:
-                    self._abort_to_home()
+                self._matrix_bail(out)
                 return
 
             out = (self._phase_hold_staircase(levels, st_dwell) if levels
@@ -5908,11 +5903,7 @@ class TactileExplorer(Node):
             self._publish_matrix_point(i, wp, tcp_touch, fz_touch,
                                        t_start, out, setpoint_n=point_sp_n)
             if out != 'ok':
-                self._matrix_relieve_and_lift()
-                if out == 'stop':
-                    self._finalize_interrupt('ABORTED')
-                else:
-                    self._abort_to_home()
+                self._matrix_bail(out)
                 return
             _e1, _e2, _n = self._matrix_plane_basis()
             _pen_mm = float(((self._matrix_origin - tcp_touch) @ _n) * 1e3)
@@ -5927,11 +5918,7 @@ class TactileExplorer(Node):
             # 3c. Volta ao Safe Z antes do próximo trânsito.
             out = self._lift_to_safe_z(label='LIFT-WP')
             if out != 'done':
-                self._matrix_relieve_and_lift()
-                if out == 'stop':
-                    self._finalize_interrupt('ABORTED')
-                else:
-                    self._abort_to_home()
+                self._matrix_bail(out)
                 return
 
         # ── 4. Fim da matriz: Regra de Ouro (volta à HOME articular) ──

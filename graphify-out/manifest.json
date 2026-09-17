@@ -1,0 +1,1832 @@
+{
+  ".mcp.json": {
+    "mtime": 1788266611.166797,
+    "seen": 1789652502.7002556,
+    "ast_hash": "5b91a9f2384903f3cdfad8a2276e412f",
+    "semantic_hash": "5b91a9f2384903f3cdfad8a2276e412f"
+  },
+  ".vscode/extensions.json": {
+    "mtime": 1789570000.6228034,
+    "seen": 1789652502.7002585,
+    "ast_hash": "67ecd9a6d1564dc74062239001dffd46",
+    "semantic_hash": "67ecd9a6d1564dc74062239001dffd46"
+  },
+  ".vscode/settings.json": {
+    "mtime": 1788266611.166797,
+    "seen": 1789652502.70026,
+    "ast_hash": "c96b4bea4d6479a8dc76d140f0fe5357",
+    "semantic_hash": "c96b4bea4d6479a8dc76d140f0fe5357"
+  },
+  "data/latency/latency_real_to_sim_20260706_105923_result.json": {
+    "mtime": 1789050287.1487448,
+    "seen": 1789652502.700261,
+    "ast_hash": "46463e4af66f9c1d20ecab91458545e2",
+    "semantic_hash": "46463e4af66f9c1d20ecab91458545e2"
+  },
+  "data/latency/latency_real_to_sim_20260706_161000_result.json": {
+    "mtime": 1789050287.1517446,
+    "seen": 1789652502.7002623,
+    "ast_hash": "f083283089485a03aeac17d2cd8140a9",
+    "semantic_hash": "f083283089485a03aeac17d2cd8140a9"
+  },
+  "data/latency/latency_real_to_sim_20260706_161030_result.json": {
+    "mtime": 1789050287.1537447,
+    "seen": 1789652502.7002635,
+    "ast_hash": "0d5e5d1f3312e39d30eeb08690b7fed2",
+    "semantic_hash": "0d5e5d1f3312e39d30eeb08690b7fed2"
+  },
+  "data/latency/latency_real_to_sim_20260706_161100_result.json": {
+    "mtime": 1789050287.1557446,
+    "seen": 1789652502.700265,
+    "ast_hash": "9290bb8aa4f9fb7263dde56185b08e99",
+    "semantic_hash": "9290bb8aa4f9fb7263dde56185b08e99"
+  },
+  "data/latency/latency_real_to_sim_20260706_161818_result.json": {
+    "mtime": 1789050287.1577444,
+    "seen": 1789652502.700266,
+    "ast_hash": "c73fa629eafca3e1afba737f15a2faf8",
+    "semantic_hash": "c73fa629eafca3e1afba737f15a2faf8"
+  },
+  "data/latency/latency_real_to_sim_20260706_161859_result.json": {
+    "mtime": 1789050287.1597445,
+    "seen": 1789652502.7002673,
+    "ast_hash": "b782c9cea6805e3a159ce16cd6863e00",
+    "semantic_hash": "b782c9cea6805e3a159ce16cd6863e00"
+  },
+  "data/latency/latency_real_to_sim_20260706_161932_result.json": {
+    "mtime": 1789050287.1627443,
+    "seen": 1789652502.7002685,
+    "ast_hash": "3756ad5e45a3107efcafbe133b1ddc54",
+    "semantic_hash": "3756ad5e45a3107efcafbe133b1ddc54"
+  },
+  "data/latency/latency_real_to_sim_20260910_123400_result.json": {
+    "mtime": 1789054440.344586,
+    "seen": 1789652502.70027,
+    "ast_hash": "7975425d04f846d16a5282fcb7881cb6",
+    "semantic_hash": "7975425d04f846d16a5282fcb7881cb6"
+  },
+  "data/latency/latency_real_to_sim_20260910_123437_result.json": {
+    "mtime": 1789054477.888244,
+    "seen": 1789652502.7002714,
+    "ast_hash": "90bd9c2da83f8c0d58aab997ab328f02",
+    "semantic_hash": "90bd9c2da83f8c0d58aab997ab328f02"
+  },
+  "data/latency/latency_real_to_sim_20260910_123505_result.json": {
+    "mtime": 1789054505.0476966,
+    "seen": 1789652502.7002723,
+    "ast_hash": "17d77cdff2a8bca2665f6cd3e232d522",
+    "semantic_hash": "17d77cdff2a8bca2665f6cd3e232d522"
+  },
+  "data/latency/latency_real_to_sim_20260910_123823_result.json": {
+    "mtime": 1789054703.2914987,
+    "seen": 1789652502.7002742,
+    "ast_hash": "f3fd8a976c9f6f025cf3ac20b2a781dc",
+    "semantic_hash": "f3fd8a976c9f6f025cf3ac20b2a781dc"
+  },
+  "data/latency/latency_real_to_sim_20260910_123854_result.json": {
+    "mtime": 1789054734.8918762,
+    "seen": 1789652502.7002752,
+    "ast_hash": "35ab9aa344e9db5b7a24e1dc0f6d2881",
+    "semantic_hash": "35ab9aa344e9db5b7a24e1dc0f6d2881"
+  },
+  "data/latency/latency_real_to_sim_20260910_123923_result.json": {
+    "mtime": 1789054763.307202,
+    "seen": 1789652502.7002761,
+    "ast_hash": "18956721f594410af36a559a72baff71",
+    "semantic_hash": "18956721f594410af36a559a72baff71"
+  },
+  "data/latency/latency_real_to_sim_20260910_124223_result.json": {
+    "mtime": 1789054943.810013,
+    "seen": 1789652502.7002778,
+    "ast_hash": "80b7c285490332e40e306d554f256ca0",
+    "semantic_hash": "80b7c285490332e40e306d554f256ca0"
+  },
+  "data/latency/latency_real_to_sim_20260910_124249_result.json": {
+    "mtime": 1789054969.7372415,
+    "seen": 1789652502.700279,
+    "ast_hash": "ba3238155e42dcc2a231933be6f98638",
+    "semantic_hash": "ba3238155e42dcc2a231933be6f98638"
+  },
+  "data/latency/latency_real_to_sim_20260910_124621_result.json": {
+    "mtime": 1789055181.9208856,
+    "seen": 1789652502.70028,
+    "ast_hash": "1d1dd6a7489e20dec051b37f71e55c74",
+    "semantic_hash": "1d1dd6a7489e20dec051b37f71e55c74"
+  },
+  "data/latency_hand/hand_latency_real_to_sim_20260910_121931_result.json": {
+    "mtime": 1789053674.2433708,
+    "seen": 1789652502.7002816,
+    "ast_hash": "a796a3c4a63c58ccf10d938f4c4d773d",
+    "semantic_hash": "a796a3c4a63c58ccf10d938f4c4d773d"
+  },
+  "data/latency_hand/hand_latency_real_to_sim_20260910_122008_result.json": {
+    "mtime": 1789053674.244371,
+    "seen": 1789652502.7002826,
+    "ast_hash": "09f15212464e5472ed4fc5cdfef7d12d",
+    "semantic_hash": "09f15212464e5472ed4fc5cdfef7d12d"
+  },
+  "data/latency_hand/hand_latency_real_to_sim_20260910_122706_result.json": {
+    "mtime": 1789054026.97493,
+    "seen": 1789652502.700284,
+    "ast_hash": "125b827df9b6d083d796490b3a374d0b",
+    "semantic_hash": "125b827df9b6d083d796490b3a374d0b"
+  },
+  "data/latency_hand/hand_latency_real_to_sim_20260910_122732_result.json": {
+    "mtime": 1789054052.349964,
+    "seen": 1789652502.7002904,
+    "ast_hash": "d1e94d127acd8c0ee5309ddca538552d",
+    "semantic_hash": "d1e94d127acd8c0ee5309ddca538552d"
+  },
+  "data/latency_hand/pre-correcao/hand_latency_real_to_sim_20260910_120216_result.json": {
+    "mtime": 1789052994.4903033,
+    "seen": 1789652502.7002919,
+    "ast_hash": "1046994d60fd98150b3b167e654cd7bd",
+    "semantic_hash": "1046994d60fd98150b3b167e654cd7bd"
+  },
+  "data/latency_hand/pre-correcao/hand_latency_real_to_sim_20260910_120312_result.json": {
+    "mtime": 1789052994.4903033,
+    "seen": 1789652502.700293,
+    "ast_hash": "7dcd824afbabcbc7cbb068df0d0c6b09",
+    "semantic_hash": "7dcd824afbabcbc7cbb068df0d0c6b09"
+  },
+  "data/latency_hand/pre-correcao/hand_latency_real_to_sim_20260910_120346_result.json": {
+    "mtime": 1789052994.4903033,
+    "seen": 1789652502.7002943,
+    "ast_hash": "459f8d5aed6460433283bf94cf1b92dc",
+    "semantic_hash": "459f8d5aed6460433283bf94cf1b92dc"
+  },
+  "data/latency_hand/pre-correcao/hand_latency_real_to_sim_20260910_121003_result.json": {
+    "mtime": 1789053179.1270776,
+    "seen": 1789652502.7002954,
+    "ast_hash": "36263563468b055b11111e7d39656e8d",
+    "semantic_hash": "36263563468b055b11111e7d39656e8d"
+  },
+  "pyrightconfig.json": {
+    "mtime": 1788957485.0846717,
+    "seen": 1789652502.7002969,
+    "ast_hash": "4f5b878161aec487f3ad34f30df7ee05",
+    "semantic_hash": "4f5b878161aec487f3ad34f30df7ee05"
+  },
+  "sensors/Data/glass/05N/params.json": {
+    "mtime": 1788965018.7669902,
+    "seen": 1789652502.700298,
+    "ast_hash": "1bc3f61b2886e66d77cc1cc7ece58228",
+    "semantic_hash": "1bc3f61b2886e66d77cc1cc7ece58228"
+  },
+  "sensors/Data/glass/05N/summary.json": {
+    "mtime": 1788965134.5723403,
+    "seen": 1789652502.700299,
+    "ast_hash": "018626a3ef729d070d294c3688af0603",
+    "semantic_hash": "018626a3ef729d070d294c3688af0603"
+  },
+  "sensors/Data/glass/1N/params.json": {
+    "mtime": 1788964320.1517038,
+    "seen": 1789652502.7003002,
+    "ast_hash": "64dc60352e66d85783bee0579f400b3a",
+    "semantic_hash": "64dc60352e66d85783bee0579f400b3a"
+  },
+  "sensors/Data/glass/1N/summary.json": {
+    "mtime": 1788964447.3966186,
+    "seen": 1789652502.7003014,
+    "ast_hash": "8ad7b772ff2424d2584347c8d5f60e0c",
+    "semantic_hash": "8ad7b772ff2424d2584347c8d5f60e0c"
+  },
+  "sensors/Data/glass/2N/params.json": {
+    "mtime": 1788964492.368263,
+    "seen": 1789652502.7003024,
+    "ast_hash": "39cccefc596c02b7f2048a9565756953",
+    "semantic_hash": "39cccefc596c02b7f2048a9565756953"
+  },
+  "sensors/Data/glass/2N/summary.json": {
+    "mtime": 1788964631.5311704,
+    "seen": 1789652502.7003036,
+    "ast_hash": "312c09f0315ce8936df9429eaf3e0360",
+    "semantic_hash": "312c09f0315ce8936df9429eaf3e0360"
+  },
+  "sensors/Data/glass/3N/params.json": {
+    "mtime": 1788964084.5246904,
+    "seen": 1789652502.7003047,
+    "ast_hash": "c51a4e06d9662f1290d1a6f2f5441875",
+    "semantic_hash": "c51a4e06d9662f1290d1a6f2f5441875"
+  },
+  "sensors/Data/glass/3N/summary.json": {
+    "mtime": 1788964280.5340762,
+    "seen": 1789652502.7003062,
+    "ast_hash": "4d05b3639b2564b41f77ba0503079acf",
+    "semantic_hash": "4d05b3639b2564b41f77ba0503079acf"
+  },
+  "sensors/Data/glass/4N/params.json": {
+    "mtime": 1788964635.8262272,
+    "seen": 1789652502.7003076,
+    "ast_hash": "f8451bcf5bc330aa9800d02b55911b6e",
+    "semantic_hash": "f8451bcf5bc330aa9800d02b55911b6e"
+  },
+  "sensors/Data/glass/4N/summary.json": {
+    "mtime": 1788964801.4343565,
+    "seen": 1789652502.700309,
+    "ast_hash": "29285a2c42742676fdf5d39e9897e474",
+    "semantic_hash": "29285a2c42742676fdf5d39e9897e474"
+  },
+  "sensors/Data/glass/5N/params.json": {
+    "mtime": 1788964833.415754,
+    "seen": 1789652502.70031,
+    "ast_hash": "cc488ca6c932957d7aa6837c3df9aacc",
+    "semantic_hash": "cc488ca6c932957d7aa6837c3df9aacc"
+  },
+  "sensors/Data/glass/5N/summary.json": {
+    "mtime": 1788965007.7508602,
+    "seen": 1789652502.700311,
+    "ast_hash": "8fdd6789d260215a9f6dfff08ecedf79",
+    "semantic_hash": "8fdd6789d260215a9f6dfff08ecedf79"
+  },
+  "sensors/Data/silicon/05N/params.json": {
+    "mtime": 1788965829.349019,
+    "seen": 1789652502.7003121,
+    "ast_hash": "45074f4b65872deea5f40f156ef876c5",
+    "semantic_hash": "45074f4b65872deea5f40f156ef876c5"
+  },
+  "sensors/Data/silicon/05N/summary.json": {
+    "mtime": 1788965949.504307,
+    "seen": 1789652502.7003133,
+    "ast_hash": "a7e063f41d77580fc74d2fa5c8f28f77",
+    "semantic_hash": "a7e063f41d77580fc74d2fa5c8f28f77"
+  },
+  "sensors/Data/silicon/1N/params.json": {
+    "mtime": 1788965957.5793934,
+    "seen": 1789652502.7003145,
+    "ast_hash": "6f2e51c327c67a3c737374fe10f772d9",
+    "semantic_hash": "6f2e51c327c67a3c737374fe10f772d9"
+  },
+  "sensors/Data/silicon/1N/summary.json": {
+    "mtime": 1788966098.4514272,
+    "seen": 1789652502.7003164,
+    "ast_hash": "72a1211a4b582530ff8cb03e739288de",
+    "semantic_hash": "72a1211a4b582530ff8cb03e739288de"
+  },
+  "sensors/Data/silicon/2N/params.json": {
+    "mtime": 1788966100.4254377,
+    "seen": 1789652502.7003174,
+    "ast_hash": "ad8ae2e1e662fcd3762a73b57b5a68e9",
+    "semantic_hash": "ad8ae2e1e662fcd3762a73b57b5a68e9"
+  },
+  "sensors/Data/silicon/2N/summary.json": {
+    "mtime": 1788966280.2155182,
+    "seen": 1789652502.7003186,
+    "ast_hash": "b6a982914946cc3971867c0e448e2f61",
+    "semantic_hash": "b6a982914946cc3971867c0e448e2f61"
+  },
+  "sensors/Data/silicon/3N/params.json": {
+    "mtime": 1788966351.845009,
+    "seen": 1789652502.7003195,
+    "ast_hash": "e3ea13387869a634b7db19a479374b5a",
+    "semantic_hash": "e3ea13387869a634b7db19a479374b5a"
+  },
+  "sensors/Data/silicon/3N/summary.json": {
+    "mtime": 1788966545.2234628,
+    "seen": 1789652502.7003207,
+    "ast_hash": "fd710203b252b1ef50a83039e8e94cab",
+    "semantic_hash": "fd710203b252b1ef50a83039e8e94cab"
+  },
+  "sensors/Data/silicon/4N/params.json": {
+    "mtime": 1788966548.7374907,
+    "seen": 1789652502.7003217,
+    "ast_hash": "a1e3a313ecaf91fb48e3432803486fde",
+    "semantic_hash": "a1e3a313ecaf91fb48e3432803486fde"
+  },
+  "sensors/Data/silicon/4N/summary.json": {
+    "mtime": 1788966721.4599106,
+    "seen": 1789652502.700323,
+    "ast_hash": "dd823430a82e0859bd82f03fe9a5f83c",
+    "semantic_hash": "dd823430a82e0859bd82f03fe9a5f83c"
+  },
+  "sensors/Data/silicon/5N/params.json": {
+    "mtime": 1788966723.1229246,
+    "seen": 1789652502.700324,
+    "ast_hash": "c912796449d99b2e3cdf60a14f463825",
+    "semantic_hash": "c912796449d99b2e3cdf60a14f463825"
+  },
+  "sensors/Data/silicon/5N/summary.json": {
+    "mtime": 1788966899.5394568,
+    "seen": 1789652502.700325,
+    "ast_hash": "3d4a7b92ecaf16ae6f072b0532c71811",
+    "semantic_hash": "3d4a7b92ecaf16ae6f072b0532c71811"
+  },
+  "sensors/ForceDriver/.vscode/extensions.json": {
+    "mtime": 1788266611.455804,
+    "seen": 1789652502.7003262,
+    "ast_hash": "90f13aaa6d970e2869f11ed92ffbc61a",
+    "semantic_hash": "90f13aaa6d970e2869f11ed92ffbc61a"
+  },
+  "sensors/ForceDriver/src/main.cpp": {
+    "mtime": 1788266611.4568043,
+    "seen": 1789652502.7003272,
+    "ast_hash": "17aa0a613d7120f213df0482baa72be8",
+    "semantic_hash": "17aa0a613d7120f213df0482baa72be8"
+  },
+  "sensors/TouchFirmware/main.c": {
+    "mtime": 1789500005.3487833,
+    "seen": 1789652502.7003279,
+    "ast_hash": "a39b6cf406711bdcd17e095bca386312",
+    "semantic_hash": "a39b6cf406711bdcd17e095bca386312"
+  },
+  "sensors/TouchFirmware/test/stub/stm32f7xx_hal.h": {
+    "mtime": 1789497652.0255916,
+    "seen": 1789652502.700329,
+    "ast_hash": "93ba1fbae7c665dc454058915c563843",
+    "semantic_hash": "93ba1fbae7c665dc454058915c563843"
+  },
+  "sensors/TouchFirmware/test/stub/usb_device.h": {
+    "mtime": 1788266611.4568043,
+    "seen": 1789652502.70033,
+    "ast_hash": "7f8c4683126d6e612e06e68bd3238263",
+    "semantic_hash": "7f8c4683126d6e612e06e68bd3238263"
+  },
+  "sensors/TouchFirmware/test/stub/usbd_cdc_if.h": {
+    "mtime": 1788266611.4568043,
+    "seen": 1789652502.7003307,
+    "ast_hash": "a7a4688b6160821a8d63af02eba38660",
+    "semantic_hash": "a7a4688b6160821a8d63af02eba38660"
+  },
+  "sensors/TouchFirmware/test/test_fw.c": {
+    "mtime": 1789497630.3154988,
+    "seen": 1789652502.7003317,
+    "ast_hash": "a3f71cd0dd26f03f1900616b78c6450e",
+    "semantic_hash": "a3f71cd0dd26f03f1900616b78c6450e"
+  },
+  "sensors/Touch_sensor/5x5_base.py": {
+    "mtime": 1788266611.4568043,
+    "seen": 1789652502.7003329,
+    "ast_hash": "dd507c63059c140f24780a22321d6b8c",
+    "semantic_hash": "dd507c63059c140f24780a22321d6b8c"
+  },
+  "sensors/Touch_sensor/intensity_classifier_force.py": {
+    "mtime": 1788958013.3330185,
+    "seen": 1789652502.7003338,
+    "ast_hash": "4a2f687814015feb659af0608ce44a38",
+    "semantic_hash": "4a2f687814015feb659af0608ce44a38"
+  },
+  "sensors/Touch_sensor/test_udp_force.py": {
+    "mtime": 1788266611.4568043,
+    "seen": 1789652502.7003348,
+    "ast_hash": "6fe0baf28652e3345b0e35787c0c16a0",
+    "semantic_hash": "6fe0baf28652e3345b0e35787c0c16a0"
+  },
+  "sensors/Touch_sensor/touch_sensor4x4.py": {
+    "mtime": 1788266611.4578042,
+    "seen": 1789652502.7003365,
+    "ast_hash": "9d30a6629e9334bd6f1bb222e427be84",
+    "semantic_hash": "9d30a6629e9334bd6f1bb222e427be84"
+  },
+  "sensors/Touch_sensor/touch_sensor5x5.py": {
+    "mtime": 1788266611.4578042,
+    "seen": 1789652502.7003374,
+    "ast_hash": "973482d947073c754306f9c9a9ad9798",
+    "semantic_hash": "973482d947073c754306f9c9a9ad9798"
+  },
+  "sensors/Touch_sensor/touch_sensor5x5_windows.py": {
+    "mtime": 1788266611.4578042,
+    "seen": 1789652502.7003384,
+    "ast_hash": "d2133240b7eb38f2a1dcba68c70bd18b",
+    "semantic_hash": "d2133240b7eb38f2a1dcba68c70bd18b"
+  },
+  "sensors/load_cell_calib.json": {
+    "mtime": 1788266611.4578042,
+    "seen": 1789652502.7003396,
+    "ast_hash": "11504f37d5e8bf70ca2c55255a242954",
+    "semantic_hash": "11504f37d5e8bf70ca2c55255a242954"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/__init__.py": {
+    "mtime": 1788430959.8460233,
+    "seen": 1789652502.7003405,
+    "ast_hash": "e4e63d8bdc5476cc367ce700b0ae803d",
+    "semantic_hash": "e4e63d8bdc5476cc367ce700b0ae803d"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/covvi_base_client_node.py": {
+    "mtime": 1788430959.8460233,
+    "seen": 1789652502.7003415,
+    "ast_hash": "8cc945009de24c83cb074192f0ed101c",
+    "semantic_hash": "8cc945009de24c83cb074192f0ed101c"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/covvi_base_node.py": {
+    "mtime": 1788430959.8460233,
+    "seen": 1789652502.7003424,
+    "ast_hash": "5d0398d793835d70344d08a8c3ffe8c7",
+    "semantic_hash": "5d0398d793835d70344d08a8c3ffe8c7"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/covvi_client_node.py": {
+    "mtime": 1788430959.8460233,
+    "seen": 1789652502.7003436,
+    "ast_hash": "92083dbc13857a38b0c1e652d7efe44f",
+    "semantic_hash": "92083dbc13857a38b0c1e652d7efe44f"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/covvi_server_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003448,
+    "ast_hash": "34f370879534beb5d1e50a0b6f962817",
+    "semantic_hash": "34f370879534beb5d1e50a0b6f962817"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/current_grip_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003458,
+    "ast_hash": "f6da5395f0a7bc1fe77a11300ed1cbf6",
+    "semantic_hash": "f6da5395f0a7bc1fe77a11300ed1cbf6"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/digit_posn_all_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.700347,
+    "ast_hash": "83a60574ea77915c0e506224538511b1",
+    "semantic_hash": "83a60574ea77915c0e506224538511b1"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/digit_status_all_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.700348,
+    "ast_hash": "47be91d16097547e41d6411de511ea08",
+    "semantic_hash": "47be91d16097547e41d6411de511ea08"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/digit_touch_all_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.700349,
+    "ast_hash": "45d0873956531d3d2c240c9bab8019e0",
+    "semantic_hash": "45d0873956531d3d2c240c9bab8019e0"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/disable_all_realtime_cfg_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003503,
+    "ast_hash": "2aa4caaf2f3669ea3981d85d441d5dc1",
+    "semantic_hash": "2aa4caaf2f3669ea3981d85d441d5dc1"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/electrode_value_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003512,
+    "ast_hash": "826e0f6928ce8803d3256eb8888620da",
+    "semantic_hash": "826e0f6928ce8803d3256eb8888620da"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/enable_all_realtime_cfg_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003522,
+    "ast_hash": "e0e9803b69085e74cc2ae06628a03850",
+    "semantic_hash": "e0e9803b69085e74cc2ae06628a03850"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/environmental_msg_subscriber_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003536,
+    "ast_hash": "02c4d0c1dca4da2641ae6d0027d01da0",
+    "semantic_hash": "02c4d0c1dca4da2641ae6d0027d01da0"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_current_grip_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003546,
+    "ast_hash": "4a83c0e65b2480616c735899f8da8751",
+    "semantic_hash": "4a83c0e65b2480616c735899f8da8751"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_device_identity_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003555,
+    "ast_hash": "a982fa660cf649b7a43974187759ca92",
+    "semantic_hash": "a982fa660cf649b7a43974187759ca92"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_device_product_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003567,
+    "ast_hash": "e86174f04386ebdee65d16d4b6e6d789",
+    "semantic_hash": "e86174f04386ebdee65d16d4b6e6d789"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_config_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003577,
+    "ast_hash": "c58f7d14860776950c3389022051d49a",
+    "semantic_hash": "c58f7d14860776950c3389022051d49a"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_error_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003586,
+    "ast_hash": "86fd5473680e72fe6ffaffa5f1ffdc56",
+    "semantic_hash": "86fd5473680e72fe6ffaffa5f1ffdc56"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_posn_all_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.7003596,
+    "ast_hash": "71c6a8215f4a14af5a82c6f2fc98ee0c",
+    "semantic_hash": "71c6a8215f4a14af5a82c6f2fc98ee0c"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_posn_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.700361,
+    "ast_hash": "508e5b16d328ff2279da7b6c8cdd5bb5",
+    "semantic_hash": "508e5b16d328ff2279da7b6c8cdd5bb5"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_status_all_client_node.py": {
+    "mtime": 1788430959.8470232,
+    "seen": 1789652502.700363,
+    "ast_hash": "257fc21ceea89a62a18c84827cc842ff",
+    "semantic_hash": "257fc21ceea89a62a18c84827cc842ff"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_digit_status_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700364,
+    "ast_hash": "425ce1250cfd9b80fd91ba986a97549a",
+    "semantic_hash": "425ce1250cfd9b80fd91ba986a97549a"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_connected_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003653,
+    "ast_hash": "766f66b1c2d5e1b9591b5c0f6a39b191",
+    "semantic_hash": "766f66b1c2d5e1b9591b5c0f6a39b191"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_device_class_type_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003663,
+    "ast_hash": "8bd380e73f52059a04b8355d652cb5b3",
+    "semantic_hash": "8bd380e73f52059a04b8355d652cb5b3"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_error_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003675,
+    "ast_hash": "14da5ee276df02009072dd10fc6520d2",
+    "semantic_hash": "14da5ee276df02009072dd10fc6520d2"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_manufacturer_i_d_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003686,
+    "ast_hash": "a8d1bcd021ee112d996f930ec3f82dfd",
+    "semantic_hash": "a8d1bcd021ee112d996f930ec3f82dfd"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_power_on_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003696,
+    "ast_hash": "f757f5eb1d313135b32ff7d7ab6e6901",
+    "semantic_hash": "f757f5eb1d313135b32ff7d7ab6e6901"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_product_i_d_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700371,
+    "ast_hash": "012579255e584e26206d01ec1d312e55",
+    "semantic_hash": "012579255e584e26206d01ec1d312e55"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_eci_serial_number_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700372,
+    "ast_hash": "5ddceda63cac30da1eeec9b1c73e34c0",
+    "semantic_hash": "5ddceda63cac30da1eeec9b1c73e34c0"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_environmental_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003732,
+    "ast_hash": "148a744295aa5dd8f748bd3da36bb427",
+    "semantic_hash": "148a744295aa5dd8f748bd3da36bb427"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_firmware_p_i_c_e_c_i_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003744,
+    "ast_hash": "4cee55baed9d279698f96654ee582a52",
+    "semantic_hash": "4cee55baed9d279698f96654ee582a52"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_firmware_p_i_c_h_a_n_d_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003756,
+    "ast_hash": "389c0cc5049fad63b6d4073c4c66743f",
+    "semantic_hash": "389c0cc5049fad63b6d4073c4c66743f"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_grip_name_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003765,
+    "ast_hash": "5767516899df5b4fc09249170198b34f",
+    "semantic_hash": "5767516899df5b4fc09249170198b34f"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_connected_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003777,
+    "ast_hash": "9d96a881bf5d6534aeedaa86076c2ad3",
+    "semantic_hash": "9d96a881bf5d6534aeedaa86076c2ad3"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_device_class_type_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003787,
+    "ast_hash": "b9beeb6c37f0d260183ceecee983033d",
+    "semantic_hash": "b9beeb6c37f0d260183ceecee983033d"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_error_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003796,
+    "ast_hash": "650994ae8712e6a46fcbbd6b38433685",
+    "semantic_hash": "650994ae8712e6a46fcbbd6b38433685"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_manufacturer_i_d_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003806,
+    "ast_hash": "1dbaeb4cdbfe22d9e4246b86618bbb72",
+    "semantic_hash": "1dbaeb4cdbfe22d9e4246b86618bbb72"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_power_on_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003818,
+    "ast_hash": "f649050b55841259ddf0f77758af2272",
+    "semantic_hash": "f649050b55841259ddf0f77758af2272"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_product_i_d_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003827,
+    "ast_hash": "2020ad9ae20023b7f11ca5886422bf8c",
+    "semantic_hash": "2020ad9ae20023b7f11ca5886422bf8c"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hand_serial_number_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003837,
+    "ast_hash": "2a834435f66d5f61f9119330a0aba0ff",
+    "semantic_hash": "2a834435f66d5f61f9119330a0aba0ff"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_hello_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003849,
+    "ast_hash": "f6807343d4aae650bec1ae58829c7ac5",
+    "semantic_hash": "f6807343d4aae650bec1ae58829c7ac5"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_motor_current_all_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003858,
+    "ast_hash": "f6209cd82aa352aeb5f7da1cbaa300da",
+    "semantic_hash": "f6209cd82aa352aeb5f7da1cbaa300da"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_motor_current_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003868,
+    "ast_hash": "546cd408f079aec43e3dbc0af1647083",
+    "semantic_hash": "546cd408f079aec43e3dbc0af1647083"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_motor_limits_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700388,
+    "ast_hash": "0662bc19c8de2222db94532ab7b7874a",
+    "semantic_hash": "0662bc19c8de2222db94532ab7b7874a"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_orientation_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003894,
+    "ast_hash": "93167d5a96cbaebc59cf548eb644e8cf",
+    "semantic_hash": "93167d5a96cbaebc59cf548eb644e8cf"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_pinch_config_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003903,
+    "ast_hash": "ecd788820c82087e139582a33d290a29",
+    "semantic_hash": "ecd788820c82087e139582a33d290a29"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/get_system_status_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003915,
+    "ast_hash": "588246f91c04a3e9bbe7c9fe4a413d3c",
+    "semantic_hash": "588246f91c04a3e9bbe7c9fe4a413d3c"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/input_status_msg_subscriber_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003925,
+    "ast_hash": "b774a63e62f77f97ee964ad25a3f4e99",
+    "semantic_hash": "b774a63e62f77f97ee964ad25a3f4e99"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/motor_current_all_msg_subscriber_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003937,
+    "ast_hash": "7849bd9551cec5bd3e3a01e434eb06a9",
+    "semantic_hash": "7849bd9551cec5bd3e3a01e434eb06a9"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/motor_limits_msg_subscriber_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700395,
+    "ast_hash": "c39eabba56bc850c7166877a494eae90",
+    "semantic_hash": "c39eabba56bc850c7166877a494eae90"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/orientation_msg_subscriber_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700396,
+    "ast_hash": "0f62e20fd38a6cd76603a94dbf4388b8",
+    "semantic_hash": "0f62e20fd38a6cd76603a94dbf4388b8"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/remove_user_grip_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700397,
+    "ast_hash": "c8cd175881783c8480f9ddadb8c8fb55",
+    "semantic_hash": "c8cd175881783c8480f9ddadb8c8fb55"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/reset_realtime_cfg_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.700398,
+    "ast_hash": "2c57c715b1161c59709b9272cb934705",
+    "semantic_hash": "2c57c715b1161c59709b9272cb934705"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/reset_user_grips_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7003992,
+    "ast_hash": "8d5324f6545694cbf6a79bbc3d325d73",
+    "semantic_hash": "8d5324f6545694cbf6a79bbc3d325d73"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/send_user_grip_client_node.py": {
+    "mtime": 1788430959.8480232,
+    "seen": 1789652502.7004,
+    "ast_hash": "7d7b4ddd1db929f698db0857c37667e4",
+    "semantic_hash": "7d7b4ddd1db929f698db0857c37667e4"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_current_grip_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004013,
+    "ast_hash": "517007641ceb9723e2eec5bc19c01360",
+    "semantic_hash": "517007641ceb9723e2eec5bc19c01360"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_digit_move_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004023,
+    "ast_hash": "7228f3bef489113f208a0b093450af4e",
+    "semantic_hash": "7228f3bef489113f208a0b093450af4e"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_digit_posn_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004032,
+    "ast_hash": "9f8448955e327e6a4710f56755b8a004",
+    "semantic_hash": "9f8448955e327e6a4710f56755b8a004"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_digit_posn_stop_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004042,
+    "ast_hash": "8e67f9a6081ddbdcacf5ecf14ed9fe85",
+    "semantic_hash": "8e67f9a6081ddbdcacf5ecf14ed9fe85"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_direct_control_close_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004054,
+    "ast_hash": "6a804ab1d5fddf02cbf9b999b8e06e27",
+    "semantic_hash": "6a804ab1d5fddf02cbf9b999b8e06e27"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_direct_control_open_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004063,
+    "ast_hash": "593bafd25ec2cdc3f80f18f24d27918b",
+    "semantic_hash": "593bafd25ec2cdc3f80f18f24d27918b"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_direct_control_stop_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004075,
+    "ast_hash": "751b08d324565a37773531ac451bd0ac",
+    "semantic_hash": "751b08d324565a37773531ac451bd0ac"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_hand_power_off_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004085,
+    "ast_hash": "fcc7ce53dd9a88534e6756c71cf08c53",
+    "semantic_hash": "fcc7ce53dd9a88534e6756c71cf08c53"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_hand_power_on_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004097,
+    "ast_hash": "b0aa628be2b59e969f45653d84083457",
+    "semantic_hash": "b0aa628be2b59e969f45653d84083457"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/set_realtime_cfg_client_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004106,
+    "ast_hash": "c1e6fc0d39a0940ce3f79e117c9091b9",
+    "semantic_hash": "c1e6fc0d39a0940ce3f79e117c9091b9"
+  },
+  "src/eci_ros/covvi_hand_driver/covvi_hand_driver/system_status_msg_subscriber_node.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004116,
+    "ast_hash": "01be6975e9d27bb6ebe66e6f475a4cd7",
+    "semantic_hash": "01be6975e9d27bb6ebe66e6f475a4cd7"
+  },
+  "src/eci_ros/covvi_hand_driver/setup.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004125,
+    "ast_hash": "1db7294f0bec1043265126b13d4c276e",
+    "semantic_hash": "1db7294f0bec1043265126b13d4c276e"
+  },
+  "src/eci_ros/covvi_hand_driver/test/test_copyright.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004135,
+    "ast_hash": "4996344e5b6b7ac0c99a267f121398f4",
+    "semantic_hash": "4996344e5b6b7ac0c99a267f121398f4"
+  },
+  "src/eci_ros/covvi_hand_driver/test/test_flake8.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004144,
+    "ast_hash": "aa129cddddd383a922ed54000fb385e5",
+    "semantic_hash": "aa129cddddd383a922ed54000fb385e5"
+  },
+  "src/eci_ros/covvi_hand_driver/test/test_pep257.py": {
+    "mtime": 1788430959.8490233,
+    "seen": 1789652502.7004154,
+    "ast_hash": "1a5086842153d5f68611ba9f8cb7e443",
+    "semantic_hash": "1a5086842153d5f68611ba9f8cb7e443"
+  },
+  "src/gazebo_mimic_plugin/src/mimic_joint_plugin.cpp": {
+    "mtime": 1788266611.6168082,
+    "seen": 1789652502.7004163,
+    "ast_hash": "91ac95aef62bd0930ed6b25b7a43bbb0",
+    "semantic_hash": "91ac95aef62bd0930ed6b25b7a43bbb0"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/__init__.py": {
+    "mtime": 1788266611.6168082,
+    "seen": 1789652502.7004173,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/cage_check.py": {
+    "mtime": 1788266611.6168082,
+    "seen": 1789652502.7004185,
+    "ast_hash": "e32d5a24cfc763be7bea6434b8d61572",
+    "semantic_hash": "e32d5a24cfc763be7bea6434b8d61572"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/collision.py": {
+    "mtime": 1788266611.6168082,
+    "seen": 1789652502.7004197,
+    "ast_hash": "8068a44aa8fff7e021681558cf14430c",
+    "semantic_hash": "8068a44aa8fff7e021681558cf14430c"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/conveyor_controller.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004206,
+    "ast_hash": "13ed5c3efd773495e09a9c53c7703012",
+    "semantic_hash": "13ed5c3efd773495e09a9c53c7703012"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/grasp_executor.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004216,
+    "ast_hash": "280d71ada94d12959412130d12217cea",
+    "semantic_hash": "280d71ada94d12959412130d12217cea"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/grasp_quality_net.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004228,
+    "ast_hash": "d8749f2bfb3609e7fff5f01a56892577",
+    "semantic_hash": "d8749f2bfb3609e7fff5f01a56892577"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/grasp_sense.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004237,
+    "ast_hash": "ccfbf5e6307e2817e6412e65727c2b10",
+    "semantic_hash": "ccfbf5e6307e2817e6412e65727c2b10"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/gui_control_node.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004247,
+    "ast_hash": "a496f78b6e22cf6c3058cfaecfa1c142",
+    "semantic_hash": "a496f78b6e22cf6c3058cfaecfa1c142"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/kinematics.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004256,
+    "ast_hash": "97e50b9cf19cc88205714b82e8c7094a",
+    "semantic_hash": "97e50b9cf19cc88205714b82e8c7094a"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/manual_control_node.py": {
+    "mtime": 1788877004.307904,
+    "seen": 1789652502.7004268,
+    "ast_hash": "0f86ee06c9dda113fc4b34f1c59fa476",
+    "semantic_hash": "0f86ee06c9dda113fc4b34f1c59fa476"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/object_detector.py": {
+    "mtime": 1788266611.6178083,
+    "seen": 1789652502.7004275,
+    "ast_hash": "419b6a447722aa6d9f4bbe05ebcc6cbb",
+    "semantic_hash": "419b6a447722aa6d9f4bbe05ebcc6cbb"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/perfect_grasp.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004285,
+    "ast_hash": "d637f8bb1ae1d3d3fa5ee175b6e6e7bc",
+    "semantic_hash": "d637f8bb1ae1d3d3fa5ee175b6e6e7bc"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/pipeline.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004297,
+    "ast_hash": "6e39cba45ec60477077c63a3fae9a1c9",
+    "semantic_hash": "6e39cba45ec60477077c63a3fae9a1c9"
+  },
+  "src/grasp_ml_pack/grasp_ml_pack/poses.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004304,
+    "ast_hash": "7c43c4cb3cc02b7e9c6370b72c6e1430",
+    "semantic_hash": "7c43c4cb3cc02b7e9c6370b72c6e1430"
+  },
+  "src/grasp_ml_pack/launch/conveyor_cell.launch.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004313,
+    "ast_hash": "d2486a982d14ad6e9795071321c9cc45",
+    "semantic_hash": "d2486a982d14ad6e9795071321c9cc45"
+  },
+  "src/grasp_ml_pack/scripts/generate_training_data.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004323,
+    "ast_hash": "4e5f5aebedf47830e2247a802519fab9",
+    "semantic_hash": "4e5f5aebedf47830e2247a802519fab9"
+  },
+  "src/grasp_ml_pack/scripts/test_9cycles.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004335,
+    "ast_hash": "64f193c1338be7642253eb9746aefb71",
+    "semantic_hash": "64f193c1338be7642253eb9746aefb71"
+  },
+  "src/grasp_ml_pack/scripts/test_kinematics.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004344,
+    "ast_hash": "a5d97b56dcec8f2a84366fe32507fc1b",
+    "semantic_hash": "a5d97b56dcec8f2a84366fe32507fc1b"
+  },
+  "src/grasp_ml_pack/scripts/train_grasp_model.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004352,
+    "ast_hash": "e1c9e81c8512f479477b89390236696b",
+    "semantic_hash": "e1c9e81c8512f479477b89390236696b"
+  },
+  "src/grasp_ml_pack/scripts/tune_descent.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.700436,
+    "ast_hash": "e351c09abc079e523976ce07db4d0ce0",
+    "semantic_hash": "e351c09abc079e523976ce07db4d0ce0"
+  },
+  "src/grasp_ml_pack/scripts/tune_rotate.py": {
+    "mtime": 1788266611.6188083,
+    "seen": 1789652502.7004373,
+    "ast_hash": "a127840882db497dd067e38ed590d261",
+    "semantic_hash": "a127840882db497dd067e38ed590d261"
+  },
+  "src/grasp_ml_pack/setup.py": {
+    "mtime": 1788876949.853337,
+    "seen": 1789652502.7004383,
+    "ast_hash": "7a3803ff1cc41cde133c580f89912a89",
+    "semantic_hash": "7a3803ff1cc41cde133c580f89912a89"
+  },
+  "src/hand_pack/hand_pack/__init__.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004392,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/hand_pack/hand_pack/combined_gui.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004404,
+    "ast_hash": "7527cea33346b55a5827766a02a3c6dc",
+    "semantic_hash": "7527cea33346b55a5827766a02a3c6dc"
+  },
+  "src/hand_pack/hand_pack/hand_gui.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004414,
+    "ast_hash": "daf81601c214c2a36b6aaf565490512d",
+    "semantic_hash": "daf81601c214c2a36b6aaf565490512d"
+  },
+  "src/hand_pack/hand_pack/hand_node.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004423,
+    "ast_hash": "c7292395f88f2081dc5d82330bda81ce",
+    "semantic_hash": "c7292395f88f2081dc5d82330bda81ce"
+  },
+  "src/hand_pack/hand_pack/urdf_helpers.py": {
+    "mtime": 1789053377.8267014,
+    "seen": 1789652502.7004435,
+    "ast_hash": "86b51e6e4a08907e778b3aba5e047ddf",
+    "semantic_hash": "86b51e6e4a08907e778b3aba5e047ddf"
+  },
+  "src/hand_pack/launch/cr10_covvi_gazebo.launch.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004445,
+    "ast_hash": "88be49ebafd65f8cc19b4a8b35302602",
+    "semantic_hash": "88be49ebafd65f8cc19b4a8b35302602"
+  },
+  "src/hand_pack/launch/cr10_covvi_rviz.launch.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004452,
+    "ast_hash": "a3e0ef71320ed1d284b774a611fac857",
+    "semantic_hash": "a3e0ef71320ed1d284b774a611fac857"
+  },
+  "src/hand_pack/launch/display.launch.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004461,
+    "ast_hash": "5f3dbab73b6203ea437e61e6f24e2bac",
+    "semantic_hash": "5f3dbab73b6203ea437e61e6f24e2bac"
+  },
+  "src/hand_pack/launch/hand_gazebo.launch.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004473,
+    "ast_hash": "62aec3ca31edf452e87a8faf3fad227c",
+    "semantic_hash": "62aec3ca31edf452e87a8faf3fad227c"
+  },
+  "src/hand_pack/setup.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.7004483,
+    "ast_hash": "5abbd70ae208f7d02e84d441a92306c4",
+    "semantic_hash": "5abbd70ae208f7d02e84d441a92306c4"
+  },
+  "src/hand_pack/test/test_copyright.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.700449,
+    "ast_hash": "4996344e5b6b7ac0c99a267f121398f4",
+    "semantic_hash": "4996344e5b6b7ac0c99a267f121398f4"
+  },
+  "src/hand_pack/test/test_flake8.py": {
+    "mtime": 1788266611.6198082,
+    "seen": 1789652502.70045,
+    "ast_hash": "aa129cddddd383a922ed54000fb385e5",
+    "semantic_hash": "aa129cddddd383a922ed54000fb385e5"
+  },
+  "src/hand_pack/test/test_pep257.py": {
+    "mtime": 1788266611.6208084,
+    "seen": 1789652502.7004528,
+    "ast_hash": "1a5086842153d5f68611ba9f8cb7e443",
+    "semantic_hash": "1a5086842153d5f68611ba9f8cb7e443"
+  },
+  "src/touch_pack/launch/tactile_cell.launch.py": {
+    "mtime": 1789570000.6238036,
+    "seen": 1789652502.700454,
+    "ast_hash": "3441d6d57d61b5e05fe1123fbcf677f0",
+    "semantic_hash": "3441d6d57d61b5e05fe1123fbcf677f0"
+  },
+  "src/touch_pack/scripts/analyze_force_runs.py": {
+    "mtime": 1788266611.6738095,
+    "seen": 1789652502.700455,
+    "ast_hash": "04e4c9bdf68bc2ca91ecb2d1f06d40dc",
+    "semantic_hash": "04e4c9bdf68bc2ca91ecb2d1f06d40dc"
+  },
+  "src/touch_pack/scripts/ft_probe.py": {
+    "mtime": 1788266611.6738095,
+    "seen": 1789652502.700456,
+    "ast_hash": "4f36de8fc26448f68751a50422cac032",
+    "semantic_hash": "4f36de8fc26448f68751a50422cac032"
+  },
+  "src/touch_pack/scripts/gen_tcp_meshes_from_step.py": {
+    "mtime": 1788266611.6738095,
+    "seen": 1789652502.7004569,
+    "ast_hash": "6098d9fec96c46ae81e705397bbd629d",
+    "semantic_hash": "6098d9fec96c46ae81e705397bbd629d"
+  },
+  "src/touch_pack/scripts/migrate_runs_layout.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004578,
+    "ast_hash": "7d8d7e9d5f5e2ce7959f7d1ae906a786",
+    "semantic_hash": "7d8d7e9d5f5e2ce7959f7d1ae906a786"
+  },
+  "src/touch_pack/setup.py": {
+    "mtime": 1789050729.486337,
+    "seen": 1789652502.7004588,
+    "ast_hash": "3b7508188fbcb3481806647db11bcc79",
+    "semantic_hash": "3b7508188fbcb3481806647db11bcc79"
+  },
+  "src/touch_pack/test/test_adc_frame_integrity.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004595,
+    "ast_hash": "e5ae5d09b5e387f323587690f51dcdc8",
+    "semantic_hash": "e5ae5d09b5e387f323587690f51dcdc8"
+  },
+  "src/touch_pack/test/test_align_attack.py": {
+    "mtime": 1789477336.6792114,
+    "seen": 1789652502.7004604,
+    "ast_hash": "de364211d483cf0d713893aae43e2aa1",
+    "semantic_hash": "de364211d483cf0d713893aae43e2aa1"
+  },
+  "src/touch_pack/test/test_attack_axis_verify.py": {
+    "mtime": 1789477425.9873915,
+    "seen": 1789652502.7004616,
+    "ast_hash": "b2f46697c6e7d3b749069a825ac357d0",
+    "semantic_hash": "b2f46697c6e7d3b749069a825ac357d0"
+  },
+  "src/touch_pack/test/test_audit_20260824.py": {
+    "mtime": 1789476850.1796854,
+    "seen": 1789652502.7004626,
+    "ast_hash": "7aaa43890c779da2c9b814cf0ca03356",
+    "semantic_hash": "7aaa43890c779da2c9b814cf0ca03356"
+  },
+  "src/touch_pack/test/test_contact_curve.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004633,
+    "ast_hash": "4b06c9f35837e6881bdd15dbbd236907",
+    "semantic_hash": "4b06c9f35837e6881bdd15dbbd236907"
+  },
+  "src/touch_pack/test/test_descent_profile.py": {
+    "mtime": 1788270432.8474169,
+    "seen": 1789652502.7004645,
+    "ast_hash": "6dc8a2d7613d53585ee051edd4da41a3",
+    "semantic_hash": "6dc8a2d7613d53585ee051edd4da41a3"
+  },
+  "src/touch_pack/test/test_estop_button.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004652,
+    "ast_hash": "1b83191401a1a7d468e8d73f626a57e2",
+    "semantic_hash": "1b83191401a1a7d468e8d73f626a57e2"
+  },
+  "src/touch_pack/test/test_estop_reconnect.py": {
+    "mtime": 1789476872.4896762,
+    "seen": 1789652502.7004662,
+    "ast_hash": "3e728c9ebb5b55d878b6141a71742e0d",
+    "semantic_hash": "3e728c9ebb5b55d878b6141a71742e0d"
+  },
+  "src/touch_pack/test/test_explorer_logic.py": {
+    "mtime": 1788956781.1685076,
+    "seen": 1789652502.700467,
+    "ast_hash": "024d98f1423a067ae04cbd941682919c",
+    "semantic_hash": "024d98f1423a067ae04cbd941682919c"
+  },
+  "src/touch_pack/test/test_explorer_split.py": {
+    "mtime": 1789397412.3443115,
+    "seen": 1789652502.7004683,
+    "ast_hash": "187e472a1ff1b5ea37cf6528d0766515",
+    "semantic_hash": "187e472a1ff1b5ea37cf6528d0766515"
+  },
+  "src/touch_pack/test/test_fmod_ilc.py": {
+    "mtime": 1788877058.1004643,
+    "seen": 1789652502.7004693,
+    "ast_hash": "8080230030fbd88d9003ef851c2a78b6",
+    "semantic_hash": "8080230030fbd88d9003ef851c2a78b6"
+  },
+  "src/touch_pack/test/test_fmod_phase.py": {
+    "mtime": 1789571699.466572,
+    "seen": 1789652502.7004702,
+    "ast_hash": "18e99e8403d44cd81c6d2d8a3f62c167",
+    "semantic_hash": "18e99e8403d44cd81c6d2d8a3f62c167"
+  },
+  "src/touch_pack/test/test_fmod_wave_quality.py": {
+    "mtime": 1788877458.18563,
+    "seen": 1789652502.700471,
+    "ast_hash": "43c51bab47452617ed7ae390d164c9b4",
+    "semantic_hash": "43c51bab47452617ed7ae390d164c9b4"
+  },
+  "src/touch_pack/test/test_force_profile.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.700472,
+    "ast_hash": "a89a84440b8fa6e8221af03538417a34",
+    "semantic_hash": "a89a84440b8fa6e8221af03538417a34"
+  },
+  "src/touch_pack/test/test_force_receiver.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004728,
+    "ast_hash": "f27c261f1e425043c98b3b12d7d23c0d",
+    "semantic_hash": "f27c261f1e425043c98b3b12d7d23c0d"
+  },
+  "src/touch_pack/test/test_ft_arrow.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004738,
+    "ast_hash": "a69a50a7d917ca09bfc5bbc85f27a64f",
+    "semantic_hash": "a69a50a7d917ca09bfc5bbc85f27a64f"
+  },
+  "src/touch_pack/test/test_ft_axes.py": {
+    "mtime": 1788877004.3089042,
+    "seen": 1789652502.700475,
+    "ast_hash": "581bf3f9e26bdb96bf32b6b0ab9e017b",
+    "semantic_hash": "581bf3f9e26bdb96bf32b6b0ab9e017b"
+  },
+  "src/touch_pack/test/test_ft_charts.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.7004757,
+    "ast_hash": "ad396a0d51df0c88cda63f9a2d01632e",
+    "semantic_hash": "ad396a0d51df0c88cda63f9a2d01632e"
+  },
+  "src/touch_pack/test/test_ft_frame.py": {
+    "mtime": 1788266611.6748097,
+    "seen": 1789652502.700477,
+    "ast_hash": "3d54bc105ca8bc9d3ff2cfef29f9006b",
+    "semantic_hash": "3d54bc105ca8bc9d3ff2cfef29f9006b"
+  },
+  "src/touch_pack/test/test_ft_gui_smoke.py": {
+    "mtime": 1788877004.309904,
+    "seen": 1789652502.7004778,
+    "ast_hash": "b44d4134242ef5c6fb3d1e4d3ca47240",
+    "semantic_hash": "b44d4134242ef5c6fb3d1e4d3ca47240"
+  },
+  "src/touch_pack/test/test_ft_hkvl56.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.700479,
+    "ast_hash": "c896ebd89becee8cd814403409b11e2d",
+    "semantic_hash": "c896ebd89becee8cd814403409b11e2d"
+  },
+  "src/touch_pack/test/test_ft_modbus.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.70048,
+    "ast_hash": "80e984f39446b0d3c690c589d57ceaa8",
+    "semantic_hash": "80e984f39446b0d3c690c589d57ceaa8"
+  },
+  "src/touch_pack/test/test_ft_polled.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004807,
+    "ast_hash": "bc541ab2bf7583a1e0a194ea21855a60",
+    "semantic_hash": "bc541ab2bf7583a1e0a194ea21855a60"
+  },
+  "src/touch_pack/test/test_ft_receiver_node.py": {
+    "mtime": 1789395767.3366714,
+    "seen": 1789652502.7004817,
+    "ast_hash": "ae4e008c0b08b795f9fa584bf0af1d93",
+    "semantic_hash": "ae4e008c0b08b795f9fa584bf0af1d93"
+  },
+  "src/touch_pack/test/test_ft_stats.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004826,
+    "ast_hash": "51536e69b7e917f710030a468ee1c8fb",
+    "semantic_hash": "51536e69b7e917f710030a468ee1c8fb"
+  },
+  "src/touch_pack/test/test_ft_tcp.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004836,
+    "ast_hash": "d9f00bbd0ee816b741cacbf8e02fe69f",
+    "semantic_hash": "d9f00bbd0ee816b741cacbf8e02fe69f"
+  },
+  "src/touch_pack/test/test_gui_split.py": {
+    "mtime": 1789397216.0655873,
+    "seen": 1789652502.7004843,
+    "ast_hash": "495c88b76a71d487be63c971193fc39f",
+    "semantic_hash": "495c88b76a71d487be63c971193fc39f"
+  },
+  "src/touch_pack/test/test_hand_camera_teleop.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004855,
+    "ast_hash": "6d280696fb762a351f163d2a952bf911",
+    "semantic_hash": "6d280696fb762a351f163d2a952bf911"
+  },
+  "src/touch_pack/test/test_hand_latency_probe.py": {
+    "mtime": 1789395668.027159,
+    "seen": 1789652502.7004864,
+    "ast_hash": "38e17fe5bd03586cbf6716784dd290ac",
+    "semantic_hash": "38e17fe5bd03586cbf6716784dd290ac"
+  },
+  "src/touch_pack/test/test_hold_dwell_window.py": {
+    "mtime": 1788963497.2639186,
+    "seen": 1789652502.7004871,
+    "ast_hash": "f7bf63aad4287d19ff8d6c775cbf9a2a",
+    "semantic_hash": "f7bf63aad4287d19ff8d6c775cbf9a2a"
+  },
+  "src/touch_pack/test/test_home_pose_tool_stamp.py": {
+    "mtime": 1788877004.309904,
+    "seen": 1789652502.700488,
+    "ast_hash": "9cc540985bdee292825e8098962ec66a",
+    "semantic_hash": "9cc540985bdee292825e8098962ec66a"
+  },
+  "src/touch_pack/test/test_kinematic_attacher.py": {
+    "mtime": 1789395544.346454,
+    "seen": 1789652502.700489,
+    "ast_hash": "b735966e6a6e8ca15ff68271d9f74871",
+    "semantic_hash": "b735966e6a6e8ca15ff68271d9f74871"
+  },
+  "src/touch_pack/test/test_kinematics.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.70049,
+    "ast_hash": "829fcd7ef28a3f33717ace784ae3c369",
+    "semantic_hash": "829fcd7ef28a3f33717ace784ae3c369"
+  },
+  "src/touch_pack/test/test_latency_report.py": {
+    "mtime": 1789053393.5597436,
+    "seen": 1789652502.700491,
+    "ast_hash": "2023f9a019170ab8670606af0564820f",
+    "semantic_hash": "2023f9a019170ab8670606af0564820f"
+  },
+  "src/touch_pack/test/test_lc_axial_gui.py": {
+    "mtime": 1788956819.18934,
+    "seen": 1789652502.7004917,
+    "ast_hash": "3d656fd21cbdcf829c8ee7bdc5df0722",
+    "semantic_hash": "3d656fd21cbdcf829c8ee7bdc5df0722"
+  },
+  "src/touch_pack/test/test_lc_health_probe.py": {
+    "mtime": 1789395605.001811,
+    "seen": 1789652502.7004929,
+    "ast_hash": "cc547610b2d160c84b22108b59306519",
+    "semantic_hash": "cc547610b2d160c84b22108b59306519"
+  },
+  "src/touch_pack/test/test_lc_serial.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004938,
+    "ast_hash": "6df34e0c572ffeca6396a8cf3b9e40cb",
+    "semantic_hash": "6df34e0c572ffeca6396a8cf3b9e40cb"
+  },
+  "src/touch_pack/test/test_lc_slow_channel.py": {
+    "mtime": 1788876949.853337,
+    "seen": 1789652502.7004948,
+    "ast_hash": "f340b8c920f3447e7e92c20e7562e945",
+    "semantic_hash": "f340b8c920f3447e7e92c20e7562e945"
+  },
+  "src/touch_pack/test/test_lc_tab_selection.py": {
+    "mtime": 1788877004.309904,
+    "seen": 1789652502.700496,
+    "ast_hash": "2d762990b3ec351f00edeb131a43d888",
+    "semantic_hash": "2d762990b3ec351f00edeb131a43d888"
+  },
+  "src/touch_pack/test/test_line_source.py": {
+    "mtime": 1789396347.6657777,
+    "seen": 1789652502.700497,
+    "ast_hash": "1e59c0275eafb5d5f213ad13e108acee",
+    "semantic_hash": "1e59c0275eafb5d5f213ad13e108acee"
+  },
+  "src/touch_pack/test/test_logger_columns.py": {
+    "mtime": 1788877004.309904,
+    "seen": 1789652502.7004976,
+    "ast_hash": "3846b11749d99cd7b13cc6765165e6d5",
+    "semantic_hash": "3846b11749d99cd7b13cc6765165e6d5"
+  },
+  "src/touch_pack/test/test_manip3d.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7004986,
+    "ast_hash": "01b2c89e742a62216f3add8a3babffbd",
+    "semantic_hash": "01b2c89e742a62216f3add8a3babffbd"
+  },
+  "src/touch_pack/test/test_matrix_grid_order.py": {
+    "mtime": 1789395844.5800474,
+    "seen": 1789652502.7004998,
+    "ast_hash": "ec58c064c56e8438268dd85340e4dd0f",
+    "semantic_hash": "ec58c064c56e8438268dd85340e4dd0f"
+  },
+  "src/touch_pack/test/test_matrix_gui.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7005005,
+    "ast_hash": "6f2da1d701ead92c52d368ad4ce01a8d",
+    "semantic_hash": "6f2da1d701ead92c52d368ad4ce01a8d"
+  },
+  "src/touch_pack/test/test_matrix_map.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7005014,
+    "ast_hash": "1fd27f48f00172ee91edfdb5ca756ec3",
+    "semantic_hash": "1fd27f48f00172ee91edfdb5ca756ec3"
+  },
+  "src/touch_pack/test/test_mode_feature_contract.py": {
+    "mtime": 1789476545.06667,
+    "seen": 1789652502.7005022,
+    "ast_hash": "7ec50b6259f25d55ae90631367f415a4",
+    "semantic_hash": "7ec50b6259f25d55ae90631367f415a4"
+  },
+  "src/touch_pack/test/test_no_overshoot.py": {
+    "mtime": 1788877004.310904,
+    "seen": 1789652502.7005033,
+    "ast_hash": "a230645801cf56a8c365085292ebee62",
+    "semantic_hash": "a230645801cf56a8c365085292ebee62"
+  },
+  "src/touch_pack/test/test_plane_probe.py": {
+    "mtime": 1788266611.6758096,
+    "seen": 1789652502.7005043,
+    "ast_hash": "b24a2172b704b90960727140470be9b9",
+    "semantic_hash": "b24a2172b704b90960727140470be9b9"
+  },
+  "src/touch_pack/test/test_prehome_before_start.py": {
+    "mtime": 1789476259.211284,
+    "seen": 1789652502.7005053,
+    "ast_hash": "3e528a043932e8d397c6ec4f5b61d875",
+    "semantic_hash": "3e528a043932e8d397c6ec4f5b61d875"
+  },
+  "src/touch_pack/test/test_real_driver_proto.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005062,
+    "ast_hash": "811c954185771a05443c26791f213afc",
+    "semantic_hash": "811c954185771a05443c26791f213afc"
+  },
+  "src/touch_pack/test/test_real_pose_sync.py": {
+    "mtime": 1789395455.526878,
+    "seen": 1789652502.7005072,
+    "ast_hash": "a01b11cdaf967b2d92cc54539b930246",
+    "semantic_hash": "a01b11cdaf967b2d92cc54539b930246"
+  },
+  "src/touch_pack/test/test_run_layout.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.700508,
+    "ast_hash": "e80a1027e5da30dac578ed8a6eb8917d",
+    "semantic_hash": "e80a1027e5da30dac578ed8a6eb8917d"
+  },
+  "src/touch_pack/test/test_servoj_descent.py": {
+    "mtime": 1788956991.5140557,
+    "seen": 1789652502.700509,
+    "ast_hash": "5ade7a025d61f96c1af3f7abc173d89e",
+    "semantic_hash": "5ade7a025d61f96c1af3f7abc173d89e"
+  },
+  "src/touch_pack/test/test_setpoint_band.py": {
+    "mtime": 1788877004.310904,
+    "seen": 1789652502.7005103,
+    "ast_hash": "ecf7eda9438273ade615d0364b3eabce",
+    "semantic_hash": "ecf7eda9438273ade615d0364b3eabce"
+  },
+  "src/touch_pack/test/test_settle_still.py": {
+    "mtime": 1788267783.4833584,
+    "seen": 1789652502.7005112,
+    "ast_hash": "6720f4e99a232165d35e8078b5ca0236",
+    "semantic_hash": "6720f4e99a232165d35e8078b5ca0236"
+  },
+  "src/touch_pack/test/test_sim_force_bridge.py": {
+    "mtime": 1789395367.7022254,
+    "seen": 1789652502.7005122,
+    "ast_hash": "a31dacfb3261caedf53e72ebd51cede1",
+    "semantic_hash": "a31dacfb3261caedf53e72ebd51cede1"
+  },
+  "src/touch_pack/test/test_sim_wrist_rigidity.py": {
+    "mtime": 1788268773.435302,
+    "seen": 1789652502.7005131,
+    "ast_hash": "3784c5cd426e4f6285cb355b06098d04",
+    "semantic_hash": "3784c5cd426e4f6285cb355b06098d04"
+  },
+  "src/touch_pack/test/test_slide_contact_watch.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.700514,
+    "ast_hash": "073ba41ec11e69feb8e9da977b716837",
+    "semantic_hash": "073ba41ec11e69feb8e9da977b716837"
+  },
+  "src/touch_pack/test/test_stiffness_soft.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.700515,
+    "ast_hash": "36a17142113bd571a0a50d3e27a3c1f5",
+    "semantic_hash": "36a17142113bd571a0a50d3e27a3c1f5"
+  },
+  "src/touch_pack/test/test_sync_logic.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005157,
+    "ast_hash": "53b4a5bf9f531005128b9caea886a0f0",
+    "semantic_hash": "53b4a5bf9f531005128b9caea886a0f0"
+  },
+  "src/touch_pack/test/test_taxel_orientation.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.700517,
+    "ast_hash": "10354b4bb9c43135579c4ff6e9a5a0f8",
+    "semantic_hash": "10354b4bb9c43135579c4ff6e9a5a0f8"
+  },
+  "src/touch_pack/test/test_touch_receiver_node.py": {
+    "mtime": 1789395415.0265894,
+    "seen": 1789652502.700518,
+    "ast_hash": "1f973349b0a4d0d131149bb27126a18f",
+    "semantic_hash": "1f973349b0a4d0d131149bb27126a18f"
+  },
+  "src/touch_pack/test/test_transit_guards.py": {
+    "mtime": 1789476282.6644077,
+    "seen": 1789652502.7005188,
+    "ast_hash": "ba6831ac4e59c2a3bee6f38fb3d9e372",
+    "semantic_hash": "ba6831ac4e59c2a3bee6f38fb3d9e372"
+  },
+  "src/touch_pack/test/test_urdf_scene.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005196,
+    "ast_hash": "580193052f897cae54fc9714dda98a46",
+    "semantic_hash": "580193052f897cae54fc9714dda98a46"
+  },
+  "src/touch_pack/test/test_vtk_render.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005208,
+    "ast_hash": "70bb6f8f5a37fd4d2cf1ab96ad6f03ff",
+    "semantic_hash": "70bb6f8f5a37fd4d2cf1ab96ad6f03ff"
+  },
+  "src/touch_pack/touch_pack/__init__.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005215,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/touch_pack/touch_pack/constants.py": {
+    "mtime": 1789570000.6248035,
+    "seen": 1789652502.7005224,
+    "ast_hash": "8c429d5c4113ec2d3c1651c929778ba9",
+    "semantic_hash": "8c429d5c4113ec2d3c1651c929778ba9"
+  },
+  "src/touch_pack/touch_pack/explorer_constants.py": {
+    "mtime": 1789570000.6248035,
+    "seen": 1789652502.7005236,
+    "ast_hash": "64e16d15b5828fb77b93e0e4a4f74c6b",
+    "semantic_hash": "64e16d15b5828fb77b93e0e4a4f74c6b"
+  },
+  "src/touch_pack/touch_pack/force_receiver_node.py": {
+    "mtime": 1789396415.0809534,
+    "seen": 1789652502.7005246,
+    "ast_hash": "a792ffb36ee09eb31295eca9ff53e5db",
+    "semantic_hash": "a792ffb36ee09eb31295eca9ff53e5db"
+  },
+  "src/touch_pack/touch_pack/force_sync_node.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005253,
+    "ast_hash": "8ca78947ad24052d71600f1f3c711575",
+    "semantic_hash": "8ca78947ad24052d71600f1f3c711575"
+  },
+  "src/touch_pack/touch_pack/force_wave.py": {
+    "mtime": 1789571693.9525516,
+    "seen": 1789652502.7005262,
+    "ast_hash": "30762b56683c979866f007990ef66c04",
+    "semantic_hash": "30762b56683c979866f007990ef66c04"
+  },
+  "src/touch_pack/touch_pack/ft_cmd_channel.py": {
+    "mtime": 1788266611.6768098,
+    "seen": 1789652502.7005272,
+    "ast_hash": "1e408fb7062627c436f11d96ea7a5f75",
+    "semantic_hash": "1e408fb7062627c436f11d96ea7a5f75"
+  },
+  "src/touch_pack/touch_pack/ft_modbus.py": {
+    "mtime": 1788266611.6778097,
+    "seen": 1789652502.7005281,
+    "ast_hash": "bf40bdf0cf63952b1d9d3340f17075ea",
+    "semantic_hash": "bf40bdf0cf63952b1d9d3340f17075ea"
+  },
+  "src/touch_pack/touch_pack/ft_polled.py": {
+    "mtime": 1788877004.310904,
+    "seen": 1789652502.700529,
+    "ast_hash": "79adf0d1b22fb5df539bf5888996995b",
+    "semantic_hash": "79adf0d1b22fb5df539bf5888996995b"
+  },
+  "src/touch_pack/touch_pack/ft_receiver_node.py": {
+    "mtime": 1789396405.1709268,
+    "seen": 1789652502.7005298,
+    "ast_hash": "cdb73a0be5a9b26c4512190929f067c4",
+    "semantic_hash": "cdb73a0be5a9b26c4512190929f067c4"
+  },
+  "src/touch_pack/touch_pack/ft_serial.py": {
+    "mtime": 1789396155.4963503,
+    "seen": 1789652502.700531,
+    "ast_hash": "b04bcfb428db33fb4bd7e66a143151af",
+    "semantic_hash": "b04bcfb428db33fb4bd7e66a143151af"
+  },
+  "src/touch_pack/touch_pack/ft_stats.py": {
+    "mtime": 1788266611.6778097,
+    "seen": 1789652502.700532,
+    "ast_hash": "322da18146205ceba76a0c6ae1d05c45",
+    "semantic_hash": "322da18146205ceba76a0c6ae1d05c45"
+  },
+  "src/touch_pack/touch_pack/ft_tcp.py": {
+    "mtime": 1789396196.7404315,
+    "seen": 1789652502.7005327,
+    "ast_hash": "9294a378fa49af8f74c9c2ebe9f02ac5",
+    "semantic_hash": "9294a378fa49af8f74c9c2ebe9f02ac5"
+  },
+  "src/touch_pack/touch_pack/gui_camera.py": {
+    "mtime": 1789397028.1139116,
+    "seen": 1789652502.7005339,
+    "ast_hash": "4a585d2f18a072eb3dddcb5c28f40e26",
+    "semantic_hash": "4a585d2f18a072eb3dddcb5c28f40e26"
+  },
+  "src/touch_pack/touch_pack/gui_constants.py": {
+    "mtime": 1789397549.9528275,
+    "seen": 1789652502.7005346,
+    "ast_hash": "e1421f35756e714ff10cb9ed1de1f575",
+    "semantic_hash": "e1421f35756e714ff10cb9ed1de1f575"
+  },
+  "src/touch_pack/touch_pack/gui_ft_arrow.py": {
+    "mtime": 1788266611.6778097,
+    "seen": 1789652502.7005355,
+    "ast_hash": "b3c08cafe798a2097da949f99bc3c860",
+    "semantic_hash": "b3c08cafe798a2097da949f99bc3c860"
+  },
+  "src/touch_pack/touch_pack/gui_ft_charts.py": {
+    "mtime": 1788877004.3119042,
+    "seen": 1789652502.7005363,
+    "ast_hash": "63be82be41c43b273baa873427433ea7",
+    "semantic_hash": "63be82be41c43b273baa873427433ea7"
+  },
+  "src/touch_pack/touch_pack/gui_hand.py": {
+    "mtime": 1789397549.9558275,
+    "seen": 1789652502.7005374,
+    "ast_hash": "2983a9be4fa79728ccb6257ee63fcccc",
+    "semantic_hash": "2983a9be4fa79728ccb6257ee63fcccc"
+  },
+  "src/touch_pack/touch_pack/gui_lc_axial.py": {
+    "mtime": 1788266611.6778097,
+    "seen": 1789652502.7005382,
+    "ast_hash": "3bbb45088ba3d629e4c208e0432ccba7",
+    "semantic_hash": "3bbb45088ba3d629e4c208e0432ccba7"
+  },
+  "src/touch_pack/touch_pack/gui_loadcell.py": {
+    "mtime": 1788877004.3119042,
+    "seen": 1789652502.7005394,
+    "ast_hash": "20c5eb5f839218a9886465ce45c5aa95",
+    "semantic_hash": "20c5eb5f839218a9886465ce45c5aa95"
+  },
+  "src/touch_pack/touch_pack/gui_manip3d_tab.py": {
+    "mtime": 1789397549.9508274,
+    "seen": 1789652502.7005403,
+    "ast_hash": "722105ad1b960b6afa00f90daa2ce7e9",
+    "semantic_hash": "722105ad1b960b6afa00f90daa2ce7e9"
+  },
+  "src/touch_pack/touch_pack/gui_matrix.py": {
+    "mtime": 1788266611.67881,
+    "seen": 1789652502.7005413,
+    "ast_hash": "08b52130dee72e0b58fccb657ff80c55",
+    "semantic_hash": "08b52130dee72e0b58fccb657ff80c55"
+  },
+  "src/touch_pack/touch_pack/gui_poses.py": {
+    "mtime": 1789397487.618593,
+    "seen": 1789652502.700542,
+    "ast_hash": "9122152852405f794a881feb6b72029b",
+    "semantic_hash": "9122152852405f794a881feb6b72029b"
+  },
+  "src/touch_pack/touch_pack/gui_robot.py": {
+    "mtime": 1789570000.6248035,
+    "seen": 1789652502.700543,
+    "ast_hash": "d5263c131cf520c0fdcc12e816a0461e",
+    "semantic_hash": "d5263c131cf520c0fdcc12e816a0461e"
+  },
+  "src/touch_pack/touch_pack/gui_sensors.py": {
+    "mtime": 1789397456.941478,
+    "seen": 1789652502.700544,
+    "ast_hash": "24ed82539c3c40a200a70ec094aa42f9",
+    "semantic_hash": "24ed82539c3c40a200a70ec094aa42f9"
+  },
+  "src/touch_pack/touch_pack/hand_camera_teleop.py": {
+    "mtime": 1788266611.67881,
+    "seen": 1789652502.7005448,
+    "ast_hash": "6bf904a673fc3dd85593f7717f45b869",
+    "semantic_hash": "6bf904a673fc3dd85593f7717f45b869"
+  },
+  "src/touch_pack/touch_pack/hand_latency_probe.py": {
+    "mtime": 1789053840.2786572,
+    "seen": 1789652502.7005458,
+    "ast_hash": "dd4567a76ab218f1e724bb97710a0995",
+    "semantic_hash": "dd4567a76ab218f1e724bb97710a0995"
+  },
+  "src/touch_pack/touch_pack/kinematic_attacher.py": {
+    "mtime": 1788266611.67881,
+    "seen": 1789652502.7005465,
+    "ast_hash": "831374082d0a4b98b5ed16af2db69611",
+    "semantic_hash": "831374082d0a4b98b5ed16af2db69611"
+  },
+  "src/touch_pack/touch_pack/kinematics.py": {
+    "mtime": 1789395952.067548,
+    "seen": 1789652502.7005477,
+    "ast_hash": "3fe6c942e3bc3f351eb4f5b5617e9532",
+    "semantic_hash": "3fe6c942e3bc3f351eb4f5b5617e9532"
+  },
+  "src/touch_pack/touch_pack/latency_probe.py": {
+    "mtime": 1789054287.5034602,
+    "seen": 1789652502.7005484,
+    "ast_hash": "599503304a34ad58bc36bf2e485c9d6c",
+    "semantic_hash": "599503304a34ad58bc36bf2e485c9d6c"
+  },
+  "src/touch_pack/touch_pack/latency_report.py": {
+    "mtime": 1789050714.3931606,
+    "seen": 1789652502.7005491,
+    "ast_hash": "77df434bdc9976694163615a2ce5ad2c",
+    "semantic_hash": "77df434bdc9976694163615a2ce5ad2c"
+  },
+  "src/touch_pack/touch_pack/lc_filter.py": {
+    "mtime": 1789396405.1539268,
+    "seen": 1789652502.70055,
+    "ast_hash": "f24c53a6f1dc6d939bd4265a083031e4",
+    "semantic_hash": "f24c53a6f1dc6d939bd4265a083031e4"
+  },
+  "src/touch_pack/touch_pack/lc_health_probe.py": {
+    "mtime": 1788266611.67881,
+    "seen": 1789652502.7005508,
+    "ast_hash": "d7cd4282be90fc9fd5380f0b110f1ba0",
+    "semantic_hash": "d7cd4282be90fc9fd5380f0b110f1ba0"
+  },
+  "src/touch_pack/touch_pack/lc_serial.py": {
+    "mtime": 1789396196.7264314,
+    "seen": 1789652502.7005517,
+    "ast_hash": "28c5bc71b5f657565d7bff87b39c4794",
+    "semantic_hash": "28c5bc71b5f657565d7bff87b39c4794"
+  },
+  "src/touch_pack/touch_pack/line_source.py": {
+    "mtime": 1789396123.3822918,
+    "seen": 1789652502.7005527,
+    "ast_hash": "371e1e84f974e9aac9b00d5a37c3983a",
+    "semantic_hash": "371e1e84f974e9aac9b00d5a37c3983a"
+  },
+  "src/touch_pack/touch_pack/manip3d.py": {
+    "mtime": 1788266611.67881,
+    "seen": 1789652502.7005537,
+    "ast_hash": "3686cb551bbafd36f0817ebbb199e786",
+    "semantic_hash": "3686cb551bbafd36f0817ebbb199e786"
+  },
+  "src/touch_pack/touch_pack/mirror_node.py": {
+    "mtime": 1789570000.6248035,
+    "seen": 1789652502.7005546,
+    "ast_hash": "015a842fad45acd7782b069a55e8ebff",
+    "semantic_hash": "015a842fad45acd7782b069a55e8ebff"
+  },
+  "src/touch_pack/touch_pack/palpation_gui.py": {
+    "mtime": 1789570000.6268036,
+    "seen": 1789652502.7005556,
+    "ast_hash": "4021bd30cf2e57145b81d05521a31f03",
+    "semantic_hash": "4021bd30cf2e57145b81d05521a31f03"
+  },
+  "src/touch_pack/touch_pack/palpation_logger.py": {
+    "mtime": 1788877004.3149042,
+    "seen": 1789652502.7005563,
+    "ast_hash": "26a975a71b27fa001d8f4d0982a97d44",
+    "semantic_hash": "26a975a71b27fa001d8f4d0982a97d44"
+  },
+  "src/touch_pack/touch_pack/palpation_report.py": {
+    "mtime": 1789395952.067548,
+    "seen": 1789652502.7005572,
+    "ast_hash": "387fd92509e04685261e3b3f0eb62bac",
+    "semantic_hash": "387fd92509e04685261e3b3f0eb62bac"
+  },
+  "src/touch_pack/touch_pack/plane_probe.py": {
+    "mtime": 1789477241.135034,
+    "seen": 1789652502.7005582,
+    "ast_hash": "9b6f3d4e98e053fa3b7bc0eb9392b6c4",
+    "semantic_hash": "9b6f3d4e98e053fa3b7bc0eb9392b6c4"
+  },
+  "src/touch_pack/touch_pack/real_driver.py": {
+    "mtime": 1789476750.7278023,
+    "seen": 1789652502.700559,
+    "ast_hash": "51d08ddea05823e978a2b41ab90610ba",
+    "semantic_hash": "51d08ddea05823e978a2b41ab90610ba"
+  },
+  "src/touch_pack/touch_pack/real_pose_sync.py": {
+    "mtime": 1789395098.1722577,
+    "seen": 1789652502.7005599,
+    "ast_hash": "fe4e20fed5ee5160327799e954a91ce2",
+    "semantic_hash": "fe4e20fed5ee5160327799e954a91ce2"
+  },
+  "src/touch_pack/touch_pack/sim_force_bridge.py": {
+    "mtime": 1789395074.5681012,
+    "seen": 1789652502.7005606,
+    "ast_hash": "bef2f27cec6bcda100bb2588f2642499",
+    "semantic_hash": "bef2f27cec6bcda100bb2588f2642499"
+  },
+  "src/touch_pack/touch_pack/stiffness.py": {
+    "mtime": 1789396796.446115,
+    "seen": 1789652502.7005618,
+    "ast_hash": "a1eeb5fbdffecac5581747c03e3c8f1d",
+    "semantic_hash": "a1eeb5fbdffecac5581747c03e3c8f1d"
+  },
+  "src/touch_pack/touch_pack/tactile_explorer.py": {
+    "mtime": 1789570369.8893437,
+    "seen": 1789652502.7005627,
+    "ast_hash": "970679192d7c283e6e621d57efc5f9a9",
+    "semantic_hash": "970679192d7c283e6e621d57efc5f9a9"
+  },
+  "src/touch_pack/touch_pack/touch_receiver_node.py": {
+    "mtime": 1789395096.3082292,
+    "seen": 1789652502.7005634,
+    "ast_hash": "b6fa37af951bb9b20c2b8bee7b70ed5d",
+    "semantic_hash": "b6fa37af951bb9b20c2b8bee7b70ed5d"
+  },
+  "src/touch_pack/touch_pack/touch_source.py": {
+    "mtime": 1789497630.316499,
+    "seen": 1789652502.7005641,
+    "ast_hash": "da2fb02fd56416fbd41481dd8b3b39ab",
+    "semantic_hash": "da2fb02fd56416fbd41481dd8b3b39ab"
+  },
+  "src/touch_pack/touch_pack/ui_helpers.py": {
+    "mtime": 1788957526.3210206,
+    "seen": 1789652502.7005653,
+    "ast_hash": "bff75769fe50bb743fe31d67da14e0dd",
+    "semantic_hash": "bff75769fe50bb743fe31d67da14e0dd"
+  },
+  "src/touch_pack/touch_pack/urdf_scene.py": {
+    "mtime": 1788266611.6828098,
+    "seen": 1789652502.700566,
+    "ast_hash": "5b6e9a31315b66655e8eb4e3eb358815",
+    "semantic_hash": "5b6e9a31315b66655e8eb4e3eb358815"
+  },
+  "src/touch_pack/touch_pack/vtk_render.py": {
+    "mtime": 1788266611.6828098,
+    "seen": 1789652502.700567,
+    "ast_hash": "559adb463eafbc65e699aa2400d5924a",
+    "semantic_hash": "559adb463eafbc65e699aa2400d5924a"
+  },
+  "images/WhatsApp Video 2026-07-07 at 20.50.27.mp4": {
+    "mtime": 1789652353.1349776,
+    "seen": 1789652502.7005684,
+    "ast_hash": "08ef4b335fb3f5d0c73b5245389c1cc5",
+    "semantic_hash": "08ef4b335fb3f5d0c73b5245389c1cc5"
+  },
+  "images/tcc_screencast_2026-05-31_17-11-10.webm": {
+    "mtime": 1789652353.2549832,
+    "seen": 1789652502.7005692,
+    "ast_hash": "1ef63c4bef252aff0f9906552b7f151e",
+    "semantic_hash": "1ef63c4bef252aff0f9906552b7f151e"
+  },
+  "images/tcc_screencast_2026-05-31_17-12-03.webm": {
+    "mtime": 1789652353.2629836,
+    "seen": 1789652502.70057,
+    "ast_hash": "785d2d76ece02ef9710340ed44ee28df",
+    "semantic_hash": "785d2d76ece02ef9710340ed44ee28df"
+  },
+  "images/tcc_screencast_2026-05-31_17-14-25.webm": {
+    "mtime": 1789652353.2779844,
+    "seen": 1789652502.7005708,
+    "ast_hash": "37f6bb11ca9577c7ee39c6c3379d6f11",
+    "semantic_hash": "37f6bb11ca9577c7ee39c6c3379d6f11"
+  },
+  "images/tcc_screencast_2026-05-31_17-16-24.webm": {
+    "mtime": 1789652353.292985,
+    "seen": 1789652502.700572,
+    "ast_hash": "4379f550299613de6d033b6f72b540d2",
+    "semantic_hash": "4379f550299613de6d033b6f72b540d2"
+  },
+  "images/tcc_screencast_2026-07-06_10-29-11.webm": {
+    "mtime": 1789652353.3009856,
+    "seen": 1789652502.7005727,
+    "ast_hash": "e2faf1a72130400728f9716de543319a",
+    "semantic_hash": "e2faf1a72130400728f9716de543319a"
+  },
+  "images/tcc_screencast_2026-07-06_10-30-20.webm": {
+    "mtime": 1789652353.3229866,
+    "seen": 1789652502.7005737,
+    "ast_hash": "4212f6dfde494e3c3ac618ab6aa68262",
+    "semantic_hash": "4212f6dfde494e3c3ac618ab6aa68262"
+  },
+  "images/tcc_screencast_2026-07-06_11-26-00.webm": {
+    "mtime": 1789652353.3389874,
+    "seen": 1789652502.7005746,
+    "ast_hash": "7ab8541cdb3671b699395bd05a42b08a",
+    "semantic_hash": "7ab8541cdb3671b699395bd05a42b08a"
+  },
+  "images/tcc_video_2026-07-06_10-53-14.mp4": {
+    "mtime": 1789652353.3519878,
+    "seen": 1789652502.7005758,
+    "ast_hash": "5d52ad97dcb11f53ed3a929ebbbd3b4b",
+    "semantic_hash": "5d52ad97dcb11f53ed3a929ebbbd3b4b"
+  },
+  "images/tcc_video_2026-07-06_10-53-18.mp4": {
+    "mtime": 1789652353.357988,
+    "seen": 1789652502.7005765,
+    "ast_hash": "3cd6186fd8826726ef34322e39caa0fa",
+    "semantic_hash": "3cd6186fd8826726ef34322e39caa0fa"
+  },
+  "images/tcc_video_visao_geral.mp4": {
+    "mtime": 1789652353.3889897,
+    "seen": 1789652502.7005775,
+    "ast_hash": "2b28777da486cd7ef4c6016693879a51",
+    "semantic_hash": "2b28777da486cd7ef4c6016693879a51"
+  }
+}

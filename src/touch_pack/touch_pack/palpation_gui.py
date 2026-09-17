@@ -27,6 +27,7 @@ Comunicação ROS:
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import logging
 import math
@@ -482,7 +483,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # SLIDING (distance/speed) e CALIBRATING; fases sem duração fixa
         # explorer).
         self._phase_t_start: float = time.time()
-        self._latest_speed_mms: float = SPEED_DEFAULT
 
         # Mão COVVI (lazy)
         self._hand_proc: subprocess.Popen | None = None
@@ -716,7 +716,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         else:
             self._touch_rows, self._touch_cols, self._touch_has_total = 5, 5, False
         self._touch_taxels = self._touch_rows * self._touch_cols
-        self._sensor_kind = _sensor
         # Qual CÉLULA está no cabo. Mesmo argumento que o launch usa para
         # escolher o receiver, repassado para cá — a GUI não tem como
         # descobrir sozinha qual nó subiu, e adivinhar pelos tópicos daria uma
@@ -1022,6 +1021,22 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         self._build_statusbar()
 
     # Header: título + barra de conexões + E-STOP
+    @contextlib.contextmanager
+    def _suppress(self):
+        """Silencia os callbacks de widget enquanto a GUI escreve neles.
+
+        Mexer num slider por código dispara o mesmo callback que o operador
+        dispararia com o mouse; sem o silêncio, atualizar a tela a partir do
+        estado do robô reenvia esse estado como se fosse comando novo.
+        O `finally` é o que importa: uma exceção no meio da atualização
+        deixava a GUI surda para sempre.
+        """
+        self._suppressing = True
+        try:
+            yield
+        finally:
+            self._suppressing = False
+
     def _build_header(self):
         """Header compacto em 2 linhas: título/E-STOP e uma barra única de
         conexões com os grupos inline (separados por divisores sutis)."""
@@ -1200,7 +1215,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # elas o painel da célula (20 Hz) e o de status (10 Hz) repintavam
         # dezenas de widgets por tick com a aba escondida.
         self._palp_tab_frame = tab_palp
-        self._man_tab_frame = tab_man
         self._lc_tab_frame = tab_lc
         # Manipulação 3D: layout próprio (a viewport precisa da altura toda —
         # nada de _scrollable, que fixaria a altura do conteúdo).
@@ -2206,8 +2220,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             _phase = self._latest_phase
         if _phase not in ('IDLE', 'DONE', 'ABORTED'):
             return
-        self._suppressing = True
-        try:
+        with self._suppress():
             positions_deg: list[float] = []
             for j in ARM_JOINTS:
                 lo, hi = ARM_LIMITS_DEG[j]
@@ -2216,8 +2229,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                     return
                 positions_deg.append(v)
             duration_s = self._move_duration_seconds()
-        finally:
-            self._suppressing = False
         positions_rad = [_math.radians(d) for d in positions_deg]
         msg = JointTrajectory()
         # stamp=zero → controller starts the trajectory immediately,
@@ -2538,12 +2549,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
 
     def _apply_arm_home(self):
         """Move o braço para a Home customizada do usuário."""
-        self._suppressing = True
-        try:
+        with self._suppress():
             for j in ARM_JOINTS:
                 self.arm_sliders[j].set(self._arm_home_deg[j])
-        finally:
-            self._suppressing = False
         self._publish_arm_from_sliders()
 
     def _solve_tcp_perpendicular(self):
@@ -2601,12 +2609,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         q4, q5 = min(feasible,
                      key=lambda s: abs(s[0] - q[3]) + abs(s[1] - q[4]))
 
-        self._suppressing = True
-        try:
+        with self._suppress():
             self.arm_sliders['joint4'].set(round(_math.degrees(q4), 2))
             self.arm_sliders['joint5'].set(round(_math.degrees(q5), 2))
-        finally:
-            self._suppressing = False
         self._publish_arm_from_sliders()
         self._set_status(
             f'TCP ⊥ table: joint4={_math.degrees(q4):+.1f}° / '
@@ -2690,14 +2695,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             for i, j in enumerate(ARM_JOINTS)
         }
         # Atualiza sliders (suprime o callback de publish).
-        self._suppressing = True
-        try:
+        with self._suppress():
             for j in ARM_JOINTS:
                 lo, hi = ARM_LIMITS_DEG[j]
                 clamped = max(lo, min(hi, new_home[j]))
                 self.arm_sliders[j].set(clamped)
-        finally:
-            self._suppressing = False
         # Persiste em home_pose.json.
         try:
             os.makedirs(os.path.dirname(HOME_POSE_FILE), exist_ok=True)
@@ -2930,14 +2932,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         """Atualiza os sliders do braço com posições em rad durante o drag."""
         if not self._drag_enabled:
             return
-        self._suppressing = True
-        try:
+        with self._suppress():
             for i, j in enumerate(ARM_JOINTS):
                 lo, hi = ARM_LIMITS_DEG[j]
                 deg = _math.degrees(float(q_rad[i]))
                 self.arm_sliders[j].set(max(lo, min(hi, deg)))
-        finally:
-            self._suppressing = False
 
     def _sync_sliders_from_drag(self) -> None:
         """Congela os sliders na posição final do drag e publica para o Gazebo."""
@@ -2946,14 +2945,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             q_rad = self._latest_joint_rad
         if q_rad is None:
             return
-        self._suppressing = True
-        try:
+        with self._suppress():
             for i, j in enumerate(ARM_JOINTS):
                 lo, hi = ARM_LIMITS_DEG[j]
                 deg = _math.degrees(float(q_rad[i]))
                 self.arm_sliders[j].set(max(lo, min(hi, deg)))
-        finally:
-            self._suppressing = False
         self._publish_arm_from_sliders()
 
 
@@ -3572,8 +3568,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             self._latest_cycle = int(msg.cycle)
             self._latest_cycles_total = int(msg.cycles_total)
             self._paused = bool(msg.paused)
-            if msg.speed_mms > 0.0:
-                self._latest_speed_mms = float(msg.speed_mms)
             wp = int(getattr(msg, 'wp_index', 0) or 0)
             hk = bool(getattr(msg, 'home_known', False))
         if ended:
@@ -3986,8 +3980,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Satura cada parâmetro ao seu intervalo válido antes de enviar,
         # tanto para a publicação quanto para o que o usuário vê nos
         # spinboxes/sliders.
-        self._suppressing = True
-        try:
+        with self._suppress():
             speed      = self._clamp_var(self.speed_var, SPEED_MIN, SPEED_MAX)
             depth      = self._clamp_var(self.depth_var, DEPTH_MIN, DEPTH_MAX)
             force_sp   = self._clamp_var(self.force_sp_var,
@@ -4062,8 +4055,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             align_tilt    = self._clamp_var(
                 self.align_tilt_var, 1.0, PROBE_ALIGN_TILT_HARD_MAX_DEG,
                 default=PROBE_ALIGN_TILT_MAX_DEG_DEFAULT)
-        finally:
-            self._suppressing = False
         # `is None` um a um, e não `None in (…)`: a tupla esconde a checagem
         # de qualquer análise estática, e as ~55 conversões `float(...)` daqui
         # até o fim do método passavam a ser lidas como `float(float | None)`.
@@ -4205,11 +4196,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             # curso antes de tocar e todo waypoint aborta por 'no_contact'.
             if depth is not None and float(depth) < float(matrix_safe_z) * 1.5:
                 depth = min(DEPTH_MAX, float(matrix_safe_z) * 1.5)
-                self._suppressing = True
-                try:
+                with self._suppress():
                     self.depth_var.set(depth)
-                finally:
-                    self._suppressing = False
                 self.get_logger().info(
                     f'[MATRIX] Max Descent Depth elevado para {depth:.1f} mm '
                     f'(1,5 × Safe Z) — o curso precisa cobrir a descida '
@@ -4310,11 +4298,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 self._real_driver._send_dash('SpeedFactor(10)')
                 self.get_logger().info('[PALP] SpeedFactor(10) aplicado para palpação')
                 # Sincroniza o slider para que a GUI reflita o valor real.
-                self._suppressing = True
-                try:
+                with self._suppress():
                     self.speed_factor_var.set(10)
-                finally:
-                    self._suppressing = False
             except CR10RealDriverError as exc:
                 self.get_logger().warning(f'SpeedFactor(10) falhou: {exc}')
 

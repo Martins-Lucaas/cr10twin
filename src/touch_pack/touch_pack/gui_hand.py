@@ -72,8 +72,7 @@ class HandMixin:
         # No modo touch_tool a coluna da mão não é construída (sem sliders).
         if not getattr(self, 'hand_sliders', None):
             return
-        self._suppressing = True
-        try:
+        with self._suppress():
             primary_deg: dict[str, float] = {}
             primary_rad: dict[str, float] = {}
             for j in HAND_JOINTS:
@@ -84,8 +83,6 @@ class HandMixin:
                 primary_deg[j] = float(v)
                 primary_rad[j] = _math.radians(v)
             duration_s = self._move_duration_seconds()
-        finally:
-            self._suppressing = False
         # Versão B (mirror real→sim): quando a telemetria DigitPosnAll está
         # chegando, a mão simulada segue a POSIÇÃO MEDIDA da mão real (em
         # _on_real_hand_posn) — assim o sim acompanha a velocidade física.
@@ -269,12 +266,9 @@ class HandMixin:
         """Aplica um preset de mão (Abrir/Apontar/Fechar)."""
         if not getattr(self, 'hand_sliders', None):
             return   # modo touch_tool — sem painel da mão
-        self._suppressing = True
-        try:
+        with self._suppress():
             for j in HAND_JOINTS:
                 self.hand_sliders[j].set(preset_deg.get(j, 0))
-        finally:
-            self._suppressing = False
         self._publish_hand_from_sliders()
         if eci_grip_id is not None:
             self._send_eci_grip(eci_grip_id)
