@@ -164,6 +164,8 @@ from .gui_poses import PosesMixin
 from .gui_robot import RobotMixin, SERVOJ_DEADBAND_RAD  # noqa: F401
 from .gui_hand import HandMixin
 from .gui_manip3d_tab import Manip3DTabMixin
+from .gui_manual_extras import ManualExtrasMixin
+from .gui_trajectory import TrajRecMixin
 from .gui_camera import CameraMixin
 from .gui_constants import (
     MATRIX_STEP_DEFAULT, MATRIX_N_DEFAULT, MATRIX_SHAPES,
@@ -368,6 +370,7 @@ HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
 
 # Nó ROS + GUI
 class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
+                   ManualExtrasMixin, TrajRecMixin,
                    MatrixMixin, CameraMixin, Manip3DTabMixin, HandMixin,
                    Node):
     # A classe nasceu com 234 métodos num arquivo só, e achar código nela
@@ -496,6 +499,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             'eci_prefix', '/covvi/hand').value or '/covvi/hand')
         self._param_robot_ip   = self.declare_parameter('robot_ip',   '').value
         self._param_robot_mode = self.declare_parameter('robot_mode', '').value
+        # Carga na flange e a altura do centro de massa dela. Entram no
+        # `SetPayload` do controlador, que é o que calibra a detecção de
+        # colisão e a estimativa de TCPForce do feedback — com a carga errada,
+        # as duas ficam erradas. O default de 0,5 kg é a mão COVVI; a pilha de
+        # palpação tem outra massa e OUTRA altura de CoG, e o número certo se
+        # obtém pesando a ferramenta (a própria célula de carga serve).
+        self._param_payload_kg = float(self.declare_parameter(
+            'payload_kg', 0.5).value or 0.5)
+        self._param_payload_cog_z_mm = float(self.declare_parameter(
+            'payload_cog_z_mm', 50.0).value or 50.0)
         # Período do ServoJ. Com a GUI aberta é o poll loop DELA que comanda o
         # braço real (conexão única ao CR10), então este número é o que governa
         # a taxa do braço — e o teto de frequência da onda trigonométrica
@@ -1997,6 +2010,12 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                    font=FONT_LBL, relief='flat', bd=0, padx=14, pady=6,
                    cursor='hand2'
                    ).pack(side='left', fill='x', expand=True, padx=(4, 0))
+
+        # Jog cartesiano, calibração de TCP e freios — o que o DobotStudio
+        # Pro tem no painel de controle e aqui só existia como slider.
+        extras = tk.Frame(col_arm, bg=BG)
+        extras.pack(fill='x', pady=(10, 0))
+        self._build_manual_extras(extras)
 
         # Coluna direita: adapta ao efetuador final
         #   hand       → controle da mão COVVI (sliders + presets + grips)

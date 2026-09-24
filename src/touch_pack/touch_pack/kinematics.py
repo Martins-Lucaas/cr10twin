@@ -83,6 +83,33 @@ T_TOUCH_TOOL_ATTACH = np.array([
     [0.0,  0.0,  0.0,  1.0000],
 ], dtype=float)
 
+# Comprimento de CAD, guardado ANTES de a calibração entrar: é contra ele que
+# `tcp_calib.check_fit` decide se o número medido é ferramenta real ou captura
+# ruim.
+TOUCH_TOOL_CAD_MM = round(float(T_TOUCH_TOOL_ATTACH[2, 3]) * 1e3, 2)
+
+
+def _apply_tcp_calib() -> float | None:
+    """Substitui a translação de CAD pela medida, se houver calibração.
+
+    Corrigir AQUI, no import, e não em quem usa: `manip3d` amarra
+    `T_TOUCH_TOOL_ATTACH` como valor padrão de argumento em `ik_step` e
+    companhia, que são ligados na definição da função. Qualquer correção
+    aplicada depois passaria ao largo da IK do arrasto 3D e do jog cartesiano
+    — e a calibração valeria em alguns caminhos e não em outros, que é pior
+    que não ter calibração. Mexendo na matriz in-place, todo mundo que já
+    importou segue vendo o mesmo objeto.
+    """
+    from .tcp_calib import load_offset_mm
+    off = load_offset_mm()
+    if off is None:
+        return None
+    T_TOUCH_TOOL_ATTACH[:3, 3] = [v * 1e-3 for v in off]
+    return round(float(np.linalg.norm(T_TOUCH_TOOL_ATTACH[:3, 3])) * 1e3, 2)
+
+
+TOUCH_TOOL_CALIB_MM = _apply_tcp_calib()
+
 # Limites articulares — convenção URDF (rad). Joints 2 e 4 têm offset de
 # -π/2 em relação à convenção DH; os limites físicos são mapeados de ±170°
 # (DH) → [-260°, +80°] (URDF).

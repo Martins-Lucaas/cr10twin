@@ -140,6 +140,8 @@ ros2 launch touch_pack tactile_cell.launch.py control_mode:=mirror no_gui:=true
 | `robot_ip` | `192.168.5.2` | IP of the real CR10 controller |
 | `no_gui` | `false` | `true` = no Tkinter (uses `mirror_node` in MIRROR) |
 | `force_sensor` | `load_cell` | `load_cell` (axial 100 kg on the XIAO+HX711 — **the cell on the bench**) · `ft6` (FA7155 6-axis over RS485) |
+| `payload_kg` | `0.5` | Mass of the tool on the flange → `SetPayload`. **Weigh yours** — the default is the COVVI hand, the palpation stack is another number |
+| `payload_cog_z_mm` | `50.0` | Height of the tool's centre of mass above the flange (x/y eccentricity is ~0 on a symmetric stack) |
 | `lc_port` | *(empty)* | USB port of the XIAO (`/dev/ttyACM0`). Empty = auto-detect by the Espressif VID |
 | `ft_port` | *(empty)* | Port of the USB↔RS485 converter (`COM5`, `/dev/ttyUSB0`). Empty = auto-detect by VID |
 
@@ -164,6 +166,49 @@ A notebook with 6 tabs: **Palpation** (`Palpação`) · **Manual Control** (`Con
 - 6 CR10 arm sliders + (in `hand` mode) 6 COVVI hand sliders.
 - Open / Point / Close presets · SpeedFactor (%) · trajectory duration.
 - Home button and custom-Home saving · load-cell mini panel.
+- **Cartesian jog** — X/Y/Z ± with a fixed step (0.1 / 1 / 10 mm) in the
+  **Tool** or **Base** frame. The sliders move joints; approaching a phantom
+  wants "descend 0.1 mm along the tip axis", which is what this does. The
+  wrist holds the current TCP attitude (the point moves, the pose does not),
+  and a step that would cross a joint limit is refused whole rather than
+  published clipped. It goes out on the same JTC path as the 3D drag, so it
+  works identically in SIM_ONLY and, in MIRROR, reaches the arm as `MovJ`.
+- **TCP calibration** (4-point pivot) and **per-joint brakes** — see below.
+
+#### TCP calibration — 4-point pivot
+
+`kinematics.T_TOUCH_TOOL_ATTACH` comes from CAD. The printed part does not:
+thread slack, a tip that bent, a cell remounted half a millimetre off. That
+error lands straight in the IK and, during SLIDE, as a spurious force
+component — the tip slides along an axis that is not the one the log names.
+
+Touch the **same physical point** with the tip in **4 different wrist
+orientations**, capturing each one; `tcp_calib.solve_pivot` least-squares the
+real flange→tip offset out of them and writes
+`~/.config/touch_pack/tcp_calib.json`. The fit is **refused** if the RMS
+residual exceeds 2 mm (the tip slipped off the point in some capture) or if
+the measured length departs from CAD by more than 30 mm (the captures were not
+the same point). **Restart the GUI** for a new calibration to take effect: the
+correction is applied when `kinematics` is imported, because `manip3d` binds
+`T_TOUCH_TOOL_ATTACH` as a default argument — correcting it later would give
+the IK of the 3D drag the old value and the package two TCPs at once.
+
+The same number is written to the controller as `SetTool(1,…)` + `Tool(1)` on
+connect, so `MovL`/`RelMovL*` use the TCP the IK uses. With no calibration
+saved, the controller's own `Tool()` is left untouched — swapping one wrong
+TCP for another is worse than keeping the factory one.
+
+> DobotStudio Pro measures position **and** orientation (6-point TCP+ZX). Here
+> only the position is measured: the tip is symmetric about the flange z, so
+> the tool axis already is the flange axis.
+
+#### Joint brakes
+
+`BrakeControl(axis,value)` per joint, **with the arm disabled** (the controller
+returns `-1` otherwise, and the GUI says so instead of failing silently). This
+is what gets the tool out when the arm stops in alarm with the tip resting on
+the phantom. Hold the joint before releasing its brake — it drops under its
+own weight.
 
 <p align="center">
   <img src="../../images/touch_pack_gui_manual_gazebo.png" width="92%" alt="Manual Control tab side by side with Gazebo — CR10 joint sliders and load-cell reading"/>
@@ -202,6 +247,14 @@ convincing zeros (nobody publishes `/ft_sensor/wrench`) and read as a dead cell.
 - **Capture a pose** from the real robot (feedback port) or from Gazebo (`/joint_states`).
 - **Drag Teach**: releases the real arm (`DragTeachSwitch`); Gazebo mirrors the manual motion at 33 Hz; drag is detected automatically from joint movement.
 - **Motions**: sequences of N poses + a velocity → interpolated in Gazebo and paced as `MovJ` on the real arm (MIRROR).
+- **Record drag as a Motion**: with the arm released by Drag Teach, press
+  Record and move it by hand — every pose that moves a joint by ≥2° is kept as
+  a waypoint (sampled at 5 Hz, capped at 300 waypoints), and on Stop they
+  become a named Motion. Playback is the Run that already existed, with its
+  own speed. These are **waypoints, not a continuous trace**: between two of
+  them what holds is the interpolator, not the exact curve your hand drew
+  (`TRAJ_TOL_DEG` is the knob). In exchange there is no second playback engine
+  and the recording is editable pose by pose like any other.
 - Persisted in `~/.config/touch_pack/poses.json`.
 
 ### Sensors tab
@@ -571,6 +624,38 @@ In MIRROR, the commands published on `/cr10_group_controller/joint_trajectory` r
 - **No GUI** (`no_gui:=true`): `mirror_node` reproduces the core of that behavior.
 
 The real arm's velocity is set by `SpeedFactor(%)` — synchronized with the GUI slider (forced to 10 % during palpation for safety).
+
+### What is pushed to the controller on connect
+
+DobotStudio Pro keeps these in the controller and **TCP/IP mode does not
+inherit them**, so `enable()` sends them explicitly (`apply_runtime_config`).
+None is fatal: a firmware without one answers an error, it lands in the log as
+a warning and the arm stays usable.
+
+| Command | What it is for |
+|---|---|
+| `SetPayload(kg,x,y,z)` | Mass + eccentric CoG of the tool. Feeds collision detection **and** the `TCPForce` the arm itself publishes on the feedback port — wrong here, wrong in both. Set it with `payload_kg` / `payload_cog_z_mm` |
+| `SetBackDistance(mm)` | How far the arm backs off along the previous trajectory after a collision (0–50 mm) |
+| `SetPostCollisionMode(n)` | `0` = stop, `1` = pause. Default here is **pause**: the tip stops *resting* and the operator decides, instead of the run dying mid-touch |
+| `AccJ` / `AccL` / `CP` | Joint and linear acceleration ratios, and the continuous-path radius |
+| `SetTool(1,…)` + `Tool(1)` | The calibrated TCP, when `tcp_calib.json` exists (see the Manual Control tab) |
+
+Two limits of the remote protocol, both documented in the *TCP/IP Remote
+Control Interface Guide V4.5.1*:
+
+- `SetPostCollisionMode` only accepts **stop** and **pause**. DobotStudio Pro's
+  "enter drag mode" and "enter fallback mode" have **no remote command** — set
+  them in the vendor GUI if you want them.
+- **Jerk** (DobotStudio Pro's *Playback Setting*) is not exposed by TCP/IP at
+  all. Only the vendor GUI can change it.
+
+Command return codes are decoded before they reach the log or the screen
+(`real_driver.DASH_ERROR_TEXT`): `MovJ failed: code=-2` now reads *"arm in
+ALARM — clear the alarm and resend"*. This is the **command** ErrorID table,
+not the controller's alarm catalogue — `GetErrorID()` returns the alarm
+collections, and decoding those needs `alarm_controller.json` from the
+controller itself, which does not ship with the documentation, so those ids
+are shown raw.
 
 <p align="center">
   <img src="../../images/fig_modos_sim_real.svg" width="88%" alt="Diagram of the two directions of the bridge: Sim-to-Real where the simulator commands, and Real-to-Sim where the hardware commands"/>

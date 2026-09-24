@@ -476,6 +476,19 @@ def launch_setup(context, *args, **kwargs):
     servoj_period_s = min(max(servoj_period_s, SERVOJ_T_MIN_S),
                           _SERVOJ_PERIOD_DEFAULT_S)
 
+    # Carga na flange. Não é preferência: o controlador usa este número na
+    # detecção de colisão e na estimativa de TCPForce, e um valor irreal
+    # aparece como colisão fantasma ou como colisão que não dispara.
+    try:
+        payload_kg = float(LaunchConfiguration('payload_kg').perform(context))
+    except ValueError:
+        payload_kg = 0.5
+    try:
+        payload_cog_z_mm = float(
+            LaunchConfiguration('payload_cog_z_mm').perform(context))
+    except ValueError:
+        payload_cog_z_mm = 50.0
+
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
     pkg_touch  = get_package_share_directory('touch_pack')
@@ -543,6 +556,11 @@ def launch_setup(context, *args, **kwargs):
                      'robot_mode':   robot_mode,
                      # Gate do modo Palpação: só liberado com end_effector=touch_tool.
                      'end_effector': end_effector,
+                     # Carga na flange → SetPayload no controlador. PESE a
+                     # ferramenta montada: é disto que dependem a detecção de
+                     # colisão e o TCPForce que o braço publica.
+                     'payload_kg': payload_kg,
+                     'payload_cog_z_mm': payload_cog_z_mm,
                      # Grade do sensor de toque (4×4 | 5×5).
                      'sensor':       sensor,
                      # Qual célula está no cabo. A GUI monta a aba "Load
@@ -757,5 +775,19 @@ def generate_launch_description():
                         'a GUI e o mirror_node JUNTOS — publicar a onda mais '
                         'rápido do que o braço é comandado não entrega mais '
                         'onda, entrega uma reamostrada.'),
+        DeclareLaunchArgument(
+            'payload_kg', default_value='0.5',
+            description='Massa da ferramenta montada na flange, em kg → '
+                        'SetPayload no controlador. O default de 0,5 é a mão '
+                        'COVVI; a pilha de palpação (acoplador + célula + '
+                        'ponteira) tem outra massa. PESE a sua — a própria '
+                        'célula de carga serve — porque é deste número que '
+                        'dependem a detecção de colisão e o TCPForce '
+                        'publicado no feedback.'),
+        DeclareLaunchArgument(
+            'payload_cog_z_mm', default_value='50.0',
+            description='Altura do centro de massa da ferramenta acima da '
+                        'flange, em mm (a excentricidade x/y é ~0 numa pilha '
+                        'simétrica). Entra junto com payload_kg.'),
         OpaqueFunction(function=launch_setup),
     ])

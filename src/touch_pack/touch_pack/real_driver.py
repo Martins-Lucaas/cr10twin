@@ -94,8 +94,24 @@ class CR10RealDriverConfig:
     servoj_recv_timeout_s: float = 0.008  # ServoJ: desiste da leitura em 8 ms
     speed_factor: int = 10           # 10% — responsivo para mirror slider
     collision_level: int = 3         # 0 = off; 3 = padrão CR
+    # Distância de recuo após colisão (mm, [0,50]) e o que fazer em seguida.
+    # SetPostCollisionMode só aceita 0=stop e 1=pause pelo TCP/IP; os modos
+    # "entra em drag" e "fallback" do DobotStudio Pro não têm comando remoto.
+    # 1 (pause) é o certo para palpação: a ponta para ENCOSTADA e o operador
+    # decide, em vez de o projeto morrer no meio de um toque.
+    collision_backoff_mm: float = 10.0
+    post_collision_mode: int = 1
     payload_kg: float = 0.5          # mão COVVI ≈ 0.5 kg
     payload_cog_m: tuple = (0.0, 0.0, 0.05)
+    # Razões de aceleração (%) de junta e linear, e o raio de continuous path.
+    # O jerk, que o DobotStudio Pro expõe em Playback Setting, NÃO tem comando
+    # no TCP/IP V4.5.1 — só pela GUI do fabricante.
+    acc_j: int = 100
+    acc_l: int = 100
+    cp_ratio: int = 0                # 0 = para em cada ponto (padrão)
+    # Índice do sistema de coordenadas de ferramenta escrito com o resultado
+    # da calibração de pivô (tcp_calib). 0 é o flange e não pode ser alterado.
+    tool_index: int = 1
     servoj_period_s: float = 0.030   # 33 Hz recomendado
     servoj_lookahead: int = 20       # [20,100]; 20 = resposta imediata (era 50)
     servoj_gain: int = 500           # [200, 1000]
@@ -109,6 +125,48 @@ class CR10RealDriverConfig:
 # frequência de modulação FISICAMENTE rastreável é 1/(0,02·8) = 6,25 Hz.
 SERVOJ_T_MIN_S = 0.020
 SERVOJ_T_MAX_S = 3600.0
+
+
+# ErrorID de RETORNO de comando ("Dobot TCP/IP Remote Control Interface Guide
+# V4.5.1", §5 Error Code). É o número que vem na primeira posição de toda
+# resposta do dashboard — o que hoje aparecia cru em "MovJ falhou: code=-2".
+# Não confundir com o GetErrorID(), que devolve as coleções de ALARME do
+# controlador/servo (essas precisam do alarm_controller.json do controlador,
+# que não acompanha a documentação: ver README).
+DASH_ERROR_TEXT = {
+    0: 'sem erro',
+    -1: 'comando recebido mas falhou ao executar',
+    -2: 'braço em ALARME — limpe o alarme (ClearError) e reenvie',
+    -3: 'braço em PARADA DE EMERGÊNCIA — solte a chave, limpe o alarme',
+    -4: 'braço SEM POTÊNCIA — ligue (PowerOn)',
+    -5: 'script rodando/pausado — pare o script primeiro',
+    -10000: 'comando inexistente',
+    -20000: 'número de parâmetros errado',
+    -30001: 'tipo do 1º parâmetro errado',
+    -30002: 'tipo do 2º parâmetro errado',
+    -40001: '1º parâmetro fora da faixa',
+    -40002: '2º parâmetro fora da faixa',
+    -50001: 'tipo do 1º parâmetro opcional errado',
+    -50002: 'tipo do 2º parâmetro opcional errado',
+    -60001: '1º parâmetro opcional fora da faixa',
+    -60002: '2º parâmetro opcional fora da faixa',
+}
+
+
+def dash_error_text(resp: str) -> str:
+    """Resposta crua do dashboard → 'code=-2 (braço em ALARME — …)'.
+
+    Devolve a descrição quando o código é conhecido e o código sozinho quando
+    não é: inventar texto para um número não documentado seria pior que o
+    número cru.
+    """
+    code_txt = (resp or '').split(',')[0].strip()
+    try:
+        code = int(code_txt)
+    except ValueError:
+        return f'code={code_txt or "?"}'
+    texto = DASH_ERROR_TEXT.get(code)
+    return f'code={code}' + (f' ({texto})' if texto else '')
 
 
 class CR10RealDriverError(RuntimeError):
@@ -591,10 +649,92 @@ class CR10RealDriver:
         log.info('[DASH] SpeedFactor → %s', resp)
         resp = self._send_dash(f'SetCollisionLevel({self.cfg.collision_level})')
         log.info('[DASH] SetCollisionLevel → %s', resp)
+        self.apply_runtime_config()
         self._enabled = True
         log.info('CR10 habilitado em %s (SpeedFactor=%d, Coll=%d, Payload=%.2fkg)',
                  self.cfg.ip, self.cfg.speed_factor, self.cfg.collision_level,
                  self.cfg.payload_kg)
+
+    def apply_runtime_config(self) -> None:
+        """Carga, tratamento pós-colisão, acelerações e TCP calibrado.
+
+        Tudo que o DobotStudio Pro guarda no controlador e que o modo TCP/IP
+        não herda automaticamente. Nenhum destes comandos é fatal: um firmware
+        sem algum deles responde erro e o braço continua utilizável, então
+        falha vira warning em vez de exceção.
+        """
+        cx, cy, cz = (v * 1000.0 for v in self.cfg.payload_cog_m)
+        cmds = [
+            # A carga entra na detecção de colisão e na estimativa de TCPForce
+            # que o próprio braço publica no feedback — com ela errada, as
+            # duas ficam erradas junto.
+            f'SetPayload({self.cfg.payload_kg:.3f},{cx:.1f},{cy:.1f},{cz:.1f})',
+            f'SetBackDistance({self.cfg.collision_backoff_mm:.1f})',
+            f'SetPostCollisionMode({self.cfg.post_collision_mode})',
+            f'AccJ({self.cfg.acc_j})',
+            f'AccL({self.cfg.acc_l})',
+            f'CP({self.cfg.cp_ratio})',
+        ]
+        for cmd in cmds:
+            try:
+                resp = self._send_dash(cmd)
+            except CR10RealDriverError as exc:
+                log.warning('[DASH] %s não enviado: %s', cmd.split('(')[0], exc)
+                continue
+            if resp and not resp.startswith('0'):
+                log.warning('[DASH] %s → %s', cmd, dash_error_text(resp))
+            else:
+                log.info('[DASH] %s → %s', cmd, resp)
+        self.apply_tool_offset()
+
+    def apply_tool_offset(self) -> None:
+        """Escreve o TCP calibrado no Tool(index) do controlador e o seleciona.
+
+        Só afeta MovL/RelMovL*/leitura de pose do CONTROLADOR — a IK do pacote
+        usa o mesmo número por outro caminho (kinematics.T_TOUCH_TOOL_ATTACH,
+        que o tcp_calib também corrige). Sem calibração salva não faz nada:
+        mexer no Tool do controlador sem ter medido seria trocar um número
+        errado por outro.
+        """
+        from .tcp_calib import load_offset_mm
+        off = load_offset_mm()
+        if off is None:
+            log.info('[DASH] sem tcp_calib.json — Tool() do controlador intacto')
+            return
+        x, y, z = off
+        idx = self.cfg.tool_index
+        # type=1 grava globalmente: o valor sobrevive à saída do modo TCP/IP,
+        # que é o que se espera de uma calibração de ferramenta.
+        for cmd in (f'SetTool({idx},{{{x:.3f},{y:.3f},{z:.3f},0,0,0}},1)',
+                    f'Tool({idx})'):
+            try:
+                resp = self._send_dash(cmd)
+            except CR10RealDriverError as exc:
+                log.warning('[DASH] %s não enviado: %s', cmd.split('(')[0], exc)
+                return
+            if resp and not resp.startswith('0'):
+                log.warning('[DASH] %s → %s', cmd, dash_error_text(resp))
+                return
+        log.info('[DASH] TCP calibrado (%.2f, %.2f, %.2f) mm → Tool(%d)',
+                 x, y, z, idx)
+
+    def brake(self, axis_id: int, released: bool) -> None:
+        """Solta (True) ou trava (False) o freio de UMA junta.
+
+        BrakeControl(axisID,value): value=1 solta o freio e a junta pode ser
+        arrastada à mão. Só funciona com o braço DESABILITADO — o controlador
+        devolve -1 caso contrário. Segure a junta antes de soltar: ela cai
+        pelo próprio peso.
+        """
+        if not 1 <= int(axis_id) <= 6:
+            raise ValueError(f'axis_id fora de [1,6]: {axis_id}')
+        resp = self._send_dash(f'BrakeControl({int(axis_id)},{1 if released else 0})')
+        if resp and not resp.startswith('0'):
+            raise CR10RealDriverError(
+                f'BrakeControl(J{axis_id}) falhou: {dash_error_text(resp)} — '
+                f'o braço precisa estar DESABILITADO para mexer nos freios.')
+        log.info('[DASH] BrakeControl(J%d, %s) → %s',
+                 axis_id, 'solto' if released else 'travado', resp)
 
     def prepare_servoj(self) -> None:
         """Reinicia estado interno antes de iniciar o streaming ServoJ."""
@@ -746,11 +886,11 @@ class CR10RealDriver:
         resp = self._send_motion(cmd)
         log.debug('[MOVE] MovJ(joint) resp: %s', resp)
         if resp and not resp.startswith('0'):
-            code = resp.split(',')[0].strip()
+            code = dash_error_text(resp)
             err_id = self.get_error_id() or ''
-            log.warning('[MOVE] MovJ(joint) falhou (code=%s, GetErrorID=%s) cmd=%s',
+            log.warning('[MOVE] MovJ(joint) falhou (%s, GetErrorID=%s) cmd=%s',
                         code, err_id.strip(), cmd)
-            raise CR10RealDriverError(f'MovJ falhou: code={code}, GetErrorID={err_id.strip()}')
+            raise CR10RealDriverError(f'MovJ falhou: {code}, GetErrorID={err_id.strip()}')
 
     def mov_j_cartesian(self, x: float, y: float, z: float,
                          rx: float, ry: float, rz: float) -> None:
@@ -761,7 +901,7 @@ class CR10RealDriver:
         cmd = f'MovJ(pose={{{x:.3f},{y:.3f},{z:.3f},{rx:.3f},{ry:.3f},{rz:.3f}}})'
         resp = self._send_motion(cmd)
         if resp and not resp.startswith('0'):
-            log.warning('[MOVE] MovJ(pose) erro: %s', resp.split(',')[0].strip())
+            log.warning('[MOVE] MovJ(pose) erro: %s', dash_error_text(resp))
 
     def mov_l_cartesian(self, x: float, y: float, z: float,
                          rx: float, ry: float, rz: float) -> None:
@@ -769,7 +909,7 @@ class CR10RealDriver:
         cmd = f'MovL(pose={{{x:.3f},{y:.3f},{z:.3f},{rx:.3f},{ry:.3f},{rz:.3f}}})'
         resp = self._send_motion(cmd)
         if resp and not resp.startswith('0'):
-            log.warning('[MOVE] MovL(pose) erro: %s', resp.split(',')[0].strip())
+            log.warning('[MOVE] MovL(pose) erro: %s', dash_error_text(resp))
 
     def rel_movl_user(self, dx: float, dy: float, dz: float,
                        drx: float = 0.0, dry: float = 0.0,
@@ -778,7 +918,7 @@ class CR10RealDriver:
         cmd = f'RelMovLUser({dx:.3f},{dy:.3f},{dz:.3f},{drx:.3f},{dry:.3f},{drz:.3f})'
         resp = self._send_motion(cmd)
         if resp and not resp.startswith('0'):
-            log.warning('[MOVE] RelMovLUser erro: %s', resp.split(',')[0].strip())
+            log.warning('[MOVE] RelMovLUser erro: %s', dash_error_text(resp))
 
     def halt(self) -> None:
         """Halt() — pausa o movimento atual sem desabilitar o robô."""

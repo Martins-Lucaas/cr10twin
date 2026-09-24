@@ -398,6 +398,15 @@ class RobotMixin:
             drv.close()
         except Exception as exc:
             log.debug('[ROBOT] close() do driver parcial falhou: %s', exc)
+    def _payload_cfg(self) -> dict:
+        """Carga da ferramenta montada, no formato do CR10RealDriverConfig."""
+        return {
+            'payload_kg': getattr(self, '_param_payload_kg', 0.5),
+            'payload_cog_m': (
+                0.0, 0.0,
+                getattr(self, '_param_payload_cog_z_mm', 50.0) * 1e-3),
+        }
+
     def _connect_robot_worker(self, ip: str) -> None:
         """Roda em thread daemon — conecta e habilita o CR10 sem bloquear a GUI."""
         log.info('[ROBOT] Iniciando conexão com CR10 em %s', ip)
@@ -408,7 +417,8 @@ class RobotMixin:
             # controlador interpolar sobre uma grade que não é a do produtor,
             # e a onda sai com a amplitude cortada sem nada no log dizer.
             cfg = CR10RealDriverConfig(
-                ip=ip, servoj_period_s=getattr(self, '_servoj_period_s', 0.030))
+                ip=ip, servoj_period_s=getattr(self, '_servoj_period_s', 0.030),
+                **self._payload_cfg())
             log.info('[ROBOT] Config: timeout=%.1fs, speed=%d%%, '
                      'payload=%.2fkg, collision=%d',
                      cfg.connect_timeout_s, cfg.speed_factor,
@@ -743,7 +753,8 @@ class RobotMixin:
                 cfg = CR10RealDriverConfig(
                     ip=ip,
                     servoj_period_s=getattr(
-                        self, '_servoj_period_s', 0.030))
+                        self, '_servoj_period_s', 0.030),
+                    **self._payload_cfg())
                 drv = CR10RealDriver(ip=ip, dry_run=False, config=cfg)
                 drv.connect()
                 # E-STOP travado: NÃO reabilitar. `enable()` faz PowerOn +

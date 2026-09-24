@@ -106,6 +106,10 @@ class PosesMixin:
             font=FONT_SMALL, relief='flat', bd=0, padx=8, pady=4,
             cursor='hand2').pack(side='left')
 
+        # Gravação do arrasto como Movimento — mora aqui porque é a mesma
+        # família do Drag Teach logo acima.
+        self._build_traj_card(left)
+
         lbx_frame = tk.Frame(left, bg=BG)
         lbx_frame.pack(fill='both', expand=True)
 

@@ -34,6 +34,8 @@ MIXINS = [
     ('gui_robot.py', 'RobotMixin'),
     ('gui_poses.py', 'PosesMixin'),
     ('gui_sensors.py', 'SensorsMixin'),
+    ('gui_manual_extras.py', 'ManualExtrasMixin'),
+    ('gui_trajectory.py', 'TrajRecMixin'),
 ]
 HOST = ('palpation_gui.py', 'PalpationGUI')
 
