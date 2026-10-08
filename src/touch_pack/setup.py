@@ -58,6 +58,7 @@ setup(
             'hand_latency_probe = touch_pack.hand_latency_probe:main',
             'latency_report    = touch_pack.latency_report:main',
             'lc_health_probe   = touch_pack.lc_health_probe:main',
+            'imu_node          = touch_pack.imu_node:main',
         ],
     },
 )

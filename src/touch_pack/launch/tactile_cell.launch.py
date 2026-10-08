@@ -40,6 +40,15 @@ Argumentos (todos opcionais):
                        cancela deriva térmica, mas zera a leitura parada
     ft_filter        true (default) = One-Euro (σ 10× menor, ~80 ms de atraso
                        no gatilho de contato) | false = sinal cru, sem atraso
+    imu              true (default) | false — só com end_effector:=hand: sobe o
+                       imu_node (ESPs do WBAN-Inercial → /imu/sensor_<id>),
+                       que alimenta a aba IMU da GUI
+    imu_iface        IP local da interface dos ESPs (ex.: 192.168.5.100). Vazio
+                       (default) = automático; com cabo + Wi-Fi ligados o
+                       automático escolhe o cabo e não acha os ESPs
+    wban_dir         pasta do software KINESIS (o imu_node importa o core/
+                       dele). Default: ~/WBAN-Inercial/Software main/
+                       Sensores Inerciais Nova Interface
     learned_contact_persist
                      false (DEFAULT) = nenhuma home fica aprendida entre
                        launches; toda sessão rasteja a 1ª descida de cada home
@@ -685,7 +694,22 @@ def launch_setup(context, *args, **kwargs):
                           on_exit=late_nodes + [pose_sync]))
         chain = [after_spawn, after_jsb, after_arm]
 
-    return [gazebo, rsp, spawn_robot] + chain
+    # IMUs (aba IMU da GUI): só com a mão. Não depende de controller nenhum —
+    # sobe junto, para os sensores já terem orientação quando a GUI abrir.
+    imu_nodes = []
+    imu_on = LaunchConfiguration('imu').perform(context).strip().lower()
+    if end_effector == 'hand' and imu_on in ('true', '1', 'yes'):
+        imu_params = {}
+        wban_dir = LaunchConfiguration('wban_dir').perform(context).strip()
+        if wban_dir:
+            imu_params['wban_dir'] = os.path.expanduser(wban_dir)
+        imu_iface = LaunchConfiguration('imu_iface').perform(context).strip()
+        if imu_iface:
+            imu_params['iface_ip'] = imu_iface
+        imu_nodes.append(Node(package='touch_pack', executable='imu_node',
+                              parameters=[imu_params], output='screen'))
+
+    return [gazebo, rsp, spawn_robot] + chain + imu_nodes
 
 
 def generate_launch_description():
@@ -789,5 +813,18 @@ def generate_launch_description():
             description='Altura do centro de massa da ferramenta acima da '
                         'flange, em mm (a excentricidade x/y é ~0 numa pilha '
                         'simétrica). Entra junto com payload_kg.'),
+        DeclareLaunchArgument(
+            'imu', default_value='true',
+            description='Só com end_effector:=hand: sobe o imu_node (IMUs do '
+                        'WBAN-Inercial → /imu/sensor_<id>) para a aba IMU.'),
+        DeclareLaunchArgument(
+            'imu_iface', default_value='',
+            description='IP LOCAL da interface onde estão os ESPs (ex.: o do '
+                        'Wi-Fi, 192.168.5.100). Vazio = escolha automática do '
+                        'WBAN, que com cabo e Wi-Fi ligados pega o cabo.'),
+        DeclareLaunchArgument(
+            'wban_dir', default_value='',
+            description='Pasta do software KINESIS (WBAN-Inercial) que o '
+                        'imu_node importa. Vazio = default do nó.'),
         OpaqueFunction(function=launch_setup),
     ])

@@ -167,6 +167,7 @@ from .gui_manip3d_tab import Manip3DTabMixin
 from .gui_manual_extras import ManualExtrasMixin
 from .gui_trajectory import TrajRecMixin
 from .gui_camera import CameraMixin
+from .gui_imu import IMUMixin
 from .gui_constants import (
     MATRIX_STEP_DEFAULT, MATRIX_N_DEFAULT, MATRIX_SHAPES,
     MATRIX_SIZING_MODES, MATRIX_SIZE_DEFAULT, MATRIX_PATH_ORDERS,
@@ -372,7 +373,7 @@ HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
 class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
                    ManualExtrasMixin, TrajRecMixin,
                    MatrixMixin, CameraMixin, Manip3DTabMixin, HandMixin,
-                   Node):
+                   IMUMixin, Node):
     # A classe nasceu com 234 métodos num arquivo só, e achar código nela
     # exigia ferramenta em vez de leitura. Está sendo recortada por MIXINS:
     # o corte é mecânico (os métodos continuam operando sobre `self`), então
@@ -1215,8 +1216,15 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             tab_manip = tk.Frame(nb, bg=BG)
             nb.add(tab_manip, text='3D Manipulation')
 
+        # Modo hand: a aba 0 vira IMU. A palpação continua sendo montada (o
+        # resto da GUI referencia os widgets dela), mas num frame nunca
+        # empacotado — invisível e fora do gate de pintura (_palp_tab_frame).
+        palp_parent = tab_palp
+        if self._end_effector == 'hand':
+            palp_parent = tk.Frame(tab_palp, bg=BG)
+            self._build_imu_tab(self._scrollable(tab_palp))
         # ttk.Progressbar foi removida (causava segfault com Canvas embed).
-        self._build_palpation_tab(self._scrollable(tab_palp))
+        self._build_palpation_tab(self._scrollable(palp_parent))
         self._build_manual_tab(self._scrollable(tab_man))
         self._build_loadcell_tab(tab_lc)   # sub-abas são scrolláveis internamente
         self._build_poses_tab(tab_poses)   # layout próprio — sem _scrollable externo
@@ -1227,7 +1235,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Guardadas para os gates de visibilidade dos loops de refresh: sem
         # elas o painel da célula (20 Hz) e o de status (10 Hz) repintavam
         # dezenas de widgets por tick com a aba escondida.
-        self._palp_tab_frame = tab_palp
+        self._palp_tab_frame = palp_parent
         self._lc_tab_frame = tab_lc
         # Manipulação 3D: layout próprio (a viewport precisa da altura toda —
         # nada de _scrollable, que fixaria a altura do conteúdo).
@@ -1242,7 +1250,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # A viewport 3D só roda seu tick (33 Hz) com a aba visível.
         nb.bind('<<NotebookTabChanged>>', self._on_tab_changed, add='+')
         self._palpation_blocked = (self._end_effector != 'touch_tool')
-        if self._palpation_blocked:
+        if self._end_effector == 'hand':
+            nb.tab(0, text='IMU')
+        elif self._palpation_blocked:
             nb.tab(0, text='Palpation ⊘', state='disabled')
         # Modo hand: sem célula de carga → esconde a aba dedicada (a coluna
         # da mão já ocupa o Controle Manual).
@@ -1251,7 +1261,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 nb.hide(tab_lc)
             except Exception:
                 pass
-        if self._palpation_blocked:
+        if self._palpation_blocked and self._end_effector != 'hand':
             try:
                 nb.select(1)   # foca em Controle Manual
             except Exception:
@@ -2304,6 +2314,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # exige o opt-in explícito na aba (checkbox "Mirror to the real
         # CR10") — sem isso, as poses do arrasto param no Gazebo.
         if self._manip_active and not self._manip_mirror_on:
+            return
+        # Rastreio por IMU: idem, só espelha com "→ real CR10" marcado.
+        if self._imu_tracking and not self._imu_mirror_on:
             return
         # Execução de movimento via _execute_movement_worker → não interferir.
         if self._exec_movement_id is not None:
@@ -4557,6 +4570,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 self._stop_camera_control('shutdown')
             except Exception:
                 pass
+        # Ponte dos IMUs: põe os sensores em HOLD e encerra o subprocesso.
+        try:
+            self._imu_shutdown()
+        except Exception:
+            pass
         # Fecha a gravação CSV em andamento (flush + close) e o loop da aba.
         if self._rec_fh is not None:
             try:
