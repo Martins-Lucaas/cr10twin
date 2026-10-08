@@ -1,0 +1,32 @@
+{
+  "wban_dir": "/home/lucas-lpc/WBAN-Inercial/Software main/Sensores Inerciais Nova Interface",
+  "robot_ip": "192.168.5.2",
+  "tcp_end_effector": "touch_tool",
+
+  "segment_to_sensor": {
+    "trunk": 1,
+    "shoulder": 2,
+    "arm": 3,
+    "forearm": 4,
+    "hand": 5
+  },
+  "_spare_sensor": 6,
+
+  "chain": [
+    {"segment": "shoulder", "length_m": 0.0},
+    {"segment": "arm", "length_m": 0.30},
+    {"segment": "forearm", "length_m": 0.25}
+  ],
+  "limb_axis_local": [0.0, 1.0, 0.0],
+
+  "motion_scale": 1.0,
+  "r_human_to_robot": [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0]
+  ],
+
+  "safety_box_m": [0.25, 0.25, 0.25],
+  "stale_s": 0.5,
+  "rate_hz": 30
+}

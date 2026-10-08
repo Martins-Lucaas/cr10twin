@@ -17,6 +17,11 @@ src/eci_ros-main/
 # Ambiente virtual local (Windows) — recriável via `python -m venv .venv`
 .venv/
 
+# Config de instância do bridge IMU->CR10 (mapeamento sensor->segmento, IP
+# do robô) — específico de cada bancada; o template versionado é
+# config.example.json.
+tools/imu_arm_teleop/config.json
+
 # Dados de execução da palpação — gerados em runtime pelo palpation_logger.
 # 1,2 GB, com arquivos de 48-85 MB que o GitHub rejeita acima de 100 MB.
 sensors/Data/

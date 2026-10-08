@@ -1,0 +1,6 @@
+# venv isolado deste bridge (NÃO instalar no ambiente do ROS 2 — lá o numpy
+# precisa ficar <2 por causa do cv_bridge; aqui não há essa restrição).
+AHRS==0.3.1
+PyQt6==6.10.2
+scipy
+numpy
