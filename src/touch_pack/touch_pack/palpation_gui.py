@@ -111,10 +111,13 @@ from .constants import (
     STAIRCASE_MODES, FMOD_MODES,
 )
 
-# Driver TCP/IP do CR10 real (cabeada via 192.168.5.1 / LAN1).
+# Driver TCP/IP do CR10 real. A bancada é CABEADA (LAN1, 192.168.5.x) e é
+# nela que os números do driver foram calibrados; por Wi-Fi o ServoJ sofre —
+# ver o parâmetro `feedback_port` abaixo.
 try:
     from .real_driver import (
         CR10RealDriver, CR10RealDriverConfig, CR10RealDriverError,
+        FEEDBACK_PORT,
     )
     from .kinematics import urdf_to_dobot as _urdf_to_dobot, MIMIC_LIST
     from .kinematics import fk_partial as _fk_partial
@@ -127,6 +130,7 @@ except Exception:  # pragma: no cover
     CR10RealDriver: Any = None
     CR10RealDriverConfig: Any = None
     CR10RealDriverError = Exception
+    FEEDBACK_PORT = 30004
     _urdf_to_dobot: Any = None
     MIMIC_LIST = []
     _fk_partial: Any = None
@@ -520,6 +524,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             float(self.declare_parameter(
                 'servoj_period_s', FMOD_CTRL_DT_S).value or FMOD_CTRL_DT_S),
             SERVOJ_T_MIN_S, FMOD_CTRL_DT_S))
+        # 30004 (8 ms) | 30005 (200 ms). Só muda sem fio — ver
+        # FEEDBACK_PORT_SLOW no real_driver.
+        self._feedback_port = int(self.declare_parameter(
+            'feedback_port', FEEDBACK_PORT).value or FEEDBACK_PORT)
         # Efetuador final vindo do launch (hand | touch_tool) REGRA (até o
         # usuário pedir o contrário): o modo Palpação só fica disponível
         # quando a célula é aberta COM o touch_tool.

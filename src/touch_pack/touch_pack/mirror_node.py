@@ -48,7 +48,7 @@ from .constants import (
 from .kinematics import urdf_to_dobot
 from .real_driver import (
     CR10RealDriver, CR10RealDriverConfig, CR10RealDriverError,
-    SERVOJ_T_MIN_S,
+    FEEDBACK_PORT, SERVOJ_T_MIN_S,
 )
 
 _PERIOD_S = 0.030          # 33 Hz — mesmo período do streaming do explorer
@@ -99,6 +99,10 @@ class MirrorNode(Node):
         # repassa). Baixar isto acelera o ServoJ de TODAS as fases, não só da
         # onda — por isso é opt-in.
         self.declare_parameter('servoj_period_s', _PERIOD_S)
+        # 30004 (8 ms) ou 30005 (200 ms) — ver FEEDBACK_PORT_SLOW no driver.
+        self.declare_parameter('feedback_port', FEEDBACK_PORT)
+        self._feedback_port = int(
+            self.get_parameter('feedback_port').value or FEEDBACK_PORT)
 
         self._servoj_period_s = float(
             self.get_parameter('servoj_period_s').value or _PERIOD_S)
@@ -163,7 +167,8 @@ class MirrorNode(Node):
                 drv = CR10RealDriver(
                     ip=ip,
                     config=CR10RealDriverConfig(
-                        servoj_period_s=self._servoj_period_s))
+                        servoj_period_s=self._servoj_period_s,
+                        feedback_port=self._feedback_port))
                 drv.connect()
                 drv.enable()
                 with self._lock:

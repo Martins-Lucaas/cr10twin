@@ -63,6 +63,10 @@ log = logging.getLogger('touch_pack.real_driver')
 # Portas TCP do controlador CR10
 DASH_PORT     = 29999   # todos os comandos (dashboard + motion)
 FEEDBACK_PORT = 30004   # struct 1440 B @ 8 ms (125 Hz)
+# Mesmo struct a 200 ms. Para link SEM FIO: a 30004 são 180 kB/s contínuos
+# CONTRA o fluxo de comandos, e Wi-Fi é half-duplex. Aqui o mesmo dado custa
+# ~7 kB/s. Quem MEDE latência (latency_probe) tem de ficar na 30004.
+FEEDBACK_PORT_SLOW = 30005
 
 # Offset (em bytes) do campo `q_actual` (6 × float64) dentro do struct de
 # 1440 B do feedback.
@@ -113,7 +117,11 @@ class CR10RealDriverConfig:
     # da calibração de pivô (tcp_calib). 0 é o flange e não pode ser alterado.
     tool_index: int = 1
     servoj_period_s: float = 0.030   # 33 Hz recomendado
-    servoj_lookahead: int = 20       # [20,100]; 20 = resposta imediata (era 50)
+    # [20,100]; 50 é o default do firmware (era 20 aqui até 17/09/2026). Os 20
+    # supunham pontos chegando regulares — verdade no cabo, falsa no Wi-Fi, e
+    # o guia V4.5.1 nomeia o preço: "A smaller aheadtime value [...] may cause
+    # instability and jitter". Volte a 20 só com link cabeado.
+    servoj_lookahead: int = 50
     servoj_gain: int = 500           # [200, 1000]
     readonly: bool = False           # True = só leitura (pula RequestControl)
 
@@ -262,6 +270,11 @@ class CR10RealDriver:
             self._feed = socket.create_connection(
                 (self.cfg.ip, self.cfg.feedback_port),
                 timeout=self.cfg.connect_timeout_s)
+            # Sem NODELAY, Nagle retém o ServoJ (~70 B) enquanto houver
+            # segmento não confirmado: a cadência sai regular a 33 Hz e chega
+            # agrupada. Invisível a 1 ms de RTT, é o trava/solavanco a 20 ms.
+            # Só na 29999 — pela 30004 nunca se envia nada.
+            self._dash.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._dash.settimeout(self.cfg.recv_timeout_s)
             self._feed.settimeout(self.cfg.recv_timeout_s)
             # O dashboard envia um banner na conexão; descartá-lo antes de

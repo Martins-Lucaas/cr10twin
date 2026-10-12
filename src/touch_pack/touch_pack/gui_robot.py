@@ -136,7 +136,6 @@ class RobotMixin:
             self.get_logger().warning(f'Mirror MovJ falhou: {exc}')
     def _mirror_poll_loop(self) -> None:
         """Envia ServoJ ao braço real a 33 Hz APENAS durante palpação ativa."""
-        _diag_count = 0
         _drag_read_failures = 0
         # Período do ServoJ vindo do parâmetro `servoj_period_s` (launch), não
         # uma constante local: é ESTA taxa que governa o braço real, e com ela
@@ -252,15 +251,9 @@ class RobotMixin:
                 self.get_logger().warning(f'ServoJ falhou: {exc}')
                 continue
             self._mirror_last_target = q_new
-            _diag_count += 1
-            if _diag_count >= 330:   # ~10 s (era 90 = 2.7 s — causava jitter periódico)
-                _diag_count = 0
-                # Diagnóstico fora do caminho crítico: apenas loga, não bloqueia ServoJ.
-                try:
-                    ang = drv.get_angle_deg()
-                    self.get_logger().info(f'[MIRROR-POS] GetAngle real: {ang}')
-                except Exception:
-                    pass
+            # REMOVIDO 17/09/2026: GetAngle() a cada ~10 s só para logar,
+            # tomando o `_dash_lock` DENTRO do laço de ServoJ. O mesmo dado
+            # chega de graça pela 30004, sem custar uma janela de comando.
     def _mirror_follow_tick(self) -> None:
         """Espelha o feedback do braço real → Gazebo durante um MovJ de jog."""
         now = time.monotonic()
@@ -418,7 +411,11 @@ class RobotMixin:
             # e a onda sai com a amplitude cortada sem nada no log dizer.
             cfg = CR10RealDriverConfig(
                 ip=ip, servoj_period_s=getattr(self, '_servoj_period_s', 0.030),
+<<<<<<< Updated upstream
                 **self._payload_cfg())
+=======
+                feedback_port=getattr(self, '_feedback_port', 30004))
+>>>>>>> Stashed changes
             log.info('[ROBOT] Config: timeout=%.1fs, speed=%d%%, '
                      'payload=%.2fkg, collision=%d',
                      cfg.connect_timeout_s, cfg.speed_factor,
@@ -426,9 +423,10 @@ class RobotMixin:
             drv = CR10RealDriver(ip=ip, dry_run=False, config=cfg)
 
             log.info('[ROBOT] Abrindo sockets TCP '
-                     '(29999 dashboard / 30004 feedback)…')
-            self.root.after(0, lambda: self._set_status(
-                f'Conectando sockets TCP em {ip}:29999/30004…', PRIMARY))
+                     '(%d dashboard / %d feedback)…',
+                     cfg.dashboard_port, cfg.feedback_port)
+            self.root.after(0, lambda p=cfg.feedback_port: self._set_status(
+                f'Conectando sockets TCP em {ip}:29999/{p}…', PRIMARY))
             drv.connect()
             log.info('[ROBOT] Sockets abertos com sucesso')
             self.root.after(0, lambda: self._set_status(
@@ -622,10 +620,17 @@ class RobotMixin:
     def _robot_heartbeat_loop(self) -> None:
         """Heartbeat a 1 Hz: verifica conexão e detecta drag por movimento."""
         HEARTBEAT_PERIOD_S = 0.2   # 5 Hz — detecção de drag em ~200 ms
-        MAX_FAILURES = 40          # 8 s antes de reconectar (40 × 200 ms)
+        # O RobotMode() é a única coisa deste laço que disputa o `_dash_lock`
+        # com o ServoJ, e a disputa custa drenagem + espera de resposta: ~1 ms
+        # no cabo, até ~100 ms sem fio, 5×/s, com o ServoJ parado esperando —
+        # e o ponto seguinte descarrega o Δq do buraco com o mesmo t=30 ms.
+        # A detecção de drag continua a 5 Hz: lê pela 30004 (`_feed_lock`).
+        MODE_EVERY_N = 5           # RobotMode() a 1 Hz (5 × 200 ms)
+        MAX_FAILURES = 8           # 8 s antes de reconectar (8 × 1 s)
         DRAG_THRESH_RAD  = math.radians(0.8)  # 0.8° por junta — ignora ruído estático
         DRAG_SILENCE_S   = 2.0                # segundos sem comando do PC
         failures  = 0
+        tick      = 0
         q_prev: np.ndarray | None = None
 
         while not self._robot_heartbeat_stop.is_set():
@@ -637,23 +642,26 @@ class RobotMixin:
             if drv is None:
                 return
 
-            # Heartbeat: RobotMode() serve como keep-alive do dashboard
-            ok = False
-            try:
-                resp = drv.robot_mode()
-                ok = bool(resp) and '{' in resp
-            except (CR10RealDriverError, OSError):
+            # Heartbeat: RobotMode() serve como keep-alive do dashboard.
+            # A cada MODE_EVERY_N ticks — ver o comentário da constante.
+            tick += 1
+            if tick % MODE_EVERY_N == 0:
                 ok = False
+                try:
+                    resp = drv.robot_mode()
+                    ok = bool(resp) and '{' in resp
+                except (CR10RealDriverError, OSError):
+                    ok = False
 
-            if not ok:
-                failures += 1
-                self.get_logger().warn(
-                    f'Heartbeat CR10 falhou ({failures}/{MAX_FAILURES}).')
-                if failures >= MAX_FAILURES:
-                    self.root.after(0, self._on_robot_connection_lost)
-                    return
-                continue
-            failures = 0
+                if not ok:
+                    failures += 1
+                    self.get_logger().warn(
+                        f'Heartbeat CR10 falhou ({failures}/{MAX_FAILURES}).')
+                    if failures >= MAX_FAILURES:
+                        self.root.after(0, self._on_robot_connection_lost)
+                        return
+                    continue
+                failures = 0
 
             # Detecção de drag por movimento de juntas
             try:

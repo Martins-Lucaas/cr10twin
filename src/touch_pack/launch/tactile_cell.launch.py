@@ -11,6 +11,8 @@ Argumentos (todos opcionais):
                                     laminado, +162,2 mm do flange
     control_mode     sim_only | mirror | real_from_sim (default sim_only)
     robot_ip         IP do controlador CR10 real (default 192.168.5.2)
+    feedback_port    30004 (8 ms, default) | 30005 (200 ms). A lenta é para
+                       link sem fio — ver a descrição do argumento.
     no_gui           true = não abrir palpation_gui (default false);
                        com control_mode:=mirror, sobe o mirror_node
                        standalone no lugar do espelhamento da GUI
@@ -90,7 +92,9 @@ from launch_ros.actions import Node
 
 # Piso do `t` do ServoJ e período padrão. Importados do driver para não virarem
 # um QUARTO lugar onde o número do firmware está escrito à mão.
-from touch_pack.real_driver import SERVOJ_T_MIN_S
+from touch_pack.real_driver import (
+    FEEDBACK_PORT, FEEDBACK_PORT_SLOW, SERVOJ_T_MIN_S,
+)
 
 _SERVOJ_PERIOD_DEFAULT_S = 0.030
 
@@ -485,6 +489,7 @@ def launch_setup(context, *args, **kwargs):
     servoj_period_s = min(max(servoj_period_s, SERVOJ_T_MIN_S),
                           _SERVOJ_PERIOD_DEFAULT_S)
 
+<<<<<<< Updated upstream
     # Carga na flange. Não é preferência: o controlador usa este número na
     # detecção de colisão e na estimativa de TCPForce, e um valor irreal
     # aparece como colisão fantasma ou como colisão que não dispara.
@@ -497,6 +502,18 @@ def launch_setup(context, *args, **kwargs):
             LaunchConfiguration('payload_cog_z_mm').perform(context))
     except ValueError:
         payload_cog_z_mm = 50.0
+=======
+    # Validada contra a lista, não aceita como inteiro livre: uma porta
+    # qualquer abre o socket e nunca entrega os 1440 B, e o sintoma chega
+    # como "leitura de juntas inválida", longe da causa.
+    try:
+        feedback_port = int(
+            LaunchConfiguration('feedback_port').perform(context))
+    except ValueError:
+        feedback_port = FEEDBACK_PORT
+    if feedback_port not in (FEEDBACK_PORT, FEEDBACK_PORT_SLOW):
+        feedback_port = FEEDBACK_PORT
+>>>>>>> Stashed changes
 
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
@@ -588,7 +605,9 @@ def launch_setup(context, *args, **kwargs):
                      # (conexão única ao CR10), então o período tem de chegar
                      # aqui também — senão o explorer publica a 50 Hz e a GUI
                      # reamostra a 33, que é o teto de 6,67 Hz de volta.
-                     'servoj_period_s': servoj_period_s}],
+                     'servoj_period_s': servoj_period_s,
+                     # 30004 (8 ms) | 30005 (200 ms) — ver o argumento.
+                     'feedback_port': feedback_port}],
         condition=UnlessCondition(LaunchConfiguration('no_gui')))
 
     # A grade vai para o logger pelo MESMO parâmetro da GUI: se as duas
@@ -651,7 +670,8 @@ def launch_setup(context, *args, **kwargs):
         early_nodes.append(Node(
             package='touch_pack', executable='mirror_node',
             parameters=[{'robot_ip': robot_ip,
-                         'servoj_period_s': servoj_period_s}]))
+                         'servoj_period_s': servoj_period_s,
+                         'feedback_port': feedback_port}]))
     # Explorer precisa da action do cr10_group_controller — sobe por último.
     late_nodes  = [explorer_node]
 
@@ -800,6 +820,7 @@ def generate_launch_description():
                         'rápido do que o braço é comandado não entrega mais '
                         'onda, entrega uma reamostrada.'),
         DeclareLaunchArgument(
+<<<<<<< Updated upstream
             'payload_kg', default_value='0.5',
             description='Massa da ferramenta montada na flange, em kg → '
                         'SetPayload no controlador. O default de 0,5 é a mão '
@@ -826,5 +847,14 @@ def generate_launch_description():
             'wban_dir', default_value='',
             description='Pasta do software KINESIS (WBAN-Inercial) que o '
                         'imu_node importa. Vazio = default do nó.'),
+=======
+            'feedback_port', default_value=str(FEEDBACK_PORT),
+            description=f'Feedback do CR10: {FEEDBACK_PORT} (8 ms, DEFAULT, e '
+                        f'a única que serve para MEDIR latência) | '
+                        f'{FEEDBACK_PORT_SLOW} (200 ms). Use a lenta SEM FIO: '
+                        'a rápida são 180 kB/s contra o fluxo de comandos num '
+                        'link half-duplex. Outro valor cai no default. Vai '
+                        'para a GUI e o mirror_node juntos.'),
+>>>>>>> Stashed changes
         OpaqueFunction(function=launch_setup),
     ])
