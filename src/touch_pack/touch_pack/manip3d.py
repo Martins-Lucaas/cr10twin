@@ -223,6 +223,7 @@ def ik_step(q: np.ndarray,
             *,
             T_end: np.ndarray = T_TOUCH_TOOL_ATTACH,
             R_lock: np.ndarray | None = None,
+            locked: np.ndarray | None = None,
             max_lin_m: float = MAX_LIN_STEP_M,
             max_dq: float = MAX_JOINT_STEP_RAD,
             iters: int = IK_ITERS,
@@ -236,6 +237,8 @@ def ik_step(q: np.ndarray,
         T_end:      transform flange→TCP do efetuador em uso
         R_lock:     se dado, orientação 3×3 a MANTER durante o arrasto
                     (o usuário move o ponto, não a atitude da ferramenta)
+        locked:     máscara (6,) bool de juntas que NÃO se movem; as demais
+                    perseguem o alvo como der
         max_lin_m:  teto do erro linear atacado por iteração (limita a
                     velocidade do TCP e evita saltos)
         max_dq:     teto do passo de cada junta por iteração
@@ -252,6 +255,9 @@ def ik_step(q: np.ndarray,
     singular = False
     at_limit = False
     pos_err = float('inf')
+    # Junta travada = coluna zerada no Jacobiano: o DLS dá dq = 0 nela.
+    free = (np.ones(6) if locked is None
+            else 1.0 - np.asarray(locked, dtype=bool).astype(float))
 
     for _ in range(max(1, int(iters))):
         T = forward_kinematics(q, T_end=T_end)
@@ -263,7 +269,7 @@ def ik_step(q: np.ndarray,
                 break
             if pos_err > max_lin_m:
                 dp = dp * (max_lin_m / pos_err)
-            J = jacobian(q, T_end=T_end)[:3, :]
+            J = jacobian(q, T_end=T_end)[:3, :] * free
             try:
                 dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * I3, dp)
             except np.linalg.LinAlgError:
@@ -280,7 +286,7 @@ def ik_step(q: np.ndarray,
             # parcelas na mesma ordem de grandeza dentro do DLS.
             if ang_err > max_dq:
                 dw = dw * (max_dq / ang_err)
-            J = jacobian(q, T_end=T_end).copy()
+            J = jacobian(q, T_end=T_end) * free
             J[3:, :] *= ORI_WEIGHT
             tw = np.concatenate([dp, ORI_WEIGHT * dw])
             try:

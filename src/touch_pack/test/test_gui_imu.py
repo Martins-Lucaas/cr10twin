@@ -3,11 +3,13 @@
 O mixin é montado com o mínimo que ele consome do PalpationGUI e o laço de
 30 Hz é girado à mão, com mensagens sensor_msgs/Imu sintéticas. Cobre o que
 importa para a segurança e para o comportamento:
-  * modo JOINT: junta segue o twist do IMU, inversão, junta desligada parada,
-    teto de velocidade, publica só quando muda, congela com dado velho;
-  * modo CARTESIAN: IMU de orientação gira o TCP; a cadeia de segmentos
-    desloca o TCP — conferido pela FK da pose publicada;
-  * E-STOP interrompe o rastreio.
+  * IMU de orientação gira o TCP; a cadeia de segmentos desloca o TCP —
+    conferido pela FK da pose publicada;
+  * juntas travadas não se movem;
+  * publica só quando muda, congela com dado velho, E-STOP interrompe;
+  * Home para o rastreio e manda o braço para a Home;
+  * a gravação da sessão: IMU, robot.csv e o resumo de buracos no meta.json;
+  * LEDs por ID e o pedido/andamento da calibração AG/MAG.
 
 Pula sozinho onde não há display.
 """
@@ -21,7 +23,11 @@ import numpy as np
 import pytest
 from sensor_msgs.msg import Imu
 
-from touch_pack import gui_imu
+import csv
+import json
+import os
+
+from touch_pack import gui_imu, gui_imu_calib, imu_recorder
 from touch_pack.constants import ARM_JOINTS
 from touch_pack.gui_constants import ARM_LIMITS_DEG
 from touch_pack.imu_math import rotvec
@@ -66,9 +72,19 @@ class _Host(gui_imu.IMUMixin):
         self.published: list[list[float]] = []
         self.status = ''
         self.subs = []
+        self.homed = False
+        self.sent = []
 
     def create_subscription(self, _type, topic, cb, _qos):
         self.subs.append((topic, cb))
+
+    def create_publisher(self, _type, topic, _qos):
+        host = self
+
+        class _Pub:
+            def publish(self, msg):
+                host.sent.append((topic, msg.data))
+        return _Pub()
 
     def get_logger(self):
         return _Logger()
@@ -99,6 +115,9 @@ class _Host(gui_imu.IMUMixin):
     def _manip_T_end(self):
         return T_HAND_ATTACH
 
+    def _apply_arm_home(self):
+        self.homed = True
+
     # ── utilitários do teste ──
     def feed(self, sid, q_wxyz):
         m = Imu()
@@ -126,6 +145,8 @@ def _q(axis, deg):
 def host(_tk_root, tmp_path, monkeypatch):
     monkeypatch.setattr(gui_imu, 'IMU_CONFIG_FILE', str(tmp_path / 'imu_config.json'))
     monkeypatch.setattr(gui_imu, 'CONFIG_DIR', str(tmp_path))
+    monkeypatch.setattr(imu_recorder, 'RUNS_DIR', str(tmp_path / 'runs'))
+    monkeypatch.setattr(gui_imu, 'TK_STALL_S', 0)   # o teste gira o laço à mão
     frame = tk.Frame(_tk_root)
     h = _Host(frame)
     h._build_imu_tab(frame)
@@ -135,81 +156,8 @@ def host(_tk_root, tmp_path, monkeypatch):
 
 
 def test_subscribes_one_topic_per_imu_id(host):
-    assert [t for t, _cb in host.subs] == [f'/imu/sensor_{i}' for i in range(1, 7)]
-
-
-def _map_joint(host, joint, sid, axis='Z', invert=False, on=True):
-    r = host._imu_rows[joint]
-    r['id'].set(str(sid))
-    r['axis'].set(axis)
-    r['inv'].set(invert)
-    r['on'].set(on)
-
-
-def test_joint_mode_follows_twist_with_invert_and_disabled_joint(host):
-    _map_joint(host, 'joint1', 3)
-    _map_joint(host, 'joint4', 3, invert=True)
-    _map_joint(host, 'joint2', 5, on=False)
-    still = {3: _q((0, 0, 1), 0.0), 5: _q((0, 0, 1), 0.0)}
-    host.tick(feeds=still)
-    host._imu_toggle_tracking()
-    assert host._imu_tracking, host.status
-    turned = {3: _q((0, 0, 1), 30.0), 5: _q((1, 0, 0), 50.0)}
-    host.tick(40, feeds=turned)
-    q = dict(zip(ARM_JOINTS, np.degrees(host.published[-1])))
-    assert q['joint1'] == pytest.approx(30.0, abs=0.2)
-    assert q['joint4'] == pytest.approx(-30.0, abs=0.2)
-    assert q['joint2'] == pytest.approx(Q_START_DEG['joint2'])   # desligada
-    assert q['joint3'] == pytest.approx(Q_START_DEG['joint3'])   # sem IMU
-
-
-def test_joint_mode_respects_speed_limit(host):
-    _map_joint(host, 'joint1', 3)
-    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
-    host._imu_toggle_tracking()
-    host.tick(feeds={3: _q((0, 0, 1), 90.0)})
-    step = math.degrees(host.published[-1][0])
-    assert 0.0 < step <= gui_imu.IMU_MAX_DEG_S * (DT + 0.005)   # dt real ≥ DT
-
-
-def test_joint_mode_publishes_only_when_target_changes(host):
-    _map_joint(host, 'joint1', 3)
-    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
-    host._imu_toggle_tracking()
-    host.tick(40, feeds={3: _q((0, 0, 1), 10.0)})
-    n = len(host.published)
-    host.tick(20, feeds={3: _q((0, 0, 1), 10.0)})
-    assert len(host.published) == n
-
-
-def test_joint_mode_freezes_on_stale_imu(host, monkeypatch):
-    _map_joint(host, 'joint1', 3)
-    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
-    host._imu_toggle_tracking()
-    host.tick(5, feeds={3: _q((0, 0, 1), 20.0)})
-    n = len(host.published)
-    t0, q0 = host._imu_latest[3]
-    host._imu_latest[3] = (t0 - 2 * gui_imu.IMU_STALE_S, q0)   # envelhece
-    host.tick(10)
-    assert len(host.published) == n
-    assert 'frozen' in host.status
-
-
-def test_start_refused_without_imu_data(host):
-    _map_joint(host, 'joint1', 3)
-    host._imu_toggle_tracking()
-    assert not host._imu_tracking
-    assert '3' in host.status
-
-
-def test_estop_stops_tracking(host):
-    _map_joint(host, 'joint1', 3)
-    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
-    host._imu_toggle_tracking()
-    host._estop_latched = True
-    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
-    assert not host._imu_tracking
-    assert 'E-STOP' in host.status
+    topics = [t for t, _cb in host.subs]
+    assert topics == [f'/imu/sensor_{i}' for i in range(1, 7)] + ['/imu/calibration']
 
 
 def _fk(q_rad):
@@ -217,7 +165,6 @@ def _fk(q_rad):
 
 
 def _start_cartesian(host, feeds):
-    host._imu_mode_var.set('CARTESIAN')
     host.tick(feeds=feeds)
     host._imu_toggle_tracking()
     assert host._imu_tracking, host.status
@@ -265,15 +212,283 @@ def test_cartesian_chain_moves_tcp_position(host):
 def test_cartesian_start_refused_without_sources(host):
     cv = host._imu_cart_vars
     cv['ori_imu'].set('—')
-    host._imu_mode_var.set('CARTESIAN')
     host._imu_toggle_tracking()
     assert not host._imu_tracking
 
 
+def _ori_only(host):
+    host._imu_cart_vars['ori_imu'].set('6')
+    host._imu_cart_vars['follow_pos'].set(False)
+
+
+def test_locked_joints_never_move(host):
+    _ori_only(host)
+    for j in ('joint1', 'joint2', 'joint3'):
+        host._imu_lock_vars[j].set(True)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host.tick(90, feeds={6: _q((0, 1, 0), 20.0)})
+    assert host.published
+    q = dict(zip(ARM_JOINTS, np.degrees(host.published[-1])))
+    for j in ('joint1', 'joint2', 'joint3'):
+        assert q[j] == pytest.approx(Q_START_DEG[j], abs=1e-6)
+    # o punho livre ainda gira
+    assert any(abs(q[j] - Q_START_DEG[j]) > 1.0 for j in ('joint4', 'joint5', 'joint6'))
+
+
+def test_start_refused_with_all_joints_locked(host):
+    _ori_only(host)
+    for v in host._imu_lock_vars.values():
+        v.set(True)
+    host.tick(feeds={6: _q((0, 0, 1), 0.0)})
+    host._imu_toggle_tracking()
+    assert not host._imu_tracking
+    assert 'locked' in host.status
+
+
+def test_start_refused_without_imu_data(host):
+    _ori_only(host)
+    host._imu_toggle_tracking()
+    assert not host._imu_tracking
+    assert '6' in host.status
+
+
+def test_publishes_only_when_target_changes(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host.tick(90, feeds={6: _q((0, 0, 1), 10.0)})
+    n = len(host.published)
+    host.tick(20, feeds={6: _q((0, 0, 1), 10.0)})
+    assert len(host.published) == n
+
+
+def test_freezes_on_stale_imu(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host.tick(5, feeds={6: _q((0, 0, 1), 20.0)})
+    n = len(host.published)
+    t0, q0 = host._imu_latest[6]
+    host._imu_latest[6] = (t0 - 2 * gui_imu.IMU_STALE_S, q0)   # envelhece
+    host.tick(10)
+    assert len(host.published) == n
+    assert 'frozen' in host._imu_cart_lbl.cget('text')
+
+
+def test_estop_stops_tracking(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host._estop_latched = True
+    host.tick(feeds={6: _q((0, 0, 1), 0.0)})
+    assert not host._imu_tracking
+    assert 'E-STOP' in host.status
+
+
 def test_config_persists(host):
-    _map_joint(host, 'joint6', 6, axis='X', invert=True)
+    host._imu_lock_vars['joint2'].set(True)
     host._imu_cart_vars['heading'].set(45.0)
     data = host._imu_load_config()
-    assert data['joints']['joint6'] == {'enabled': True, 'imu': '6',
-                                        'axis': 'X', 'invert': True}
+    assert data['locked'] == ['joint2']
     assert data['cartesian']['heading'] == 45.0
+
+
+def test_home_stops_tracking_and_sends_home(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host._imu_go_home()
+    assert not host._imu_tracking
+    assert host.homed
+
+
+def test_home_blocked_while_robot_busy(host):
+    host._latest_phase = 'APPROACH'
+    host._imu_go_home()
+    assert not host.homed
+    assert 'busy' in host.status
+
+
+def _rows(path, name):
+    with open(os.path.join(path, name)) as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_session_is_recorded_with_freeze_summary(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    rec = host._imu_rec
+    assert rec is not None
+    host.tick(10, feeds={6: _q((0, 0, 1), 10.0), 2: _q((0, 0, 1), 0.0)})
+    t0, q0 = host._imu_latest[6]
+    host._imu_latest[6] = (t0 - 2 * gui_imu.IMU_STALE_S, q0)   # IMU 6 congela
+    host.tick(3)
+    time.sleep(gui_imu.IMU_STALE_S + 0.1)                      # buraco real
+    host.tick(5, feeds={6: _q((0, 0, 1), 10.0)})
+    host._imu_toggle_tracking()                                # Stop
+    assert host._imu_rec is None
+    assert rec.path in host.status
+    imu = _rows(rec.path, 'imu.csv')
+    assert {r['sensor_id'] for r in imu} == {'2', '6'}          # todas as IDs
+    robot = _rows(rec.path, 'robot.csv')
+    assert len(robot) == 19
+    frozen = [r for r in robot if r['frozen'] == '1']
+    assert frozen and all(r['stale_ids'] == '6' for r in frozen)
+    moving = [r for r in robot if r['frozen'] == '0']
+    assert any(r['published'] == '1' for r in moving)
+    assert float(moving[-1]['ik_err_mm']) < 5.0
+    meta = json.load(open(os.path.join(rec.path, 'meta.json')))
+    assert meta['imu_summary']['6']['gaps_over_stale'] == 1
+    assert meta['cartesian']['ori_imu'] == '6'
+    assert not os.path.exists(os.path.join(rec.path, 'real.csv'))   # sem CR10
+
+
+def test_recording_can_be_turned_off(host):
+    _ori_only(host)
+    host._imu_rec_var.set(False)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    assert host._imu_rec is None
+
+
+def _led(host, sid):
+    led = host._imu_leds[sid]
+    cv = led['cv']
+    return cv.itemcget(led['body'], 'fill'), cv.itemcget(led['hz'], 'text')
+
+
+def test_leds_show_live_and_off_sensors(host):
+    host.tick(feeds={3: _q((0, 0, 1), 0.0)})
+    assert _led(host, 3)[0] == gui_imu.OK
+    assert _led(host, 1) == (gui_imu.LED_OFF, 'off')
+
+
+def _calib_status(host, **st):
+    from std_msgs.msg import String
+    cb = dict(host.subs)['/imu/calibration']
+    cb(String(data=json.dumps(st)))
+
+
+def _wizard_page_text(w):
+    out = []
+    for c in w.body.winfo_children():
+        try:
+            out.append(c.cget('text'))
+        except tk.TclError:
+            pass
+    return '\n'.join(out)
+
+
+def _foot_btn(w, prefix):
+    return [b for b in w.foot.winfo_children() if b.cget('text').startswith(prefix)][0]
+
+
+def _prepare_and_start(w):
+    start = _foot_btn(w, '▶')
+    w._poll()
+    assert str(start.cget('state')) == 'disabled'        # checklist vazio
+    for v in w._prep_vars:
+        v.set(True)
+    w._refresh_prepare()
+    assert str(start.cget('state')) == 'normal'
+    start.invoke()
+
+
+def test_calibration_wizard_does_mag_one_sensor_at_a_time(host):
+    host.tick(feeds={4: _q((0, 0, 1), 0.0), 5: _q((0, 0, 1), 0.0)})
+    host._imu_calibrate('MAG')
+    w = host._imu_wizard
+    assert w is not None and w.step == 0
+    w._poll()
+    assert w.kind.get() == 'MAG'
+    assert w._chosen() == [4, 5]                         # pré-marca os ligados
+    assert str(w._sel_cbs[1].cget('state')) == 'disabled'   # desligado
+    assert 'ONE sensor at a time' in w._one_msg.cget('text')
+    _foot_btn(w, 'Next').invoke()
+    assert w.step == 1 and '(1 of 2)' in _wizard_page_text(w)
+    assert any(isinstance(c, gui_imu_calib.Sensor3DAnim) for c in w.body.winfo_children())
+    _prepare_and_start(w)
+    assert host.sent[-1] == ('/imu/calibrate', 'MAG 4') and w.step == 2
+    assert w.running == [4]                              # só o da vez
+    _calib_status(host, state='progress', kind='MAG', sensor=4, progress=50.0)
+    w._refresh_run()
+    assert w._bars[4][2].cget('text') == '50%'
+    _calib_status(host, state='done', kind='MAG', sensor=4, cov_pct=2.0)
+    w._refresh_run()
+    assert w.step == 3 and 'good' in _wizard_page_text(w)
+    nxt = _foot_btn(w, 'Next sensor: ID 5')
+    assert str(nxt.cget('state')) == 'disabled'          # falta confirmar 2 s parado
+    w._settled.set(True)
+    w._refresh_result()
+    nxt.invoke()
+    assert w.step == 1 and '(2 of 2)' in _wizard_page_text(w)
+    _prepare_and_start(w)
+    assert host.sent[-1] == ('/imu/calibrate', 'MAG 5') and w.running == [5]
+    _calib_status(host, state='done', kind='MAG', sensor=5, cov_pct=7.0)
+    w._refresh_run()
+    assert 'poor' in _wizard_page_text(w)
+    finish = _foot_btn(w, 'Finish')
+    w._settled.set(True)
+    w._refresh_result()
+    finish.invoke()
+    assert host._imu_wizard is None
+
+
+def test_calibration_wizard_does_acc_gyro_all_at_once(host):
+    host.tick(feeds={4: _q((0, 0, 1), 0.0), 5: _q((0, 0, 1), 0.0)})
+    host._imu_calibrate('AG')
+    w = host._imu_wizard
+    _foot_btn(w, 'Next').invoke()
+    _prepare_and_start(w)
+    assert host.sent[-2:] == [('/imu/calibrate', 'AG 4'), ('/imu/calibrate', 'AG 5')]
+    w._on_close()
+
+
+def test_calibration_wizard_cancel_sends_cancel(host):
+    host.tick(feeds={4: _q((0, 0, 1), 0.0)})
+    host._imu_calibrate('AG')
+    w = host._imu_wizard
+    _foot_btn(w, 'Next').invoke()
+    for v in w._prep_vars:
+        v.set(True)
+    w._refresh_prepare()
+    _foot_btn(w, '▶').invoke()
+    assert host.sent[-1] == ('/imu/calibrate', 'AG 4')
+    _foot_btn(w, '✕').invoke()
+    assert host.sent[-1] == ('/imu/calibrate', 'CANCEL 4')
+    _calib_status(host, state='cancelled', kind='AG', sensor=4)
+    w._refresh_run()
+    assert w.step == 3 and 'cancelled' in _wizard_page_text(w)
+    w._on_close()
+
+
+def test_led_shows_calibration_progress(host):
+    _calib_status(host, state='progress', kind='AG', sensor=4, progress=40.0)
+    host.tick()
+    assert _led(host, 4)[1] == '40%'
+    assert 'Acc + Gyro 40%' in host._imu_cal_lbl.cget('text')
+
+
+def test_calibration_refused_while_tracking(host):
+    _ori_only(host)
+    _start_cartesian(host, {6: _q((0, 0, 1), 0.0)})
+    host._imu_calibrate('AG')
+    assert host._imu_wizard is None
+    assert 'stop tracking' in host.status
+
+
+def test_watchdog_dumps_stacks_when_tk_loop_stalls(host, monkeypatch, capfd):
+    monkeypatch.setattr(gui_imu, 'TK_STALL_S', 0.2)
+    host._imu_last_tick = time.monotonic() - 5.0     # laço "parado"
+    th = threading.Thread(target=host._imu_watchdog, daemon=True)
+    th.start()
+    time.sleep(1.3)
+    host._imu_shutting_down = True
+    th.join(timeout=2.0)
+    err = capfd.readouterr().err
+    assert 'laço do Tk parado' in err and 'Thread' in err
+
+
+def test_recorder_flushes_while_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(imu_recorder, 'FLUSH_S', 0.1)
+    rec = imu_recorder.TrackingRecorder({}, base_dir=str(tmp_path))
+    rec.robot(time.monotonic(), frozen=False)
+    time.sleep(0.6)
+    with open(os.path.join(rec.path, 'robot.csv')) as fh:   # ainda aberto
+        assert len(fh.read().splitlines()) == 2
+    rec.close()

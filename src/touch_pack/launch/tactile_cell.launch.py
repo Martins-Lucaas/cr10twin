@@ -46,8 +46,8 @@ Argumentos (todos opcionais):
                        imu_node (ESPs do WBAN-Inercial → /imu/sensor_<id>),
                        que alimenta a aba IMU da GUI
     imu_iface        IP local da interface dos ESPs (ex.: 192.168.5.100). Vazio
-                       (default) = automático; com cabo + Wi-Fi ligados o
-                       automático escolhe o cabo e não acha os ESPs
+                       (default) = IP da interface Wi-Fi; sem Wi-Fi, cai na
+                       escolha automática do WBAN
     wban_dir         pasta do software KINESIS (o imu_node importa o core/
                        dele). Default: ~/WBAN-Inercial/Software main/
                        Sensores Inerciais Nova Interface
@@ -430,6 +430,24 @@ _CONTROL_MODE_MAP = {
 }
 
 
+def _wifi_ipv4() -> str:
+    """IPv4 da 1ª interface Wi-Fi ativa (onde ficam os ESPs dos IMUs), ou ''."""
+    import fcntl
+    import socket
+    import struct
+    for ifname in sorted(os.listdir('/sys/class/net')):
+        if not os.path.isdir(f'/sys/class/net/{ifname}/wireless'):
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            try:
+                # SIOCGIFADDR: endereço IPv4 da interface
+                req = struct.pack('256s', ifname[:15].encode())
+                return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, req)[20:24])
+            except OSError:
+                continue  # Wi-Fi sem IP
+    return ''
+
+
 def launch_setup(context, *args, **kwargs):
     end_effector = LaunchConfiguration('end_effector').perform(context)
     control_mode = LaunchConfiguration('control_mode').perform(context)
@@ -489,7 +507,6 @@ def launch_setup(context, *args, **kwargs):
     servoj_period_s = min(max(servoj_period_s, SERVOJ_T_MIN_S),
                           _SERVOJ_PERIOD_DEFAULT_S)
 
-<<<<<<< Updated upstream
     # Carga na flange. Não é preferência: o controlador usa este número na
     # detecção de colisão e na estimativa de TCPForce, e um valor irreal
     # aparece como colisão fantasma ou como colisão que não dispara.
@@ -502,7 +519,7 @@ def launch_setup(context, *args, **kwargs):
             LaunchConfiguration('payload_cog_z_mm').perform(context))
     except ValueError:
         payload_cog_z_mm = 50.0
-=======
+
     # Validada contra a lista, não aceita como inteiro livre: uma porta
     # qualquer abre o socket e nunca entrega os 1440 B, e o sintoma chega
     # como "leitura de juntas inválida", longe da causa.
@@ -513,7 +530,6 @@ def launch_setup(context, *args, **kwargs):
         feedback_port = FEEDBACK_PORT
     if feedback_port not in (FEEDBACK_PORT, FEEDBACK_PORT_SLOW):
         feedback_port = FEEDBACK_PORT
->>>>>>> Stashed changes
 
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
@@ -723,7 +739,8 @@ def launch_setup(context, *args, **kwargs):
         wban_dir = LaunchConfiguration('wban_dir').perform(context).strip()
         if wban_dir:
             imu_params['wban_dir'] = os.path.expanduser(wban_dir)
-        imu_iface = LaunchConfiguration('imu_iface').perform(context).strip()
+        imu_iface = (LaunchConfiguration('imu_iface').perform(context).strip()
+                     or _wifi_ipv4())
         if imu_iface:
             imu_params['iface_ip'] = imu_iface
         imu_nodes.append(Node(package='touch_pack', executable='imu_node',
@@ -820,7 +837,6 @@ def generate_launch_description():
                         'rápido do que o braço é comandado não entrega mais '
                         'onda, entrega uma reamostrada.'),
         DeclareLaunchArgument(
-<<<<<<< Updated upstream
             'payload_kg', default_value='0.5',
             description='Massa da ferramenta montada na flange, em kg → '
                         'SetPayload no controlador. O default de 0,5 é a mão '
@@ -841,13 +857,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'imu_iface', default_value='',
             description='IP LOCAL da interface onde estão os ESPs (ex.: o do '
-                        'Wi-Fi, 192.168.5.100). Vazio = escolha automática do '
-                        'WBAN, que com cabo e Wi-Fi ligados pega o cabo.'),
+                        'Wi-Fi, 192.168.5.100). Vazio = IP da interface '
+                        'Wi-Fi; sem Wi-Fi, escolha automática do WBAN.'),
         DeclareLaunchArgument(
             'wban_dir', default_value='',
             description='Pasta do software KINESIS (WBAN-Inercial) que o '
                         'imu_node importa. Vazio = default do nó.'),
-=======
+        DeclareLaunchArgument(
             'feedback_port', default_value=str(FEEDBACK_PORT),
             description=f'Feedback do CR10: {FEEDBACK_PORT} (8 ms, DEFAULT, e '
                         f'a única que serve para MEDIR latência) | '
@@ -855,6 +871,5 @@ def generate_launch_description():
                         'a rápida são 180 kB/s contra o fluxo de comandos num '
                         'link half-duplex. Outro valor cai no default. Vai '
                         'para a GUI e o mirror_node juntos.'),
->>>>>>> Stashed changes
         OpaqueFunction(function=launch_setup),
     ])

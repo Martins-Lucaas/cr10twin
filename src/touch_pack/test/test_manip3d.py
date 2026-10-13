@@ -255,3 +255,12 @@ def test_ik_step_reaches_targets_in_every_direction(delta):
         res = ik_step(q, target, T_end=T_TOUCH_TOOL_ATTACH)
         q = res.q
     assert res.pos_err_m < 1e-3
+
+
+def test_ik_step_keeps_locked_joints_fixed():
+    q = np.radians([0.0, -30.0, -90.0, 0.0, 60.0, 0.0])
+    target = tcp_pose(q, T_end=T_TOUCH_TOOL_ATTACH)[:3, 3] + [0.03, 0.02, -0.02]
+    locked = np.array([True, False, False, True, False, False])
+    res = ik_step(q, target, T_end=T_TOUCH_TOOL_ATTACH, locked=locked)
+    assert np.array_equal(res.q[locked], q[locked])
+    assert np.any(np.abs(res.q[~locked] - q[~locked]) > 1e-4)

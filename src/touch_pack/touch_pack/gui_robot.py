@@ -411,11 +411,8 @@ class RobotMixin:
             # e a onda sai com a amplitude cortada sem nada no log dizer.
             cfg = CR10RealDriverConfig(
                 ip=ip, servoj_period_s=getattr(self, '_servoj_period_s', 0.030),
-<<<<<<< Updated upstream
+                feedback_port=getattr(self, '_feedback_port', 30004),
                 **self._payload_cfg())
-=======
-                feedback_port=getattr(self, '_feedback_port', 30004))
->>>>>>> Stashed changes
             log.info('[ROBOT] Config: timeout=%.1fs, speed=%d%%, '
                      'payload=%.2fkg, collision=%d',
                      cfg.connect_timeout_s, cfg.speed_factor,

@@ -2,16 +2,12 @@
 
 Só existe com end_effector:=hand: a aba Palpação (inútil sem o touch_tool)
 vira a aba IMU. Os IMUs chegam pelo `imu_node` (sensor_msgs/Imu em
-/imu/sensor_<id>), que o launch sobe no modo hand. Dois modos:
-
-  JOINT      cada junta ligada segue a rotação de um IMU em torno de um eixo
-             dele (X/Y/Z, com inversão), relativa ao Start, somada à pose da
-             junta no Start. Juntas desligadas seguram a pose do Start.
-  CARTESIAN  o TCP segue a mão: orientação = IMU de orientação (ex.: ID 6);
-             posição = ponta da cadeia de segmentos (braço, antebraço, mão),
-             cada um com um IMU e um comprimento. Os deslocamentos desde o
-             Start viram uma pose alvo do TCP e a IK diferencial do manip3d
-             (a mesma da aba 3D Manipulation) resolve as 6 juntas.
+/imu/sensor_<id>), que o launch sobe no modo hand. Modo único, cartesiano:
+o TCP segue a mão — orientação = IMU de orientação (ex.: ID 6); posição =
+ponta da cadeia de segmentos (braço, antebraço, mão), cada um com um IMU e um
+comprimento. Os deslocamentos desde o Start viram uma pose alvo do TCP e a IK
+diferencial do manip3d (a mesma da aba 3D Manipulation) resolve as juntas.
+Juntas marcadas em "Lock joints" ficam fixas: a IK usa só as outras.
 
 Regras que não são óbvias olhando o código:
 
@@ -25,27 +21,34 @@ Regras que não são óbvias olhando o código:
 """
 from __future__ import annotations
 
+import faulthandler
 import json
 import math as _math
 import os
+import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import ttk
 
 import numpy as np
+from rclpy.qos import QoSProfile
 from sensor_msgs.msg import Imu
+from std_msgs.msg import String
 
 from .constants import ARM_JOINTS, CONFIG_DIR
 from .gui_constants import ARM_LIMITS_DEG, MANIP_TRAJ_DURATION_S
 from .imu_math import (
     LIMB_AXES, cartesian_target, chain_position, quat_to_R, step_toward_pose,
-    twist_deg, wrap180,
 )
-from .imu_node import imu_topic
+from .imu_node import CALIB_REQ_TOPIC, CALIB_STATUS_TOPIC, imu_topic
+from .gui_imu_calib import ImuCalibWizard
+from .imu_recorder import TrackingRecorder
 from .lc_filter import QOS_SENSOR
 from .ui_helpers import (
-    BG, BTN_NEUTRAL, DANGER, FONT_LBL, FONT_MONO_S, FONT_SMALL, OK, PANEL,
-    PRIMARY, TEXT, TEXT_DIM, TEXT_MUTED, WARN, _Tooltip,
+    BG, BORDER, BTN_NEUTRAL, DANGER, FONT_HEAD, FONT_LBL, FONT_MONO_S,
+    FONT_SMALL, OK, PANEL, PRIMARY, PRIMARY_HV, TEXT, TEXT_DIM, TEXT_MUTED,
+    WARN, _shade, _Tooltip,
 )
 
 try:
@@ -56,27 +59,40 @@ except Exception:  # pragma: no cover — mesmo guard da aba 3D
 IMU_CONFIG_FILE = os.path.join(CONFIG_DIR, 'imu_config.json')
 
 IMU_IDS = ('—', '1', '2', '3', '4', '5', '6')
-IMU_AXES = {'X': (1.0, 0.0, 0.0), 'Y': (0.0, 1.0, 0.0), 'Z': (0.0, 0.0, 1.0)}
 # Segmentos da cadeia de posição, do ombro para a ponta (nome, compr. default)
 IMU_SEGMENTS = (('upper_arm', 'Upper arm', 0.30),
                 ('forearm', 'Forearm', 0.25),
                 ('hand', 'Hand', 0.0))
 IMU_TICK_MS = 33
 IMU_STALE_S = 0.5          # sem mensagem nova há mais que isso → congela
-IMU_MAX_DEG_S = 60.0       # teto de velocidade de cada junta (os dois modos)
+IMU_MAX_DEG_S = 60.0       # teto de velocidade de cada junta
 IMU_MAX_TCP_M_S = 0.15     # teto de velocidade linear do TCP (cartesiano)
 IMU_MAX_TCP_DEG_S = 60.0   # teto de velocidade angular do TCP (cartesiano)
 IMU_BOX_M = (0.25, 0.25, 0.25)   # caixa em torno do TCP do Start
 IMU_PUBLISH_DEADBAND_DEG = 0.1
+TK_STALL_S = 5.0   # laço do Tk parado por mais que isto → despeja as pilhas (0 = sem vigia)
+# O ESP manda as amostras em rajadas (6 a cada 60 ms a 100 Hz): com a
+# profundidade 1 do QOS_SENSOR a GUI só via a última de cada rajada e a
+# gravação perdia ~metade. O rastreio usa só a mais nova de qualquer jeito.
+QOS_IMU = QoSProfile(reliability=QOS_SENSOR.reliability,
+                     durability=QOS_SENSOR.durability,
+                     history=QOS_SENSOR.history, depth=50)
+LED_OFF, LED_RIM = '#cbd5e1', '#94a3b8'
+CALIB_NAMES = {'AG': 'Acc + Gyro', 'MAG': 'Magnetometer'}
+CALIB_HINT = {'AG': 'keep it still and flat', 'MAG': 'rotate it slowly in all directions'}
+CALIB_SHOW_S = 8.0   # quanto tempo o resultado fica no LED/label
 
 
 class IMUMixin:
-    """Aba IMU: rastreio articular e cartesiano do CR10 por IMUs (modo hand)."""
+    """Aba IMU: rastreio cartesiano do CR10 por IMUs (modo hand)."""
 
     # Defaults de classe: `_on_close` e `_cb_arm_trajectory` consultam estes
     # nomes também no modo touch_tool, em que a aba nunca é construída.
     _imu_tracking = False
     _imu_mirror_on = False
+    _imu_rec: TrackingRecorder | None = None
+    _imu_wizard: ImuCalibWizard | None = None
+    _imu_live: set = set()
 
     # ── Construção ───────────────────────────────────────────────────
     def _build_imu_tab(self, root: tk.Frame) -> None:
@@ -84,88 +100,155 @@ class IMUMixin:
         for sid in range(1, len(IMU_IDS)):
             self.create_subscription(
                 Imu, imu_topic(sid),
-                lambda msg, s=sid: self._imu_on_msg(s, msg), QOS_SENSOR)
+                lambda msg, s=sid: self._imu_on_msg(s, msg), QOS_IMU)
         self._imu_after: str | None = None
         self._imu_last_tick = time.monotonic()
-        # Estado do modo JOINT
-        self._imu_ref_q: dict[str, np.ndarray] = {}
-        self._imu_ref_deg: dict[str, float] = {}
-        self._imu_unwrap: dict[str, float] = {}
-        self._imu_target_deg: dict[str, float] = {}
         self._imu_published_deg: dict[str, float] | None = None
-        # Estado do modo CARTESIAN
         self._imu_cart: dict | None = None
 
         saved = self._imu_load_config()
-        joints_cfg = saved.get('joints', {})
         cart_cfg = saved.get('cartesian', {})
-        self._imu_rows: dict[str, dict] = {}
+        locked_cfg = set(saved.get('locked', ()))
 
         body = tk.Frame(root, bg=BG)
         body.pack(fill='both', expand=True)
+        # Duas colunas, como a aba 3D: configuração à esquerda, operação
+        # (o que se usa com o braço andando) fixa à direita.
+        # Largura fixa por um espaçador, e NÃO por pack_propagate(False): dentro
+        # do _scrollable a altura da aba vem do que as colunas pedem, e com a
+        # propagação desligada esta coluna não pedia altura nenhuma — o cartão
+        # dos sensores ficava cortado abaixo do Tracking.
+        col_run = tk.Frame(body, bg=BG)
+        col_run.pack(side='right', fill='y', padx=(12, 0))
+        tk.Frame(col_run, bg=BG, width=340, height=0).pack()
+        col_cfg = tk.Frame(body, bg=BG)
+        col_cfg.pack(side='left', fill='both', expand=True)
+
+        # ── Rastreio ──────────────────────────────────────────────────
+        card_run = self._card(col_run, 'Tracking', expand=False)
+        self._imu_track_btn = tk.Button(
+            card_run, text='▶  Start tracking', command=self._imu_toggle_tracking,
+            bg=OK, fg='white', activebackground=_shade(OK, -0.08),
+            activeforeground='white', font=FONT_HEAD, relief='flat', bd=0,
+            pady=10, cursor='hand2')
+        self._imu_track_btn.pack(fill='x')
+        btns = tk.Frame(card_run, bg=PANEL)
+        btns.pack(fill='x', pady=(6, 0))
+        zero_btn = tk.Button(
+            btns, text='⟲  Zero', command=self._imu_zero,
+            bg=BTN_NEUTRAL, fg=TEXT, activebackground=_shade(BTN_NEUTRAL, -0.08),
+            font=FONT_LBL, relief='flat', bd=0, pady=6, cursor='hand2')
+        zero_btn.pack(side='left', fill='x', expand=True, padx=(0, 3))
+        _Tooltip(zero_btn, 'Makes the current IMU orientation the reference. '
+                 'While tracking, the arm stays where it is and follows from here.')
+        home_btn = tk.Button(
+            btns, text='⌂  Home', command=self._imu_go_home,
+            bg=PRIMARY, fg='white', activebackground=PRIMARY_HV,
+            activeforeground='white', font=FONT_LBL, relief='flat', bd=0,
+            pady=6, cursor='hand2')
+        home_btn.pack(side='left', fill='x', expand=True, padx=(3, 0))
+        _Tooltip(home_btn, 'Stops tracking and sends the arm to the Home pose '
+                 '(the same one as the Manual Control tab).')
+        self._imu_mirror_var = tk.BooleanVar(value=False)
+        mirror_chk = tk.Checkbutton(
+            card_run, text='→ real CR10', variable=self._imu_mirror_var,
+            command=self._imu_on_mirror_change, bg=PANEL, fg=TEXT,
+            activebackground=PANEL, selectcolor=PANEL, font=FONT_LBL,
+            highlightthickness=0, bd=0, cursor='hand2')
+        mirror_chk.pack(anchor='w', pady=(10, 0))
+        self._imu_rec_var = tk.BooleanVar(value=bool(saved.get('record', True)))
+        rec_chk = self._imu_check(card_run, self._imu_rec_var,
+                                  '● Record session (IMUs + CR10)')
+        rec_chk.pack(anchor='w', pady=(4, 0))
+        _Tooltip(rec_chk, 'From Start to Stop, writes every IMU message, the '
+                 'tracking state at 30 Hz and the real CR10 joints (when '
+                 'connected) to sensors/Data/IMU_TRACKING/<date_time>/.')
+        self._imu_rec_var.trace_add('write', lambda *_a: self._imu_save_config())
+        _Tooltip(mirror_chk, 'Unchecked: only the simulation follows the IMUs. '
+                 'Checked AND robot in MIRROR: the real CR10 receives a MovJ '
+                 'each time the motion settles (80 ms debounce).')
+        self._imu_gate_lbl = tk.Label(
+            card_run, text='', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
+            anchor='w', justify='left', wraplength=300)
+        self._imu_gate_lbl.pack(fill='x', pady=(4, 0))
+        self._imu_rec_lbl = tk.Label(
+            card_run, text='', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
+            anchor='w', justify='left', wraplength=300)
+        self._imu_rec_lbl.pack(fill='x')
+        tk.Frame(card_run, bg=BORDER, height=1).pack(fill='x', pady=(10, 8))
+        self._imu_cart_lbl = tk.Label(card_run, text='Idle.', font=FONT_MONO_S,
+                                      bg=PANEL, fg=TEXT_DIM, anchor='w',
+                                      justify='left')
+        self._imu_cart_lbl.pack(fill='x')
+        if ik_step is None:
+            self._imu_cart_lbl.config(text='IK unavailable (manip3d failed to import).',
+                                      fg=DANGER)
+        self._imu_limits_lbl = tk.Label(
+            card_run, font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
+            justify='left', wraplength=300,
+            text=f'Limits: {IMU_MAX_DEG_S:.0f}°/s per joint, TCP '
+                 f'{IMU_MAX_TCP_M_S * 1000:.0f} mm/s and {IMU_MAX_TCP_DEG_S:.0f}°/s, '
+                 f'±{IMU_BOX_M[0] * 1000:.0f} mm around the start pose; a sensor '
+                 f'silent for {IMU_STALE_S:.1f} s freezes the motion.')
+        self._imu_limits_lbl.pack(fill='x', pady=(8, 0))
 
         # ── Sensores ──────────────────────────────────────────────────
-        card_conn = self._card(body, 'IMU sensors (WBAN-Inercial)', expand=False)
-        self._imu_live_lbl = tk.Label(card_conn, text='', font=FONT_LBL,
-                                      bg=PANEL, fg=TEXT_DIM, anchor='w')
-        self._imu_live_lbl.pack(fill='x')
+        card_conn = self._card(col_run, 'IMU sensors', expand=False)
+        card_conn.master.pack_configure(pady=(12, 0))
+        leds = tk.Frame(card_conn, bg=PANEL)
+        leds.pack(fill='x')
+        self._imu_leds: dict[int, dict] = {}
+        for sid in range(1, len(IMU_IDS)):
+            cv = tk.Canvas(leds, width=46, height=66, bg=PANEL, highlightthickness=0)
+            cv.pack(side='left', expand=True)
+            ring = cv.create_oval(6, 4, 38, 36, outline='', width=3)
+            body = cv.create_oval(11, 9, 33, 31, fill=LED_OFF, outline=LED_RIM, width=1)
+            glint = cv.create_oval(15, 12, 22, 18, fill='', outline='')
+            cv.create_text(22, 47, text=f'ID {sid}', font=FONT_SMALL, fill=TEXT_MUTED)
+            hz = cv.create_text(22, 60, text='', font=FONT_SMALL, fill=TEXT_DIM)
+            self._imu_leds[sid] = {'cv': cv, 'ring': ring, 'body': body,
+                                   'glint': glint, 'hz': hz}
+        self._imu_msg_count: dict[int, int] = {}
+        self._imu_rate_hz: dict[int, float] = {}
+        self._imu_rate_t = time.monotonic()
+        self._imu_live_lbl = tk.Label(card_conn, text='', font=FONT_SMALL,
+                                      bg=PANEL, fg=TEXT_DIM, anchor='w',
+                                      justify='left', wraplength=300)
+        self._imu_live_lbl.pack(fill='x', pady=(6, 0))
         tk.Label(card_conn, font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
-                 justify='left', wraplength=640,
-                 text='Published by imu_node (/imu/sensor_<id>). Keep each sensor '
-                      'still for ~2 s after it connects (initial orientation).'
+                 justify='left', wraplength=300,
+                 text='Green = live, amber = calibrating, grey = off; blue ring = '
+                      'used by the current setup. Keep each sensor still for ~2 s '
+                      'after it connects.'
                  ).pack(fill='x', pady=(4, 0))
 
-        # ── Modo ──────────────────────────────────────────────────────
-        card_mode = self._card(body, 'Mode', expand=False)
-        card_mode.master.pack_configure(pady=(12, 0))
-        self._imu_mode_var = tk.StringVar(value=saved.get('mode', 'JOINT'))
-        mode_row = tk.Frame(card_mode, bg=PANEL)
-        mode_row.pack(fill='x')
-        for code, text in (('JOINT', 'Joint — each joint follows one IMU'),
-                           ('CARTESIAN', 'Cartesian — TCP follows the hand (IK)')):
-            tk.Radiobutton(mode_row, text=text, value=code,
-                           variable=self._imu_mode_var,
-                           command=self._imu_on_mode_change, bg=PANEL, fg=TEXT,
-                           activebackground=PANEL, selectcolor=PANEL,
-                           font=FONT_LBL, highlightthickness=0, bd=0,
-                           cursor='hand2').pack(side='left', padx=(0, 18))
+        # ── Calibração ────────────────────────────────────────────────
+        tk.Frame(card_conn, bg=BORDER, height=1).pack(fill='x', pady=(10, 8))
+        tk.Label(card_conn, text='Calibration (guided, step by step)', font=FONT_LBL,
+                 bg=PANEL, fg=TEXT, anchor='w').pack(fill='x')
+        cal_btns = tk.Frame(card_conn, bg=PANEL)
+        cal_btns.pack(fill='x', pady=(6, 0))
+        for kind, text, tip in (
+                ('AG', 'Acc + Gyro…', 'Accelerometer and gyroscope offsets, from the '
+                 'same 10 s recording: keep the sensor STILL on a FLAT surface.'),
+                ('MAG', 'Magnetometer…', 'Hard/soft iron fit, 30 s: rotate the '
+                 'sensor SLOWLY in every direction, away from metal.')):
+            b = tk.Button(cal_btns, text=text, command=lambda k=kind: self._imu_calibrate(k),
+                          bg=BTN_NEUTRAL, fg=TEXT,
+                          activebackground=_shade(BTN_NEUTRAL, -0.08),
+                          font=FONT_LBL, relief='flat', bd=0, pady=6, cursor='hand2')
+            b.pack(side='left', fill='x', expand=True, padx=(0, 3) if kind == 'AG' else (3, 0))
+            _Tooltip(b, tip)
+        self._imu_cal_lbl = tk.Label(card_conn, text='', font=FONT_SMALL, bg=PANEL,
+                                     fg=TEXT_DIM, anchor='w', justify='left',
+                                     wraplength=300)
+        self._imu_cal_lbl.pack(fill='x', pady=(6, 0))
+        self._imu_calib: dict[int, dict] = {}
+        self._imu_calib_pub = self.create_publisher(String, CALIB_REQ_TOPIC, 10)
+        self.create_subscription(String, CALIB_STATUS_TOPIC, self._imu_on_calib, 10)
 
-        # ── Junta ↔ IMU (modo JOINT) ─────────────────────────────────
-        card_map = self._card(body, 'Joint mode — joint ↔ IMU', expand=False)
-        card_map.master.pack_configure(pady=(12, 0))
-        grid = tk.Frame(card_map, bg=PANEL)
-        grid.pack(fill='x')
-        heads = ('Joint', 'Move', 'IMU', 'Axis', 'Invert', 'IMU angle', 'Target')
-        for c, h in enumerate(heads):
-            tk.Label(grid, text=h, font=FONT_SMALL, bg=PANEL, fg=TEXT_MUTED
-                     ).grid(row=0, column=c, sticky='w', padx=6, pady=(0, 4))
-        for r, j in enumerate(ARM_JOINTS, start=1):
-            cfg = joints_cfg.get(j, {})
-            v_on = tk.BooleanVar(value=bool(cfg.get('enabled', False)))
-            v_id = tk.StringVar(value=str(cfg.get('imu', '—')))
-            v_ax = tk.StringVar(value=str(cfg.get('axis', 'Z')))
-            v_inv = tk.BooleanVar(value=bool(cfg.get('invert', False)))
-            tk.Label(grid, text=j, font=FONT_LBL, bg=PANEL, fg=TEXT
-                     ).grid(row=r, column=0, sticky='w', padx=6, pady=3)
-            self._imu_check(grid, v_on).grid(row=r, column=1, padx=6)
-            self._imu_combo(grid, v_id, IMU_IDS).grid(row=r, column=2, padx=6)
-            self._imu_combo(grid, v_ax, tuple(IMU_AXES)).grid(row=r, column=3, padx=6)
-            self._imu_check(grid, v_inv).grid(row=r, column=4, padx=6)
-            lbl_ang = tk.Label(grid, text='—', font=FONT_MONO_S, bg=PANEL,
-                               fg=TEXT_DIM, width=9, anchor='e')
-            lbl_ang.grid(row=r, column=5, padx=6)
-            lbl_tgt = tk.Label(grid, text='—', font=FONT_MONO_S, bg=PANEL,
-                               fg=TEXT_DIM, width=9, anchor='e')
-            lbl_tgt.grid(row=r, column=6, padx=6)
-            self._imu_rows[j] = {'on': v_on, 'id': v_id, 'axis': v_ax,
-                                 'inv': v_inv, 'ang': lbl_ang, 'tgt': lbl_tgt}
-            for v in (v_on, v_id, v_ax, v_inv):
-                v.trace_add('write', lambda *_a, jj=j: self._imu_on_row_change(jj))
-
-        # ── Cadeia → TCP (modo CARTESIAN) ────────────────────────────
-        card_cart = self._card(body, 'Cartesian mode — hand → TCP (inverse kinematics)',
-                               expand=False)
-        card_cart.master.pack_configure(pady=(12, 0))
+        # ── Cadeia → TCP ──────────────────────────────────────────────
+        card_cart = self._card(col_cfg, 'Hand → TCP (inverse kinematics)', expand=False)
         cg = tk.Frame(card_cart, bg=PANEL)
         cg.pack(fill='x')
         self._imu_cart_vars = {
@@ -228,47 +311,52 @@ class IMUMixin:
                         ).pack(side='left', padx=(14, 0))
         for v in cv.values():
             v.trace_add('write', lambda *_a: self._imu_on_cart_change())
-        self._imu_cart_lbl = tk.Label(card_cart, text='', font=FONT_MONO_S,
-                                      bg=PANEL, fg=TEXT_DIM, anchor='w', justify='left')
-        self._imu_cart_lbl.pack(fill='x', pady=(8, 0))
-        if ik_step is None:
-            self._imu_cart_lbl.config(text='IK unavailable (manip3d failed to import).',
-                                      fg=DANGER)
 
-        # ── Rastreio ──────────────────────────────────────────────────
-        card_run = self._card(body, 'Tracking', expand=False)
-        card_run.master.pack_configure(pady=(12, 0))
-        btns = tk.Frame(card_run, bg=PANEL)
-        btns.pack(fill='x')
-        self._imu_track_btn = tk.Button(
-            btns, text='▶  Start tracking', command=self._imu_toggle_tracking,
-            bg=OK, fg='white', activebackground=OK, activeforeground='white',
-            font=FONT_LBL, relief='flat', bd=0, padx=12, pady=6, cursor='hand2')
-        self._imu_track_btn.pack(side='left')
-        zero_btn = tk.Button(
-            btns, text='⟲  Zero', command=self._imu_zero,
-            bg=BTN_NEUTRAL, fg=TEXT, font=FONT_LBL, relief='flat', bd=0,
-            padx=12, pady=6, cursor='hand2')
-        zero_btn.pack(side='left', padx=(8, 0))
-        _Tooltip(zero_btn, 'Makes the current IMU orientation the reference. '
-                 'While tracking, the arm stays where it is and follows from here.')
-        self._imu_mirror_var = tk.BooleanVar(value=False)
-        mirror_chk = tk.Checkbutton(
-            btns, text='→ real CR10', variable=self._imu_mirror_var,
-            command=self._imu_on_mirror_change, bg=PANEL, fg=TEXT,
-            activebackground=PANEL, selectcolor=PANEL, font=FONT_LBL,
-            highlightthickness=0, bd=0, cursor='hand2')
-        mirror_chk.pack(side='left', padx=(16, 0))
-        _Tooltip(mirror_chk, 'Unchecked: only the simulation follows the IMUs. '
-                 'Checked AND robot in MIRROR: the real CR10 receives a MovJ '
-                 'each time the motion settles (80 ms debounce).')
-        self._imu_gate_lbl = tk.Label(
-            card_run, text='', font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM,
-            anchor='w', justify='left', wraplength=640)
-        self._imu_gate_lbl.pack(fill='x', pady=(8, 0))
+        # ── Juntas travadas ───────────────────────────────────────────
+        card_lock = self._card(col_cfg, 'Lock joints', expand=False)
+        card_lock.master.pack_configure(pady=(12, 0))
+        lock_row = tk.Frame(card_lock, bg=PANEL)
+        lock_row.pack(fill='x')
+        self._imu_lock_vars: dict[str, tk.BooleanVar] = {}
+        for i, j in enumerate(ARM_JOINTS, start=1):
+            v = tk.BooleanVar(value=j in locked_cfg)
+            # Botão de alternância: travada = âmbar e escrito, à vista de longe.
+            btn = tk.Checkbutton(lock_row, variable=v, indicatoron=False,
+                                 bg=BTN_NEUTRAL, fg=TEXT, selectcolor=WARN,
+                                 activebackground=_shade(BTN_NEUTRAL, -0.08),
+                                 font=FONT_LBL, relief='flat', bd=0, pady=6,
+                                 highlightthickness=0, cursor='hand2')
+            btn.pack(side='left', fill='x', expand=True, padx=2)
+            v.trace_add('write', lambda *_a, b=btn, jv=v, n=i: (
+                b.config(text=f'J{n} · locked' if jv.get() else f'J{n}'),
+                self._imu_save_config()))
+            btn.config(text=f'J{i} · locked' if v.get() else f'J{i}')
+            self._imu_lock_vars[j] = v
+        tk.Label(card_lock, font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor='w',
+                 justify='left', wraplength=640,
+                 text='Locked joints never move; the IK reaches the target with '
+                      'the others as well as it can (IK err grows when the locks '
+                      'remove a needed direction).').pack(fill='x', pady=(4, 0))
+
         self._imu_refresh_gate_lbl()
-
         self._imu_after = self.root.after(IMU_TICK_MS, self._imu_tick)
+        if TK_STALL_S > 0:
+            threading.Thread(target=self._imu_watchdog, daemon=True,
+                             name='imu-tk-watchdog').start()
+
+    def _imu_watchdog(self) -> None:
+        """Se o laço do Tk parar (GUI congelada), despeja a pilha de TODAS as
+        threads no stderr — vai para o log do launch e mostra onde travou.
+        Uma vez por travamento."""
+        dumped = False
+        while not getattr(self, '_imu_shutting_down', False):
+            time.sleep(1.0)
+            stalled = time.monotonic() - self._imu_last_tick > TK_STALL_S
+            if stalled and not dumped:
+                print(f'[IMU] laço do Tk parado há > {TK_STALL_S:.0f} s — pilhas:',
+                      file=sys.stderr, flush=True)
+                faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+            dumped = stalled
 
     def _imu_check(self, parent, var, text: str = '') -> tk.Checkbutton:
         return tk.Checkbutton(parent, text=text, variable=var, bg=PANEL, fg=TEXT,
@@ -287,7 +375,12 @@ class IMUMixin:
         q = np.array([o.w, o.x, o.y, o.z], dtype=float)
         if np.all(np.isfinite(q)) and np.linalg.norm(q) > 0.5:
             # Rebind atômico do item — o tick do Tk lê este dict a 30 Hz.
-            self._imu_latest[sensor_id] = (time.monotonic(), q)
+            t = time.monotonic()
+            self._imu_latest[sensor_id] = (t, q)
+            self._imu_msg_count[sensor_id] = self._imu_msg_count.get(sensor_id, 0) + 1
+            rec = self._imu_rec
+            if rec is not None:
+                rec.imu(sensor_id, msg, t)
 
     def _imu_fresh_q(self, sid, now: float):
         item = self._imu_latest.get(sid) if sid is not None else None
@@ -305,7 +398,7 @@ class IMUMixin:
             return {}
 
     def _imu_save_config(self) -> None:
-        if len(self._imu_rows) != len(ARM_JOINTS) or not hasattr(self, '_imu_seg_vars'):
+        if not hasattr(self, '_imu_rec_var'):
             return   # ainda construindo
         try:
             cart = {k: v.get() for k, v in self._imu_cart_vars.items()}
@@ -314,11 +407,9 @@ class IMUMixin:
         except (tk.TclError, ValueError):
             return   # spinbox no meio da digitação
         data = {
-            'mode': self._imu_mode_var.get(),
-            'joints': {j: {'enabled': r['on'].get(), 'imu': r['id'].get(),
-                           'axis': r['axis'].get(), 'invert': r['inv'].get()}
-                       for j, r in self._imu_rows.items()},
             'cartesian': cart,
+            'locked': [j for j, v in self._imu_lock_vars.items() if v.get()],
+            'record': bool(self._imu_rec_var.get()),
         }
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -327,33 +418,10 @@ class IMUMixin:
         except OSError as exc:
             self.get_logger().warn(f'imu config not saved: {exc}')
 
-    def _imu_on_row_change(self, joint: str) -> None:
-        self._imu_save_config()
-        # Mudou IMU/eixo/liga-desliga: a junta recomeça do ponto onde está,
-        # com nova referência capturada no próximo tick (sem salto).
-        self._imu_ref_q.pop(joint, None)
-        if joint in self._imu_target_deg:
-            self._imu_ref_deg[joint] = self._imu_target_deg[joint]
-        self._imu_unwrap.pop(joint, None)
-
     def _imu_on_cart_change(self) -> None:
         self._imu_save_config()
         if self._imu_cart is not None:
             self._imu_cart_rezero()
-
-    def _imu_on_mode_change(self) -> None:
-        if self._imu_tracking:
-            self._imu_stop_tracking('IMU tracking stopped: mode changed.', WARN)
-        self._imu_save_config()
-
-    def _imu_row_cfg(self, joint: str):
-        """(sensor_id, eixo, sinal) da junta, ou None se não estiver mapeada."""
-        r = self._imu_rows[joint]
-        try:
-            sid = int(r['id'].get())
-        except ValueError:
-            return None
-        return sid, IMU_AXES[r['axis'].get()], (-1.0 if r['inv'].get() else 1.0)
 
     # ── Cadeia cartesiana ────────────────────────────────────────────
     def _imu_cart_spec(self):
@@ -442,71 +510,202 @@ class IMUMixin:
             return
         now = time.monotonic()
         q_deg = self._imu_slider_q_deg()
-        if self._imu_mode_var.get() == 'CARTESIAN':
-            if ik_step is None:
-                self._set_status('IMU: cartesian mode needs manip3d (IK).', DANGER)
-                return
-            ori, segs, *_r, f_ori, f_pos = self._imu_cart_spec()
-            if not (f_ori or f_pos):
-                self._set_status('IMU: pick an orientation IMU and/or segment IMUs '
-                                 'with length > 0.', WARN)
-                return
-            used = ([ori] if f_ori else []) + ([s for s, _L in segs] if f_pos else [])
-            missing = sorted({s for s in used if self._imu_fresh_q(s, now) is None})
-            if missing:
-                self._set_status(f'IMU: no data from sensor(s) {missing}.', WARN)
-                return
-            self._imu_cart = {
-                'q': np.radians([q_deg[j] for j in ARM_JOINTS]),
-                'T_end': self._manip_T_end(),
-                'v_tcp': 0.0, 'ik_err': 0.0,
-            }
-            self._imu_cart_rezero()
-            self._imu_published_deg = dict(q_deg)
-            what = ' + '.join((['orientation'] if f_ori else [])
-                              + (['position'] if f_pos else []))
-        else:
-            mapped = [j for j in ARM_JOINTS
-                      if self._imu_rows[j]['on'].get() and self._imu_row_cfg(j)]
-            if not mapped:
-                self._set_status('IMU: enable at least one joint with an IMU ID.', WARN)
-                return
-            missing = sorted({self._imu_row_cfg(j)[0] for j in mapped
-                              if self._imu_fresh_q(self._imu_row_cfg(j)[0], now) is None})
-            if missing:
-                self._set_status(f'IMU: no data from sensor(s) {missing}.', WARN)
-                return
-            self._imu_ref_deg = dict(q_deg)
-            self._imu_target_deg = dict(q_deg)
-            self._imu_published_deg = dict(q_deg)
-            # Referência no instante do Start (e não no próximo tick, quando o
-            # IMU pode já ter girado e esse giro sumiria do rastreio).
-            self._imu_ref_q = {j: self._imu_fresh_q(self._imu_row_cfg(j)[0], now)
-                               for j in mapped}
-            self._imu_unwrap = {}
-            what = ', '.join(mapped)
+        if ik_step is None:
+            self._set_status('IMU: tracking needs manip3d (IK).', DANGER)
+            return
+        if all(self._imu_locked_mask()):
+            self._set_status('IMU: all joints are locked.', WARN)
+            return
+        ori, segs, *_r, f_ori, f_pos = self._imu_cart_spec()
+        if not (f_ori or f_pos):
+            self._set_status('IMU: pick an orientation IMU and/or segment IMUs '
+                             'with length > 0.', WARN)
+            return
+        used = ([ori] if f_ori else []) + ([s for s, _L in segs] if f_pos else [])
+        missing = sorted({s for s in used if self._imu_fresh_q(s, now) is None})
+        if missing:
+            self._set_status(f'IMU: no data from sensor(s) {missing}.', WARN)
+            return
+        self._imu_cart = {
+            'q': np.radians([q_deg[j] for j in ARM_JOINTS]),
+            'T_end': self._manip_T_end(),
+            'v_tcp': 0.0, 'ik_err': 0.0,
+        }
+        self._imu_cart_rezero()
+        self._imu_published_deg = dict(q_deg)
+        what = ' + '.join((['orientation'] if f_ori else [])
+                          + (['position'] if f_pos else []))
+        locked = [j for j, v in self._imu_lock_vars.items() if v.get()]
+        if locked:
+            what += f' (locked: {", ".join(locked)})'
+        if self._imu_rec_var.get():
+            self._imu_rec_open(q_deg, locked)
         self._imu_tracking = True
         self._imu_track_btn.config(text='■  Stop tracking', bg=DANGER,
-                                   activebackground=DANGER)
+                                   activebackground=_shade(DANGER, -0.08))
         self._imu_refresh_gate_lbl()
-        self._set_status(f'IMU tracking ({self._imu_mode_var.get().lower()}): {what}.', OK)
+        self._set_status(f'IMU tracking: {what}.', OK)
+
+    # ── LEDs e calibração ────────────────────────────────────────────
+    def _imu_calib_active(self, sid: int, now: float):
+        st = self._imu_calib.get(sid)
+        if st is None:
+            return None
+        if st['state'] in ('started', 'progress'):
+            return st
+        return st if now - st['t'] < CALIB_SHOW_S else None
+
+    def _imu_render_leds(self, now: float, live: set, used: set) -> None:
+        blink = int(now * 3) % 2 == 0
+        for sid, led in self._imu_leds.items():
+            cv, cal = led['cv'], self._imu_calib_active(sid, now)
+            busy = cal is not None and cal['state'] in ('started', 'progress')
+            if busy:
+                fill = WARN if blink else _shade(WARN, 0.35)
+            elif sid in live:
+                fill = OK
+            else:
+                fill = LED_OFF
+            cv.itemconfig(led['body'], fill=fill)
+            cv.itemconfig(led['glint'], fill=_shade(fill, 0.55) if fill != LED_OFF else '')
+            cv.itemconfig(led['ring'], outline=PRIMARY if sid in used else '')
+            if busy:
+                txt, col = f'{cal.get("progress", 0):.0f}%', WARN
+            elif sid in live:
+                txt, col = f'{self._imu_rate_hz.get(sid, 0):.0f} Hz', TEXT_MUTED
+            else:
+                txt, col = 'off', TEXT_DIM
+            cv.itemconfig(led['hz'], text=txt, fill=col)
+
+    def _imu_on_calib(self, msg: String) -> None:
+        try:
+            st = json.loads(msg.data)
+        except ValueError:
+            return
+        st['t'] = time.monotonic()
+        sid = st.get('sensor')
+        # Rebind atômico — o tick do Tk lê este dict.
+        self._imu_calib = {**self._imu_calib, (int(sid) if sid is not None else 0): st}
+
+    def _imu_render_calib(self, now: float) -> None:
+        lines, color = [], TEXT_DIM
+        for sid in sorted(self._imu_calib):
+            st = self._imu_calib_active(sid, now)
+            if st is None:
+                continue
+            name = CALIB_NAMES.get(st.get('kind'), 'Calibration')
+            who = f'IMU {sid}' if sid else 'IMU'
+            if st['state'] in ('started', 'progress'):
+                lines.append(f'{who}: {name} {st.get("progress", 0):.0f}% — '
+                             f'{CALIB_HINT.get(st.get("kind"), "")}')
+                color = WARN
+            elif st['state'] == 'done':
+                cov = f' (radius CoV {st["cov_pct"]:.1f}%)' if 'cov_pct' in st else ''
+                lines.append(f'{who}: {name} done{cov}. Keep it still ~2 s.')
+                color = OK if color == TEXT_DIM else color
+            elif st['state'] == 'cancelled':
+                lines.append(f'{who}: {name} cancelled, nothing saved.')
+            else:
+                lines.append(f'{who}: {name} failed — {st.get("msg", "")}')
+                color = DANGER
+        self._imu_cal_lbl.config(text='\n'.join(lines), fg=color)
+
+    def _imu_calibrate(self, kind: str) -> None:
+        """Abre o assistente (gui_imu_calib) já com o tipo escolhido."""
+        if self._imu_tracking:
+            self._set_status('IMU: stop tracking before calibrating.', WARN)
+            return
+        if self._imu_wizard is not None:
+            self._imu_wizard.lift()
+            return
+        self._imu_wizard = ImuCalibWizard(self, kind, targets=sorted(self._imu_live))
+
+    def _imu_calib_send(self, kind: str, target: str) -> None:
+        self._imu_calib_pub.publish(String(data=f'{kind} {target}'))
+
+    # ── Gravação ─────────────────────────────────────────────────────
+    def _imu_rec_open(self, q_deg: dict[str, float], locked: list[str]) -> None:
+        cart = {k: v.get() for k, v in self._imu_cart_vars.items()}
+        cart['segments'] = {k: {'imu': i.get(), 'length_m': L.get()}
+                            for k, (i, L) in self._imu_seg_vars.items()}
+        meta = {
+            'cartesian': cart, 'locked': locked,
+            'start_q_deg': q_deg,
+            'home_deg': dict(getattr(self, '_arm_home_deg', {})),
+            'robot_mode': self._robot_mode, 'mirror_to_real': self._imu_mirror_on,
+            'limits': {'max_deg_s': IMU_MAX_DEG_S, 'max_tcp_m_s': IMU_MAX_TCP_M_S,
+                       'max_tcp_deg_s': IMU_MAX_TCP_DEG_S, 'box_m': IMU_BOX_M,
+                       'stale_s': IMU_STALE_S},
+        }
+        drv = getattr(self, '_real_driver', None)
+        reader = (drv.read_joints_urdf_latest
+                  if drv is not None and getattr(self, '_robot_connected', False)
+                  else None)
+        try:
+            self._imu_rec = TrackingRecorder(meta, real_reader=reader,
+                                             stale_s=IMU_STALE_S)
+        except OSError as exc:
+            self._imu_rec = None
+            self._imu_rec_lbl.config(text=f'Recording failed: {exc}', fg=DANGER)
+            return
+        self._imu_rec_lbl.config(text=f'● REC  {self._imu_rec.path}', fg=DANGER)
+
+    def _imu_rec_close(self) -> str:
+        """Fecha a gravação; devolve um resumo curto para a barra de status."""
+        rec, self._imu_rec = self._imu_rec, None
+        if rec is None:
+            return ''
+        meta = rec.close()
+        freezes = {sid: v['gaps_over_stale'] for sid, v in meta['imu_summary'].items()
+                   if v['gaps_over_stale']}
+        frz = (', '.join(f'IMU {k}: {n}×' for k, n in freezes.items())
+               if freezes else 'no freezes')
+        self._imu_rec_lbl.config(
+            text=f'Saved {meta["duration_s"]:.0f} s → {rec.path}\n'
+                 f'Gaps > {IMU_STALE_S:.1f} s: {frz}',
+            fg=WARN if freezes else TEXT_MUTED)
+        return f' Recorded to {rec.path} ({frz}).'
+
+    def _imu_rec_tick(self, now: float, used: set, live: set, published: bool) -> None:
+        st = self._imu_cart
+        info = st.get('tick') or {}
+        self._imu_rec.robot(
+            now, frozen=not info, stale_ids=sorted(used - live), published=published,
+            q_cmd_deg=np.degrees(st['q']).tolist(),
+            q_sim_rad=getattr(self, '_latest_joint_rad', None),
+            p_cmd_m=st.get('p_cmd'), tcp_m=info.get('tcp'),
+            ik_err_mm=info.get('err'), v_tcp_mms=st['v_tcp'] * 1000.0,
+            singular=info.get('singular', False), at_limit=info.get('at_limit', False))
 
     def _imu_stop_tracking(self, msg: str | None, color: str = TEXT_DIM) -> None:
         self._imu_tracking = False
         self._imu_cart = None
+        saved = self._imu_rec_close()
+        if msg and saved:
+            msg += saved
         if getattr(self, '_imu_track_btn', None) is not None:
             self._imu_track_btn.config(text='▶  Start tracking', bg=OK,
-                                       activebackground=OK)
+                                       activebackground=_shade(OK, -0.08))
+            self._imu_cart_lbl.config(text='Idle.', fg=TEXT_DIM)
             self._imu_refresh_gate_lbl()
         if msg:
             self._set_status(msg, color)
 
+    def _imu_go_home(self) -> None:
+        """Para o rastreio e leva o braço à Home da GUI (a do Controle Manual)."""
+        if self._imu_tracking:
+            self._imu_stop_tracking(None)
+        reason = self._imu_block_reason()
+        if reason:
+            self._set_status(f'Home blocked: {reason}.', WARN)
+            return
+        self._apply_arm_home()
+        self._set_status('IMU: tracking stopped, arm going Home.', OK)
+
+    def _imu_locked_mask(self) -> np.ndarray:
+        return np.array([self._imu_lock_vars[j].get() for j in ARM_JOINTS], dtype=bool)
+
     def _imu_zero(self) -> None:
-        for j in ARM_JOINTS:
-            self._imu_ref_q.pop(j, None)
-            self._imu_unwrap.pop(j, None)
-            if j in self._imu_target_deg:
-                self._imu_ref_deg[j] = self._imu_target_deg[j]
         if self._imu_cart is not None:
             self._imu_cart_rezero()
         self._set_status('IMU reference zeroed.', TEXT_MUTED)
@@ -524,14 +723,10 @@ class IMUMixin:
                           'Gazebo moves.'), TEXT_MUTED
         else:
             txt, color = 'Simulation only — the real arm is not commanded.', TEXT_DIM
-        self._imu_gate_lbl.config(
-            text=f'{txt}  Limits: {IMU_MAX_DEG_S:.0f}°/s per joint, TCP '
-                 f'{IMU_MAX_TCP_M_S * 1000:.0f} mm/s and {IMU_MAX_TCP_DEG_S:.0f}°/s, '
-                 f'±{IMU_BOX_M[0] * 1000:.0f} mm around the start pose; a sensor '
-                 f'silent for {IMU_STALE_S:.1f} s freezes the motion.',
-            fg=color)
+        self._imu_gate_lbl.config(text=txt, fg=color)
 
     def _imu_shutdown(self) -> None:
+        self._imu_shutting_down = True
         if getattr(self, '_imu_after', None) is not None:
             try:
                 self.root.after_cancel(self._imu_after)
@@ -539,6 +734,9 @@ class IMUMixin:
                 pass
             self._imu_after = None
         self._imu_tracking = False
+        rec, self._imu_rec = self._imu_rec, None
+        if rec is not None:
+            rec.close()   # janela fechando: sem mexer em widgets
 
     # ── Laço (Tk, 30 Hz) ─────────────────────────────────────────────
     def _imu_tick(self) -> None:
@@ -547,66 +745,43 @@ class IMUMixin:
         dt = min(0.1, now - self._imu_last_tick)
         self._imu_last_tick = now
 
-        live = sorted(s for s in self._imu_latest if self._imu_fresh_q(s, now) is not None)
-        self._imu_live_lbl.config(
-            text=f'Live IMUs: {", ".join(map(str, live))}' if live
-            else 'No IMU data — is imu_node running and are the ESPs on?',
-            fg=OK if live else WARN)
+        live = {s for s in self._imu_latest if self._imu_fresh_q(s, now) is not None}
+        self._imu_live = live
+        ori, segs, *_r, f_ori, f_pos = self._imu_cart_spec()
+        used = ({ori} if f_ori else set()) | ({s for s, _L in segs} if f_pos else set())
+        if now - self._imu_rate_t >= 1.0:
+            counts, self._imu_msg_count = self._imu_msg_count, {}
+            span = now - self._imu_rate_t
+            self._imu_rate_hz = {k: n / span for k, n in counts.items()}
+            self._imu_rate_t = now
+        self._imu_render_leds(now, live, used)
+        self._imu_render_calib(now)
+        missing = sorted(used - live)
+        if not live:
+            txt, color = 'No IMU data — is imu_node running and are the ESPs on?', WARN
+        elif missing:
+            txt, color = f'Used but silent: {", ".join(map(str, missing))}', WARN
+        else:
+            txt, color = f'{len(live)} live, all used sensors OK.', OK
+        self._imu_live_lbl.config(text=txt, fg=color)
 
         if self._imu_tracking:
             reason = self._imu_block_reason()
             if reason:
                 self._imu_stop_tracking(f'IMU tracking stopped: {reason}.', WARN)
 
-        q_new_deg = self._imu_tick_joint(now, dt)
         if self._imu_tracking and self._imu_cart is not None:
             q_new_deg = self._imu_tick_cartesian(now, dt)
-        if self._imu_tracking and q_new_deg is not None:
-            self._imu_publish_if_changed(q_new_deg)
+            published = (q_new_deg is not None
+                         and self._imu_publish_if_changed(q_new_deg))
+            if self._imu_rec is not None:
+                self._imu_rec_tick(now, used, live, published)
 
         self._imu_after = self.root.after(IMU_TICK_MS, self._imu_tick)
 
-    def _imu_tick_joint(self, now: float, dt: float):
-        """Leituras da tabela; no modo JOINT em rastreio, devolve o alvo."""
-        tracking = self._imu_tracking and self._imu_cart is None
-        stale = []
-        for j in ARM_JOINTS:
-            row = self._imu_rows[j]
-            cfg = self._imu_row_cfg(j)
-            q = self._imu_fresh_q(cfg[0], now) if cfg else None
-            ang = None
-            if q is not None:
-                if j not in self._imu_ref_q:
-                    self._imu_ref_q[j] = q
-                raw = twist_deg(self._imu_ref_q[j], q, cfg[1])
-                # desembrulha para a junta passar de ±180° sem saltar
-                prev = self._imu_unwrap.get(j, 0.0)
-                ang = prev + wrap180(raw - prev)
-                self._imu_unwrap[j] = ang
-            row['ang'].config(text='—' if ang is None else f'{ang * cfg[2]:+7.1f}°',
-                              fg=TEXT if ang is not None else TEXT_DIM)
-            if not tracking:
-                row['tgt'].config(text='—', fg=TEXT_DIM)
-                continue
-            if row['on'].get() and cfg:
-                if ang is None:
-                    stale.append(j)
-                else:
-                    lo, hi = ARM_LIMITS_DEG[j]
-                    desired = max(lo, min(hi, self._imu_ref_deg[j] + cfg[2] * ang))
-                    cur = self._imu_target_deg[j]
-                    step = IMU_MAX_DEG_S * dt
-                    self._imu_target_deg[j] = cur + max(-step, min(step, desired - cur))
-            row['tgt'].config(text=f'{self._imu_target_deg[j]:+7.1f}°',
-                              fg=PRIMARY if row['on'].get() else TEXT_DIM)
-        if not tracking:
-            return None
-        if stale:
-            self._set_status(f'IMU: no fresh data for {", ".join(stale)} — frozen.', WARN)
-        return dict(self._imu_target_deg)
-
     def _imu_tick_cartesian(self, now: float, dt: float):
         st = self._imu_cart
+        st['tick'] = None   # só ganha conteúdo se o tick andar (ver gravação)
         sample = self._imu_cart_sample(now)
         if sample is None:
             self._imu_cart_lbl.config(text='A sensor in use went silent — frozen.', fg=WARN)
@@ -625,7 +800,8 @@ class IMUMixin:
         st['p_cmd'], st['R_cmd'] = step_toward_pose(
             p_prev, st['R_cmd'], p_des, R_des,
             IMU_MAX_TCP_M_S * dt, _math.radians(IMU_MAX_TCP_DEG_S) * dt)
-        res = ik_step(st['q'], st['p_cmd'], T_end=st['T_end'], R_lock=st['R_cmd'])
+        res = ik_step(st['q'], st['p_cmd'], T_end=st['T_end'], R_lock=st['R_cmd'],
+                      locked=self._imu_locked_mask())
         # Teto por junta também no cartesiano: perto de singularidade a IK
         # pode pedir um salto grande de punho por um passo pequeno do TCP.
         max_dq = _math.radians(IMU_MAX_DEG_S) * dt
@@ -635,21 +811,24 @@ class IMUMixin:
         d = (st['p_cmd'] - st['p_tcp0']) * 1000.0
         T = tcp_pose(st['q'], T_end=st['T_end'])
         err = float(np.linalg.norm(T[:3, 3] - st['p_cmd'])) * 1000.0
+        st['tick'] = {'tcp': T[:3, 3].copy(), 'err': err,
+                      'singular': res.singular, 'at_limit': res.at_limit}
         flags = ('  SINGULAR' if res.singular else '') + ('  AT LIMIT' if res.at_limit else '')
         self._imu_cart_lbl.config(
-            text=f'ΔTCP  x {d[0]:+6.0f}  y {d[1]:+6.0f}  z {d[2]:+6.0f} mm   '
-                 f'v {st["v_tcp"] * 1000:5.0f} mm/s   IK err {err:4.1f} mm{flags}',
+            text=f'ΔTCP  x {d[0]:+5.0f}  y {d[1]:+5.0f}  z {d[2]:+5.0f} mm\n'
+                 f'v {st["v_tcp"] * 1000:4.0f} mm/s   IK err {err:4.1f} mm{flags}',
             fg=WARN if (flags or err > 5.0) else TEXT)
         return {j: _math.degrees(float(v)) for j, v in zip(ARM_JOINTS, st['q'])}
 
-    def _imu_publish_if_changed(self, q_deg: dict[str, float]) -> None:
+    def _imu_publish_if_changed(self, q_deg: dict[str, float]) -> bool:
         pub = self._imu_published_deg or {}
         if not any(abs(q_deg[j] - pub.get(j, 1e9)) > IMU_PUBLISH_DEADBAND_DEG
                    for j in ARM_JOINTS):
-            return
+            return False
         with self._suppress():
             for j in ARM_JOINTS:
                 self.arm_sliders[j].set(round(q_deg[j], 1))
         self._publish_arm_q([_math.radians(q_deg[j]) for j in ARM_JOINTS],
                             MANIP_TRAJ_DURATION_S)
         self._imu_published_deg = dict(q_deg)
+        return True

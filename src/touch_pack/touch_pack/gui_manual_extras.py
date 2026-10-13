@@ -1,4 +1,4 @@
-"""gui_manual_extras.py — os três cards que o Controle Manual não tinha.
+"""gui_manual_extras.py — os dois cards que o Controle Manual não tinha.
 
 1. **Jog cartesiano com passo fixo** (0,1 / 1 / 10 mm) no frame da FERRAMENTA
    ou da BASE. Os sliders movem juntas; para encostar uma ponteira num fantoma
@@ -7,9 +7,6 @@
 2. **Freios por junta** (`BrakeControl`). Quando o braço para em alarme com a
    ponta encostada, soltar o freio de uma junta é o que tira a ferramenta de lá
    sem energizar nada.
-
-3. **Calibração do TCP por pivô** — captura N poses tocando o mesmo ponto e
-   grava o offset real flange→ponta (ver `tcp_calib.py`).
 
 O jog reaproveita o caminho que já existe: escreve nos sliders e chama
 `_publish_arm_from_sliders()`. Nada de rota nova para o braço real — quem
@@ -41,10 +38,9 @@ except Exception:  # pragma: no cover — sem numpy/manip3d a GUI ainda abre
     _ik_step: Any = None
 
 try:
-    from .kinematics import forward_kinematics as _fk, TOUCH_TOOL_CAD_MM
+    from .kinematics import forward_kinematics as _fk
 except Exception:  # pragma: no cover
     _fk: Any = None
-    TOUCH_TOOL_CAD_MM = 0.0
 
 log = logging.getLogger('touch_pack.gui_manual_extras')
 
@@ -67,11 +63,10 @@ JOG_IK_TOL_M = 5e-6
 
 
 class ManualExtrasMixin:
-    """Jog cartesiano, freios por junta e calibração de TCP."""
+    """Jog cartesiano e freios por junta."""
 
     def _build_manual_extras(self, parent: tk.Frame) -> None:
         self._build_cart_jog_card(parent)
-        self._build_tcp_calib_card(parent)
         self._build_brake_card(parent)
 
     # Jog cartesiano
@@ -183,106 +178,6 @@ class ManualExtrasMixin:
             self._set_status(
                 'Cartesian jog: singular Jacobian — the step was truncated.',
                 WARN)
-
-    # Calibração de TCP por pivô
-    def _build_tcp_calib_card(self, parent: tk.Frame) -> None:
-        card = self._card(parent, 'TCP calibration — 4-point pivot',
-                          expand=False)
-        tk.Label(card,
-                 text=('Touch the SAME physical point with the tip, in 4 '
-                       'different wrist orientations, capturing each one.'),
-                 bg=PANEL, fg=TEXT_MUTED, font=FONT_SMALL,
-                 anchor='w', wraplength=430, justify='left').pack(fill='x')
-
-        self._tcp_calib_qs: list[np.ndarray] = []
-
-        btns = tk.Frame(card, bg=PANEL)
-        btns.pack(fill='x', pady=(8, 0))
-        for txt, cmd, color in (
-                ('＋ Capture point', self._tcp_calib_capture, PRIMARY),
-                ('✓ Solve & save', self._tcp_calib_solve, OK),
-                ('✕ Clear', self._tcp_calib_clear, DANGER)):
-            tk.Button(btns, text=txt, command=cmd, bg=color, fg='white',
-                      activebackground=_shade(color, -0.08),
-                      activeforeground='white', font=FONT_LBL, relief='flat',
-                      bd=0, padx=10, pady=6, cursor='hand2'
-                      ).pack(side='left', fill='x', expand=True, padx=2)
-
-        self._tcp_calib_lbl = tk.Label(card, text='', bg=PANEL, fg=TEXT_DIM,
-                                       font=FONT_MONO_S, anchor='w',
-                                       justify='left', wraplength=430)
-        self._tcp_calib_lbl.pack(fill='x', pady=(8, 0))
-        self._tcp_calib_refresh()
-
-    def _tcp_calib_refresh(self) -> None:
-        from . import tcp_calib
-        from .kinematics import T_TOUCH_TOOL_ATTACH
-        atual = float(np.linalg.norm(T_TOUCH_TOOL_ATTACH[:3, 3])) * 1e3
-        origem = 'calibrated' if tcp_calib.load_offset_mm() else 'CAD'
-        self._tcp_calib_lbl.config(
-            text=f'captures: {len(self._tcp_calib_qs)}/'
-                 f'{tcp_calib.PIVOT_MIN_POINTS}   '
-                 f'TCP in use: {atual:.2f} mm ({origem})')
-
-    def _tcp_calib_capture(self) -> None:
-        """Guarda a pose ATUAL do braço (real quando há um; senão a da cena)."""
-        q = None
-        if self._robot_connected and self._real_driver is not None:
-            try:
-                q = np.asarray(self._real_driver.read_joints_urdf_latest(),
-                               dtype=float)
-            except Exception as exc:
-                self._set_status(f'Failed to read joints: {exc}', DANGER)
-                return
-        else:
-            q = self._latest_joint_rad
-            if q is None or len(q) < 6:
-                self._set_status(
-                    'No arm pose available — connect the CR10 or start the sim.',
-                    WARN)
-                return
-            q = np.asarray(q[:6], dtype=float)
-        self._tcp_calib_qs.append(q)
-        self._tcp_calib_refresh()
-        self._set_status(
-            f'TCP calibration: {len(self._tcp_calib_qs)} capture(s). '
-            f'Rotate the wrist and touch the same point again.', OK)
-
-    def _tcp_calib_solve(self) -> None:
-        from . import tcp_calib
-        try:
-            fit = tcp_calib.solve_pivot(self._tcp_calib_qs)
-        except ValueError as exc:
-            self._set_status(f'TCP calibration: {exc}', WARN)
-            return
-        problema = tcp_calib.check_fit(fit, cad_length_mm=TOUCH_TOOL_CAD_MM)
-        if problema:
-            self._set_status(f'TCP calibration refused — {problema}', DANGER)
-            return
-        caminho = tcp_calib.save_offset_mm(fit)
-        self._tcp_calib_qs.clear()
-        self._tcp_calib_refresh()
-        # Recarregar `kinematics` no ar seria pior que reiniciar: os módulos
-        # que amarraram T_TOUCH_TOOL_ATTACH como default de argumento ficariam
-        # com o valor velho e a GUI passaria a ter dois TCPs ao mesmo tempo.
-        self._set_status(
-            f'TCP calibrated: {fit.length_mm:.2f} mm '
-            f'(residual {fit.residual_mm:.2f} mm, {fit.n_points} points) → '
-            f'{caminho}. RESTART the GUI for it to take effect.', OK)
-        if self._robot_connected and self._real_driver is not None:
-            try:
-                self._real_driver.apply_tool_offset()
-            except Exception as exc:                      # pragma: no cover
-                log.warning('Tool() não atualizado no controlador: %s', exc)
-
-    def _tcp_calib_clear(self) -> None:
-        from . import tcp_calib
-        self._tcp_calib_qs.clear()
-        apagou = tcp_calib.clear()
-        self._tcp_calib_refresh()
-        self._set_status(
-            'TCP calibration cleared — back to the CAD value after a restart.'
-            if apagou else 'Captures discarded.', WARN if apagou else OK)
 
     # Freios por junta
     def _build_brake_card(self, parent: tk.Frame) -> None:

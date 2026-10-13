@@ -14,11 +14,20 @@ principal deste processo é o do Qt e o rclpy gira numa thread.
 Cada ESP descoberto por multicast é posto em RUN (AGM, `rate_hz`) assim que
 o TCP conecta; ao encerrar, todos voltam a HOLD.
 
+Calibração (a mesma rotina do WBAN, `core/sensorcalibration.py`), pedida por
+std_msgs/String em CALIB_REQ_TOPIC: "AG <id>" | "MAG <id>" (id = all → todos
+os conectados); "CANCEL <id>" aborta sem gravar nada. AG = sensor PARADO e plano por 10 s a 500 Hz (offsets de acc e
+giro); MAG = girar devagar em todas as direções por 30 s (elipsoide hard/soft
+iron). Durante a coleta o sensor NÃO publica /imu/sensor_<id>; no fim o
+calibration.json é recarregado e a orientação recomeça do zero (parado ~2 s).
+Andamento e resultado saem em CALIB_STATUS_TOPIC (JSON).
+
 Dependências no python do ROS (numpy<2!):
     pip install --user PyQt6==6.10.2 ahrs==0.3.1 "numpy<2"
 """
 from __future__ import annotations
 
+import json
 import os
 import signal
 import sys
@@ -29,12 +38,16 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
+from std_msgs.msg import String
 
 from .lc_filter import QOS_SENSOR
 
 DEFAULT_WBAN_DIR = os.path.expanduser(
     '~/WBAN-Inercial/Software main/Sensores Inerciais Nova Interface')
 RATES_HZ = (500, 400, 300, 200, 100)
+CALIB_REQ_TOPIC = '/imu/calibrate'
+CALIB_STATUS_TOPIC = '/imu/calibration'
+CALIB_KINDS = ('AG', 'MAG')
 
 
 def imu_topic(sensor_id: int) -> str:
@@ -56,6 +69,16 @@ class ImuNode(Node):
         # prefere a rota default — com cabo e Wi-Fi ligados, costuma ser o cabo.
         self.iface_ip = str(self.declare_parameter('iface_ip', '').value).strip()
         self._pubs: dict[int, object] = {}
+        self.calib_status_pub = self.create_publisher(String, CALIB_STATUS_TOPIC, 10)
+        self.on_calib_request = None   # ligado em main(), já com o Qt de pé
+        self.create_subscription(String, CALIB_REQ_TOPIC, self._cb_calib, 10)
+
+    def _cb_calib(self, msg: String) -> None:
+        if self.on_calib_request is not None:
+            self.on_calib_request(msg.data)
+
+    def calib_status(self, **fields) -> None:
+        self.calib_status_pub.publish(String(data=json.dumps(fields)))
 
     def publish(self, sensor_id: int, q_wxyz, gyr_dps, acc_ms2) -> None:
         pub = self._pubs.get(sensor_id)
@@ -89,15 +112,22 @@ def main(args=None):
         rclpy.shutdown()
         sys.exit(1)
     sys.path.insert(0, node.wban_dir)
+    # sensorcalibration importa pyqtgraph.opengl só para o gráfico 3D do
+    # modo linha de comando; aqui ele nunca é usado e o pacote não existe no
+    # python do ROS.
+    import types
+    for name in ('pyqtgraph', 'pyqtgraph.opengl'):
+        sys.modules.setdefault(name, types.ModuleType(name))
     try:
         from core import commands
+        from core import sensorcalibration
         from core import communications as wban_comm
         from core.communications import (
             CentralCtrl, CentralCtrlConfigServer, CentralCtrlSensorClient,
         )
         from core.dataprocessing import FormatData
         from PyQt6.QtCore import (
-            QCoreApplication, QObject, QThread, QTimer, pyqtSlot,
+            QCoreApplication, QObject, QThread, QTimer, pyqtSignal, pyqtSlot,
         )
     except ImportError as exc:
         log.error(f'Não foi possível importar o WBAN ({exc}). No python do ROS: '
@@ -121,8 +151,11 @@ def main(args=None):
 
     if node.calibration_file:
         FormatData.CALIBRATION_FILE = node.calibration_file
+        sensorcalibration.CALIBRATION_FILE = node.calibration_file
     formatter = FormatData()
     formatter.update_sampling_rate(node.rate_hz)
+    calib = sensorcalibration.CalibrationManager()
+    calibrating: dict[int, str] = {}   # sensor → 'AG' | 'MAG', só na thread do Qt
 
     class Sink(QObject):
         """Vive na thread do Qt: os pacotes chegam das threads dos clientes
@@ -140,6 +173,9 @@ def main(args=None):
         @pyqtSlot(object)
         def on_data(self, data):
             sid = int(data.sensor_id)
+            if sid in calibrating:
+                calib.process_data(data)
+                return
             acc = formatter.convert_data(
                 np.array([data.ax, data.ay, data.az], dtype=float), 'A', sensor_id=sid)
             gyr = formatter.convert_data(
@@ -197,7 +233,106 @@ def main(args=None):
         # em vez de continuar de um quaternion velho.
         formatter.Q.pop(sensor_id, None)
         formatter.init_buffer.pop(sensor_id, None)
+        if calibrating.pop(sensor_id, None):
+            calib.active_sensors.pop(sensor_id, None)
+            node.calib_status(state='error', kind=None, sensor=sensor_id,
+                              msg='sensor perdido durante a calibração')
         log.warn(f'sensor {sensor_id} perdido')
+
+    # ── Calibração ────────────────────────────────────────────────────
+    def send_rate(sid: int, hz: int) -> None:
+        central_ctrl.send_config((sid, state_run, commands.RATE_NAMES.index(str(hz)),
+                                  axis_agm, acc_fsr, gyr_fsr))
+
+    def cancel_calibration(arg: str) -> None:
+        sids = list(calibrating) if arg.lower() == 'all' else (
+            [int(arg)] if arg.isdigit() else [])
+        for sid in sids:
+            kind = calibrating.pop(sid, None)
+            if kind is None:
+                continue
+            calib.active_sensors.pop(sid, None)
+            formatter.Q.pop(sid, None)
+            formatter.init_buffer.pop(sid, None)
+            if sid in sensor_clients:
+                send_rate(sid, node.rate_hz)
+            node.calib_status(state='cancelled', kind=kind, sensor=sid)
+            log.info(f'sensor {sid}: calibração {kind} cancelada')
+
+    def start_calibration(text: str) -> None:
+        parts = text.split()
+        kind = parts[0].upper() if parts else ''
+        if kind == 'CANCEL' and len(parts) == 2:
+            cancel_calibration(parts[1])
+            return
+        if kind not in CALIB_KINDS or len(parts) != 2:
+            node.calib_status(state='error', kind=kind, sensor=None,
+                              msg=f'pedido inválido: {text!r} (use "AG 4", "MAG all")')
+            return
+        if calibrating and kind not in calibrating.values():
+            # O CalibrationManager guarda UM tipo por vez.
+            node.calib_status(state='error', kind=kind, sensor=None,
+                              msg='outra calibração (de outro tipo) em andamento')
+            return
+        targets = (sorted(sensor_clients) if parts[1].lower() == 'all'
+                   else [int(parts[1])] if parts[1].isdigit() else [])
+        if not targets:
+            node.calib_status(state='error', kind=kind, sensor=None,
+                              msg='nenhum sensor conectado' if parts[1].lower() == 'all'
+                              else f'sensor inválido: {parts[1]}')
+            return
+        for sid in targets:
+            if sid not in sensor_clients:
+                node.calib_status(state='error', kind=kind, sensor=sid,
+                                  msg='sensor não conectado')
+                continue
+            if sid in calibrating:
+                continue
+            hz = sensorcalibration.FREQ_AG if kind == 'AG' else sensorcalibration.FREQ_MAG
+            calibrating[sid] = kind
+            calib.start_calibration(sid, kind, hz)
+            send_rate(sid, hz)
+            log.info(f'sensor {sid}: calibração {kind} a {hz} Hz')
+
+    def on_calib_started(sid, kind, duration):
+        node.calib_status(state='started', kind=kind, sensor=sid, duration_s=duration)
+
+    def on_calib_progress(sid, kind, progress):
+        node.calib_status(state='progress', kind=kind, sensor=sid,
+                          progress=round(float(progress), 1))
+
+    def on_calib_finished(result):
+        sid, kind = result.get('sensor_id'), result.get('type')
+        calibrating.pop(sid, None)
+        formatter.reload_calibration()
+        # Offsets novos → a orientação recomeça do zero, com o sensor parado.
+        formatter.Q.pop(sid, None)
+        formatter.init_buffer.pop(sid, None)
+        if sid in sensor_clients:
+            send_rate(sid, node.rate_hz)
+        ok = result.get('status') == 'success'
+        extra = {}
+        if ok and kind == 'MAG':
+            m = (result['A_matrix'] @ (result['M_raw'] - result['V_bias']).T).T
+            r = np.linalg.norm(m, axis=1)
+            # Coeficiente de variação do raio: a métrica do WBAN (ideal < 3 %).
+            extra['cov_pct'] = round(float(r.std() / r.mean() * 100.0), 2)
+        node.calib_status(state='done' if ok else 'error', kind=kind, sensor=sid,
+                          msg='' if ok else 'coleta sem dados suficientes', **extra)
+        log.info(f'sensor {sid}: calibração {kind} '
+                 f'{"concluída" if ok else "FALHOU"} {extra or ""}')
+
+    calib.calibration_started.connect(on_calib_started)
+    calib.calibration_progress.connect(on_calib_progress)
+    calib.calibration_finished.connect(on_calib_finished)
+
+    class CalibBridge(QObject):
+        """Pedido chega na thread do rclpy; o sinal o entrega na do Qt."""
+        request = pyqtSignal(str)
+
+    bridge = CalibBridge()
+    bridge.request.connect(start_calibration)
+    node.on_calib_request = bridge.request.emit
 
     central_ctrl.list_sensor.connect(create_sensor_client)
     central_ctrl.remove_sensor.connect(remove_sensor_client)

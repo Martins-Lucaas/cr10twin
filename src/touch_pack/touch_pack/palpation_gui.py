@@ -2029,7 +2029,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                    cursor='hand2'
                    ).pack(side='left', fill='x', expand=True, padx=(4, 0))
 
-        # Jog cartesiano, calibração de TCP e freios — o que o DobotStudio
+        # Jog cartesiano e freios — o que o DobotStudio
         # Pro tem no painel de controle e aqui só existia como slider.
         extras = tk.Frame(col_arm, bg=BG)
         extras.pack(fill='x', pady=(10, 0))
