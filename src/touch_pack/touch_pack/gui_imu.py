@@ -39,7 +39,8 @@ from std_msgs.msg import String
 from .constants import ARM_JOINTS, CONFIG_DIR
 from .gui_constants import ARM_LIMITS_DEG, MANIP_TRAJ_DURATION_S
 from .imu_math import (
-    LIMB_AXES, cartesian_target, chain_position, quat_to_R, step_toward_pose,
+    LIMB_AXES, AccelIntegrator, cartesian_target, chain_position, clamp_radius, quat_to_R,
+    step_toward_pose,
 )
 from .imu_node import CALIB_REQ_TOPIC, CALIB_STATUS_TOPIC, imu_topic
 from .gui_imu_calib import ImuCalibWizard
@@ -53,8 +54,9 @@ from .ui_helpers import (
 
 try:
     from .manip3d import ik_step, tcp_pose
+    from .kinematics import JOINT_MAX, JOINT_MIN
 except Exception:  # pragma: no cover — mesmo guard da aba 3D
-    ik_step = tcp_pose = None
+    ik_step = tcp_pose = JOINT_MAX = JOINT_MIN = None
 
 IMU_CONFIG_FILE = os.path.join(CONFIG_DIR, 'imu_config.json')
 
@@ -70,6 +72,15 @@ IMU_MAX_TCP_M_S = 0.15     # teto de velocidade linear do TCP (cartesiano)
 IMU_MAX_TCP_DEG_S = 60.0   # teto de velocidade angular do TCP (cartesiano)
 IMU_BOX_M = (0.25, 0.25, 0.25)   # caixa em torno do TCP do Start
 IMU_PUBLISH_DEADBAND_DEG = 0.1
+# Guarda da IK. Calibrada nas gravações de 13/10/2026: com o alvo a ~160 mm do
+# eixo da base a IK perdeu o controle (J1 90°→−180°, J6 até −316°, erro de 368 mm)
+# enquanto o alvo mal se mexia. A corrida boa ficou a ≥328 mm do eixo, J1 ±16° do
+# Start e erro de IK ≤247 mm (serrote: atraso do teto de velocidade das juntas).
+IMU_MIN_RADIUS_M = 0.25        # alvo nunca entra neste raio em torno do eixo da base
+IMU_J1_MAX_SWING_DEG = 45.0    # J1 não se afasta mais que isto da pose do Start
+IMU_IK_LOST_M = 0.25           # erro de IK acima disto...
+IMU_IK_LOST_S = 0.5            # ...por tanto tempo = IK perdida → para
+IMU_START_LIMIT_MARGIN_DEG = 10.0   # Start recusado com junta mais perto do limite que isto
 TK_STALL_S = 5.0   # laço do Tk parado por mais que isto → despeja as pilhas (0 = sem vigia)
 # O ESP manda as amostras em rajadas (6 a cada 60 ms a 100 Hz): com a
 # profundidade 1 do QOS_SENSOR a GUI só via a última de cada rajada e a
@@ -97,6 +108,7 @@ class IMUMixin:
     # ── Construção ───────────────────────────────────────────────────
     def _build_imu_tab(self, root: tk.Frame) -> None:
         self._imu_latest: dict[int, tuple[float, np.ndarray]] = {}
+        self._imu_acc: dict[int, AccelIntegrator] = {}
         for sid in range(1, len(IMU_IDS)):
             self.create_subscription(
                 Imu, imu_topic(sid),
@@ -255,6 +267,7 @@ class IMUMixin:
             'ori_imu': tk.StringVar(value=str(cart_cfg.get('ori_imu', '6'))),
             'follow_ori': tk.BooleanVar(value=bool(cart_cfg.get('follow_ori', True))),
             'follow_pos': tk.BooleanVar(value=bool(cart_cfg.get('follow_pos', True))),
+            'follow_acc': tk.BooleanVar(value=bool(cart_cfg.get('follow_acc', False))),
             'limb_axis': tk.StringVar(value=str(cart_cfg.get('limb_axis', '+X'))),
             'scale': tk.DoubleVar(value=float(cart_cfg.get('scale', 1.0))),
             'heading': tk.DoubleVar(value=float(cart_cfg.get('heading', 0.0))),
@@ -309,6 +322,13 @@ class IMUMixin:
                  'TCP forward.')
         self._imu_check(opts, cv['follow_pos'], 'follow position'
                         ).pack(side='left', padx=(14, 0))
+        acc_cb = self._imu_check(opts, cv['follow_acc'], 'follow accel')
+        acc_cb.pack(side='left', padx=(14, 0))
+        _Tooltip(acc_cb, 'Adds the orientation IMU\'s accelerometer to the target: '
+                 'translating the hand moves the TCP even without rotating it. '
+                 'Dead-reckoning: hold the hand still ~1 s after Start so gravity '
+                 'is learned; velocity is zeroed whenever the hand stops. Drift '
+                 'builds with each movement — press Start again to re-zero.')
         for v in cv.values():
             v.trace_add('write', lambda *_a: self._imu_on_cart_change())
 
@@ -377,10 +397,24 @@ class IMUMixin:
             # Rebind atômico do item — o tick do Tk lê este dict a 30 Hz.
             t = time.monotonic()
             self._imu_latest[sensor_id] = (t, q)
+            if self._imu_acc_sid() == sensor_id:
+                a, w = msg.linear_acceleration, msg.angular_velocity
+                self._imu_acc.setdefault(sensor_id, AccelIntegrator()).update(
+                    t, quat_to_R(q), (a.x, a.y, a.z), (w.x, w.y, w.z))
             self._imu_msg_count[sensor_id] = self._imu_msg_count.get(sensor_id, 0) + 1
             rec = self._imu_rec
             if rec is not None:
                 rec.imu(sensor_id, msg, t)
+
+    def _imu_acc_sid(self):
+        """ID do IMU cuja aceleração entra no alvo (o de orientação), ou None."""
+        cv = getattr(self, '_imu_cart_vars', None)
+        if cv is None or not cv['follow_acc'].get():
+            return None
+        try:
+            return int(cv['ori_imu'].get())
+        except ValueError:
+            return None
 
     def _imu_fresh_q(self, sid, now: float):
         item = self._imu_latest.get(sid) if sid is not None else None
@@ -464,6 +498,14 @@ class IMUMixin:
                     return None
                 rots.append(quat_to_R(q))
             p_hand = chain_position(rots, [L for _s, L in segs], axis)
+        acc_sid = self._imu_acc_sid()
+        if acc_sid is not None:
+            integ = self._imu_acc.get(acc_sid)
+            if self._imu_fresh_q(acc_sid, now) is None:
+                return None
+            if integ is None or not integ.ready:
+                return None   # ainda aprendendo a gravidade (mão parada)
+            p_hand = (np.zeros(3) if p_hand is None else p_hand) + integ.displacement()
         return R_ori, p_hand
 
     def _imu_cart_rezero(self) -> None:
@@ -474,6 +516,9 @@ class IMUMixin:
             if st is not None:
                 st['ref'] = None   # captura no próximo tick com dado fresco
             return
+        for integ in self._imu_acc.values():
+            integ.reset()
+        sample = self._imu_cart_sample(time.monotonic())
         T = tcp_pose(st['q'], T_end=st['T_end'])
         st['p_tcp0'], st['R_tcp0'] = T[:3, 3].copy(), T[:3, :3].copy()
         st['p_cmd'], st['R_cmd'] = T[:3, 3].copy(), T[:3, :3].copy()
@@ -491,6 +536,21 @@ class IMUMixin:
             return 'drag teach active'
         if self._exec_movement_id is not None:
             return 'motion running'
+        return ''
+
+    def _imu_start_pose_problem(self, q_deg: dict[str, float]) -> str:
+        """Motivo de a pose de Start ser insegura, ou '' se está ok."""
+        q = np.radians([q_deg[j] for j in ARM_JOINTS])
+        m = _math.radians(IMU_START_LIMIT_MARGIN_DEG)
+        for j, qi, lo, hi in zip(ARM_JOINTS, q, JOINT_MIN, JOINT_MAX):
+            if qi < lo + m or qi > hi - m:
+                return (f'{j} at {_math.degrees(qi):.0f}° is within '
+                        f'{IMU_START_LIMIT_MARGIN_DEG:.0f}° of its limit')
+        p = tcp_pose(q, T_end=self._manip_T_end())[:3, 3]
+        r = float(np.hypot(p[0], p[1]))
+        if r < IMU_MIN_RADIUS_M:
+            return (f'TCP is {r * 1000:.0f} mm from the base axis '
+                    f'(min {IMU_MIN_RADIUS_M * 1000:.0f} mm)')
         return ''
 
     def _imu_slider_q_deg(self) -> dict[str, float]:
@@ -516,12 +576,19 @@ class IMUMixin:
         if all(self._imu_locked_mask()):
             self._set_status('IMU: all joints are locked.', WARN)
             return
+        why = self._imu_start_pose_problem(q_deg)
+        if why:
+            self._set_status(f'IMU: unsafe start pose — {why}. Move the arm '
+                             '(Home) and try again.', WARN)
+            return
         ori, segs, *_r, f_ori, f_pos = self._imu_cart_spec()
         if not (f_ori or f_pos):
             self._set_status('IMU: pick an orientation IMU and/or segment IMUs '
                              'with length > 0.', WARN)
             return
         used = ([ori] if f_ori else []) + ([s for s, _L in segs] if f_pos else [])
+        if self._imu_acc_sid() is not None:
+            used.append(self._imu_acc_sid())
         missing = sorted({s for s in used if self._imu_fresh_q(s, now) is None})
         if missing:
             self._set_status(f'IMU: no data from sensor(s) {missing}.', WARN)
@@ -530,6 +597,7 @@ class IMUMixin:
             'q': np.radians([q_deg[j] for j in ARM_JOINTS]),
             'T_end': self._manip_T_end(),
             'v_tcp': 0.0, 'ik_err': 0.0,
+            'q0': np.radians([q_deg[j] for j in ARM_JOINTS]), 'lost_s': 0.0,
         }
         self._imu_cart_rezero()
         self._imu_published_deg = dict(q_deg)
@@ -749,6 +817,8 @@ class IMUMixin:
         self._imu_live = live
         ori, segs, *_r, f_ori, f_pos = self._imu_cart_spec()
         used = ({ori} if f_ori else set()) | ({s for s, _L in segs} if f_pos else set())
+        if self._imu_acc_sid() is not None:
+            used.add(self._imu_acc_sid())
         if now - self._imu_rate_t >= 1.0:
             counts, self._imu_msg_count = self._imu_msg_count, {}
             span = now - self._imu_rate_t
@@ -784,6 +854,12 @@ class IMUMixin:
         st['tick'] = None   # só ganha conteúdo se o tick andar (ver gravação)
         sample = self._imu_cart_sample(now)
         if sample is None:
+            integ = self._imu_acc.get(self._imu_acc_sid())
+            if self._imu_acc_sid() is not None and (integ is None or not integ.ready) \
+                    and self._imu_fresh_q(self._imu_acc_sid(), now) is not None:
+                self._imu_cart_lbl.config(
+                    text='Learning gravity — hold the hand still…', fg=WARN)
+                return None
             self._imu_cart_lbl.config(text='A sensor in use went silent — frozen.', fg=WARN)
             return None
         if st['ref'] is None:
@@ -796,10 +872,12 @@ class IMUMixin:
         p_des, R_des = cartesian_target(st['p_tcp0'], st['R_tcp0'], dp, dR,
                                         heading_deg=heading, scale=scale,
                                         box_m=IMU_BOX_M)
+        p_des = clamp_radius(p_des, IMU_MIN_RADIUS_M)
         p_prev = st['p_cmd']
         st['p_cmd'], st['R_cmd'] = step_toward_pose(
             p_prev, st['R_cmd'], p_des, R_des,
             IMU_MAX_TCP_M_S * dt, _math.radians(IMU_MAX_TCP_DEG_S) * dt)
+        st['p_cmd'] = clamp_radius(st['p_cmd'], IMU_MIN_RADIUS_M)
         res = ik_step(st['q'], st['p_cmd'], T_end=st['T_end'], R_lock=st['R_cmd'],
                       locked=self._imu_locked_mask())
         # Teto por junta também no cartesiano: perto de singularidade a IK
@@ -811,6 +889,10 @@ class IMUMixin:
         d = (st['p_cmd'] - st['p_tcp0']) * 1000.0
         T = tcp_pose(st['q'], T_end=st['T_end'])
         err = float(np.linalg.norm(T[:3, 3] - st['p_cmd'])) * 1000.0
+        lost = self._imu_ik_guard(st, dt, err / 1000.0)
+        if lost:
+            self._imu_stop_tracking(f'IMU tracking stopped: {lost}.', DANGER)
+            return None
         st['tick'] = {'tcp': T[:3, 3].copy(), 'err': err,
                       'singular': res.singular, 'at_limit': res.at_limit}
         flags = ('  SINGULAR' if res.singular else '') + ('  AT LIMIT' if res.at_limit else '')
@@ -819,6 +901,20 @@ class IMUMixin:
                  f'v {st["v_tcp"] * 1000:4.0f} mm/s   IK err {err:4.1f} mm{flags}',
             fg=WARN if (flags or err > 5.0) else TEXT)
         return {j: _math.degrees(float(v)) for j, v in zip(ARM_JOINTS, st['q'])}
+
+    @staticmethod
+    def _imu_ik_guard(st: dict, dt: float, err_m: float) -> str:
+        """Motivo de abortar o rastreio (IK perdida / base girando), ou ''.
+        Roda ANTES de publicar: o q divergente nunca chega ao braço."""
+        swing = abs(_math.degrees(float(st['q'][0] - st['q0'][0])))
+        if swing > IMU_J1_MAX_SWING_DEG:
+            return (f'joint1 swung {swing:.0f}° from the start pose '
+                    f'(max {IMU_J1_MAX_SWING_DEG:.0f}°)')
+        st['lost_s'] = st['lost_s'] + dt if err_m > IMU_IK_LOST_M else 0.0
+        if st['lost_s'] >= IMU_IK_LOST_S:
+            return (f'IK lost the target ({err_m * 1000:.0f} mm off for '
+                    f'{st["lost_s"]:.1f} s)')
+        return ''
 
     def _imu_publish_if_changed(self, q_deg: dict[str, float]) -> bool:
         pub = self._imu_published_deg or {}

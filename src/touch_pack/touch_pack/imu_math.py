@@ -10,6 +10,7 @@ Convenções:
 from __future__ import annotations
 
 import math
+import threading
 
 import numpy as np
 
@@ -118,3 +119,109 @@ def step_toward_pose(p, R, p_des, R_des, max_lin_m: float, max_ang_rad: float):
     if a > max_ang_rad:
         w *= max_ang_rad / a
     return p + dp, exp_rotvec(w) @ R
+
+
+class AccelIntegrator:
+    """Deslocamento da mão (m, mundo humano) por dead-reckoning da aceleração.
+
+    a_mundo = R(q)·a_sensor − viés. O sensor mede força específica, então em
+    repouso a_mundo = (0, 0, +g) mais o erro de inclinação do Madgwick; em vez
+    de fixar g, o viés é estimado nos REPOUSOS (janela de ~0,5 s no início e,
+    depois, média móvel lenta sempre que a mão para). Parada detectada
+    (giro e aceleração pequenos por `still_n` amostras) zera a velocidade — o
+    ZUPT que segura a deriva da dupla integração. Fora do repouso a velocidade
+    vaza com `tau_v`, o que limita o erro de uma rajada ruim.
+
+    Não é posição absoluta: o erro cresce com cada movimento; o `reset()` (re-zero
+    da aba) é o que o descarta. Dado perdido (`dt > max_gap_s`) zera a velocidade.
+    """
+
+    def __init__(self, seed_s: float = 0.5, still_gyro: float = 0.08,
+                 still_acc: float = 0.35, still_n: int = 6, tau_v: float = 2.0,
+                 bias_tau_s: float = 1.0, max_v: float = 1.0,
+                 max_gap_s: float = 0.1):
+        self.seed_s, self.still_gyro, self.still_acc = seed_s, still_gyro, still_acc
+        self.still_n, self.tau_v, self.bias_tau_s = still_n, tau_v, bias_tau_s
+        self.max_v, self.max_gap_s = max_v, max_gap_s
+        self._lock = threading.Lock()
+        self.bias: np.ndarray | None = None
+        self._seed: list = []
+        self._seed_t = 0.0
+        self._t: float | None = None
+        self._still = 0
+        self.v = np.zeros(3)
+        self.p = np.zeros(3)
+
+    @property
+    def ready(self) -> bool:
+        return self.bias is not None
+
+    def reset(self) -> None:
+        """Descarta posição e velocidade (o viés aprendido fica)."""
+        with self._lock:
+            self.v = np.zeros(3)
+            self.p = np.zeros(3)
+            self._still = 0
+
+    def displacement(self) -> np.ndarray:
+        with self._lock:
+            return self.p.copy()
+
+    def update(self, t: float, R: np.ndarray, acc, gyro_rad) -> None:
+        a_w = np.asarray(R, dtype=float) @ np.asarray(acc, dtype=float)
+        gyro = float(np.linalg.norm(gyro_rad))
+        if not (np.all(np.isfinite(a_w)) and np.isfinite(gyro)):
+            return
+        with self._lock:
+            dt = None if self._t is None else t - self._t
+            self._t = t
+            if dt is None or dt <= 0.0:
+                return
+            if dt > self.max_gap_s:
+                self.v = np.zeros(3)
+                self._seed, self._still = [], 0
+                return
+            if self.bias is None:
+                if gyro > self.still_gyro:
+                    self._seed = []
+                    return
+                if not self._seed:
+                    self._seed_t = t
+                self._seed.append(a_w)
+                if t - self._seed_t >= self.seed_s:
+                    self.bias = np.mean(self._seed, axis=0)
+                    self._seed = []
+                return
+            a = a_w - self.bias
+            if gyro < self.still_gyro and float(np.linalg.norm(a)) < self.still_acc:
+                self._still += 1
+                if self._still >= self.still_n:
+                    self.v = np.zeros(3)
+                    k = 1.0 - math.exp(-dt / self.bias_tau_s)
+                    self.bias = self.bias + k * (a_w - self.bias)
+                    return
+            else:
+                self._still = 0
+            self.v = (self.v + a * dt) * math.exp(-dt / self.tau_v)
+            n = float(np.linalg.norm(self.v))
+            if n > self.max_v:
+                self.v *= self.max_v / n
+            self.p = self.p + self.v * dt
+
+
+def clamp_radius(p, r_min: float, fallback_dir=(1.0, 0.0)) -> np.ndarray:
+    """Empurra p para fora do cilindro de raio r_min em torno do eixo z da
+    base (a coluna vertical x=y=0), na direção radial. Dentro dele a IK do
+    braço fica quase singular: J1 e J6 giram juntos para um alvo que mal
+    anda. Em cima do eixo (r≈0) não há direção radial; usa `fallback_dir`."""
+    p = np.asarray(p, dtype=float).copy()
+    r = math.hypot(p[0], p[1])
+    if r >= r_min:
+        return p
+    if r > 1e-6:
+        d = p[:2] / r
+    else:
+        d = np.asarray(fallback_dir, dtype=float)
+        d = d / np.linalg.norm(d)
+    p[:2] = d * r_min
+    return p

@@ -492,3 +492,96 @@ def test_recorder_flushes_while_running(tmp_path, monkeypatch):
     with open(os.path.join(rec.path, 'robot.csv')) as fh:   # ainda aberto
         assert len(fh.read().splitlines()) == 2
     rec.close()
+
+
+def test_follow_accel_publishes_nothing_until_gravity_is_learned(host):
+    cv = host._imu_cart_vars
+    assert not cv['follow_acc'].get()          # desligado por padrão
+    cv['ori_imu'].set('6')
+    cv['follow_pos'].set(False)
+    cv['follow_acc'].set(True)
+    feeds = {6: _q((0, 0, 1), 0.0)}
+    host.tick(feeds=feeds)
+    host._imu_toggle_tracking()
+    assert host._imu_tracking, host.status
+    host.tick(20, feeds={6: _q((0, 0, 1), 30.0)})   # gira, mas sem viés aprendido
+    assert host.published == []
+    assert 'gravity' in host._imu_cart_lbl.cget('text')
+
+
+# ── Guarda da IK ─────────────────────────────────────────────────────────
+def _guard_state(q0_j1_deg=90.0, q_j1_deg=90.0):
+    return {'q0': np.radians([q0_j1_deg, 0, 0, 0, 0, 0]),
+            'q': np.radians([q_j1_deg, 0, 0, 0, 0, 0]), 'lost_s': 0.0}
+
+
+def test_guard_aborts_when_joint1_swings_too_far():
+    """Assinatura da gravação 143547: J1 90° → −180° com o alvo parado."""
+    st = _guard_state(90.0, 90.0 - gui_imu.IMU_J1_MAX_SWING_DEG - 1.0)
+    assert 'joint1' in gui_imu.IMUMixin._imu_ik_guard(st, 0.033, 0.0)
+    st = _guard_state(90.0, 90.0 - gui_imu.IMU_J1_MAX_SWING_DEG + 1.0)
+    assert gui_imu.IMUMixin._imu_ik_guard(st, 0.033, 0.0) == ''
+
+
+def test_guard_aborts_only_after_ik_error_persists():
+    """A gravação boa (143435) teve picos de 247 mm de ~0,5 s (atraso do teto de
+    velocidade das juntas); só erro ACIMA de IMU_IK_LOST_M, por IMU_IK_LOST_S, para."""
+    st = _guard_state()
+    big = gui_imu.IMU_IK_LOST_M + 0.05
+    t = 0.0
+    while t < gui_imu.IMU_IK_LOST_S - 0.1:
+        assert gui_imu.IMUMixin._imu_ik_guard(st, 0.033, big) == ''
+        t += 0.033
+    assert gui_imu.IMUMixin._imu_ik_guard(st, 0.033, 0.0) == ''   # recuperou: zera
+    assert st['lost_s'] == 0.0
+    for _ in range(int(gui_imu.IMU_IK_LOST_S / 0.033) + 2):
+        why = gui_imu.IMUMixin._imu_ik_guard(st, 0.033, big)
+    assert 'IK lost' in why
+    st = _guard_state()
+    for _ in range(100):   # erro de 247 mm (< limiar) nunca aborta
+        assert gui_imu.IMUMixin._imu_ik_guard(st, 0.033, 0.247) == ''
+
+
+def test_start_refused_with_joint_near_its_limit(host):
+    host.arm_sliders['joint1'].set(-180.0)   # a pose inicial da gravação 143639
+    host.tick(feeds={6: _q((0, 0, 1), 0.0)})
+    host._imu_cart_vars['ori_imu'].set('6')
+    host._imu_toggle_tracking()
+    assert not host._imu_tracking
+    assert 'unsafe start pose' in host.status and 'joint1' in host.status
+
+
+def test_start_refused_too_close_to_base_axis(host, monkeypatch):
+    r0 = float(np.hypot(*_fk(np.radians([Q_START_DEG[j] for j in ARM_JOINTS]))[:2, 3]))
+    monkeypatch.setattr(gui_imu, 'IMU_MIN_RADIUS_M', r0 + 0.05)
+    host.tick(feeds={6: _q((0, 0, 1), 0.0)})
+    host._imu_cart_vars['ori_imu'].set('6')
+    host._imu_toggle_tracking()
+    assert not host._imu_tracking
+    assert 'base axis' in host.status
+
+
+@pytest.mark.parametrize('heading', [0.0, 180.0])
+def test_target_never_enters_the_forbidden_cylinder(host, monkeypatch, heading):
+    """Qualquer que seja o sentido do movimento, p_cmd fica fora do raio mínimo."""
+    r0 = float(np.hypot(*_fk(np.radians([Q_START_DEG[j] for j in ARM_JOINTS]))[:2, 3]))
+    rmin = r0 - 0.002
+    monkeypatch.setattr(gui_imu, 'IMU_MIN_RADIUS_M', rmin)
+    cv = host._imu_cart_vars
+    cv['ori_imu'].set('—')
+    cv['limb_axis'].set('+X')
+    cv['heading'].set(heading)
+    host._imu_seg_vars['upper_arm'][0].set('3')
+    host._imu_seg_vars['upper_arm'][1].set(0.30)
+    host._imu_seg_vars['forearm'][0].set('4')
+    host._imu_seg_vars['forearm'][1].set(0.25)
+    feeds = {3: _q((0, 0, 1), 0.0), 4: _q((0, 0, 1), 0.0)}
+    _start_cartesian(host, feeds)
+    radii = []
+    for ang in (30.0, 60.0):   # antebraço sobe 60°: a mão recua ~125 mm
+        for _ in range(60):
+            host.tick(feeds={3: feeds[3], 4: _q((0, -1, 0), ang)})
+            if host._imu_cart is not None:
+                p = host._imu_cart['p_cmd']
+                radii.append(float(np.hypot(p[0], p[1])))
+    assert radii and min(radii) >= rmin - 1e-9
