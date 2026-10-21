@@ -1,4 +1,4 @@
-# Par sincronizado célula de carga (ESP32) × touch sensor (STM32).
+# Par sincronizado célula de carga (FA7155) × touch sensor (STM32).
 # Publicado em /touch_sync/data pelo force_sync_node a 50 Hz, somente
 # quando AMBAS as fontes têm amostra fresca (< SYNC_MAX_AGE_S).
 #

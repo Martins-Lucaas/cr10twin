@@ -7,11 +7,7 @@
       flange fixo FA7155 → célula FA7155 de 6 eixos → acoplador hot-swap
           → ponteira F retangular 15 × 17
 
-  A GEOMETRIA SEGUE A CÉLULA QUE ESTÁ PARAFUSADA, não o driver que está no ar.
-  O argumento `force_sensor` do launch escolhe qual RECEIVER sobe; ele não move
-  o TCP. Entre 26/08/2026 e 07/09/2026 este arquivo descreveu a pilha da célula
-  axial de 100 kg (TCP a 162,2 mm) — a viga S é 94,5 mm mais longa, e todo
-  ensino de pose feito com ELA precisa ser refeito agora. O carimbo
+  Ensino de pose feito com outra ferramenta precisa ser refeito. O carimbo
   `tool_tcp_mm` (constants.tool_stamp) existe exatamente para o operador ver
   isso ao carregar home/poses/contato aprendido, em vez de descobrir na descida.
 
@@ -50,8 +46,6 @@
   STEP dela é o envelope externo, sem a eletrônica, e integrar daria 2077 kg/m³
   de densidade aparente — número sem significado físico.
   Total do conjunto: 0,3837 kg, CoM em Z = +19,5 mm do flange (peso 3,76 N).
-  A pilha da viga S pesava 0,6034 kg com CoM a +58,7 mm: a compensação de
-  gravidade em `config/tactile_controllers.yaml` muda junto.
 
   TCP em (0, 0, +67,7 mm) no frame do Link6, sem rotação — espelhado em
   `touch_pack.kinematics.T_TOUCH_TOOL_ATTACH` e na compensação de gravidade de
@@ -88,7 +82,7 @@
   <material name="printed_blue">
     <color rgba="0.11 0.35 0.78 1.0"/>
   </material>
-  <!-- Aço niquelado da viga S. -->
+  <!-- Cinza metálico: flange fixo e corpo da FA7155. -->
   <material name="steel_grey">
     <color rgba="0.62 0.63 0.65 1.0"/>
   </material>
@@ -96,9 +90,7 @@
   <!-- ══════════════════════════════════════════════════════════════════
        FLANGE FIXO DO FA7155 — cad/step/FA7155 固定端法兰（需另购）.STEP
        Disco de alumínio ⌀75 × 6 mm que parafusa DIRETO na face do flange do
-       CR10 (manual §2.1: quatro M6 + pino Φ6). É a peça comprada à parte que
-       torna o `acoplador_robo` desnecessário — a pilha da viga S precisava
-       dele para adaptar o punho ao rosqueado M12, esta não.
+       CR10 (manual §2.1: quatro M6 + pino Φ6), sem acoplador intermediário.
   ══════════════════════════════════════════════════════════════════ -->
   <link name="ft_flange_link">
     <inertial>
@@ -325,7 +317,7 @@
   </gazebo>
 
   <!-- ══════════════════════════════════════════════════════════════════
-       F/T SIMULADA na junta onde a célula axial real está montada.
+       F/T SIMULADA na junta onde a FA7155 real está montada.
        `disableFixedJointLumping` preserva a junta na conversão URDF→SDF
        (sem isso ela some e o plugin não acha `load_cell_attach`).
        `provideFeedback` liga o wrench de restrição da junta.
@@ -337,8 +329,7 @@
        quando force_source != 'sim' (ver _build_touch_tool_suffix):
        preservar a junta tira do lumping os 331,8 g abaixo dela
        (load_cell 300,0 + coupler_tool 27,5 + tip 4,3), com CoM a ~24 mm do
-       punho — bem menos braço de alavanca que os ~100 mm da pilha da viga S,
-       mas a restrição elástica continua sendo elástica. O que era UM corpo rígido vira dois
+       punho. O que era UM corpo rígido vira dois
        ligados por uma restrição que o ODE resolve iterativamente — ou seja,
        elástica. É massa pendurada exatamente onde J4 trabalha, e a coleta
        20260901_094646 mostrou J4 ultrapassando o home em 1,25° e oscilando

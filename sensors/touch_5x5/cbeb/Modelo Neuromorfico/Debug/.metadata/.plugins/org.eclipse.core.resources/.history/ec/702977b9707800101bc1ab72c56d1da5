@@ -1,0 +1,226 @@
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Private defines -----------------------------------------------------------*/
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS * COLS)
+
+/* Modelo Izhikevich */
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+float I[NUM_SENSORS];
+
+uint16_t adc_buffer[NUM_SENSORS];
+uint8_t spikes[NUM_SENSORS];
+
+/* Handles gerados pelo Cube */
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+UART_HandleTypeDef huart3;
+TIM_HandleTypeDef htim6;
+
+/* Prototypes */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_TIM6_Init(void);
+
+/* Função para enviar dados via UART */
+void send_spikes(void)
+{
+    char msg[128];
+    int len = sprintf(msg, "Spikes:");
+    for (int i = 0; i < NUM_SENSORS; i++)
+        len += sprintf(msg + len, " %d", spikes[i]);
+    sprintf(msg + len, "\n");
+    HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
+/* Função de atualização do modelo Izhikevich */
+void izhikevich_update(void)
+{
+    for (int i = 0; i < NUM_SENSORS; i++)
+    {
+        // Converte ADC para corrente normalizada (0–1)
+        float adc_val = (float)adc_buffer[i] / 4095.0f;
+        I[i] = adc_val * 20.0f; // Ajuste de ganho
+
+        // Integração (passo duplo)
+        v[i] += 0.5f * (0.04f * v[i] * v[i] + 5.0f * v[i] + 140.0f - u[i] + I[i]);
+        v[i] += 0.5f * (0.04f * v[i] * v[i] + 5.0f * v[i] + 140.0f - u[i] + I[i]);
+        u[i] += a * (b * v[i] - u[i]);
+
+        if (v[i] >= 30.0f)
+        {
+            spikes[i] = 1;
+            v[i] = c;
+            u[i] += d;
+        }
+        else
+        {
+            spikes[i] = 0;
+        }
+    }
+}
+
+/* Callback do timer para processar leitura */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM6)
+    {
+        izhikevich_update();
+        send_spikes();
+    }
+}
+
+/* Callback de ADC (DMA completo) */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    // Dados já estão em adc_buffer
+}
+
+/* Main ----------------------------------------------------------------------*/
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_USART3_UART_Init();
+    MX_TIM6_Init();
+
+    // Inicializa variáveis do modelo
+    for (int i = 0; i < NUM_SENSORS; i++)
+    {
+        v[i] = -65.0f;
+        u[i] = b * v[i];
+    }
+
+    // Inicia ADC + DMA
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buffer, NUM_SENSORS);
+
+    // Inicia Timer
+    HAL_TIM_Base_Start_IT(&htim6);
+
+    while (1)
+    {
+        // MCU fica aqui em idle, processamento via callbacks
+    }
+}
+
+/* A partir daqui ficam as funções geradas pelo Cube ------------------------*/
+
+void SystemClock_Config(void)
+{
+    // Aqui entra o código do clock gerado pelo Cube
+}
+
+static void MX_GPIO_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0 | GPIO_PIN_3, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3 | GPIO_PIN_5, GPIO_PIN_RESET);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_3;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+}
+
+static void MX_DMA_Init(void)
+{
+    __HAL_RCC_DMA2_CLK_ENABLE();
+    HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+}
+
+static void MX_ADC1_Init(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ENABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.NbrOfDiscConversion = 0;
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = NUM_SENSORS;
+    hadc1.Init.DMAContinuousRequests = ENABLE;
+    hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+    HAL_ADC_Init(&hadc1);
+
+    // Canal PA1
+    sConfig.Channel = ADC_CHANNEL_1;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+    // Canal PB1
+    sConfig.Channel = ADC_CHANNEL_9;
+    sConfig.Rank = 2;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+    // Canal PC2
+    sConfig.Channel = ADC_CHANNEL_12;
+    sConfig.Rank = 3;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+    // Adicione outros canais se quiser completar 16 leituras
+}
+
+static void MX_USART3_UART_Init(void)
+{
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart3);
+}
+
+static void MX_TIM6_Init(void)
+{
+    htim6.Instance = TIM6;
+    htim6.Init.Prescaler = 10800 - 1; // Ajuste conforme seu clock
+    htim6.Init.Period = 100 - 1;      // Gera 100 Hz
+    htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_Base_Init(&htim6);
+
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig);
+}
+
+

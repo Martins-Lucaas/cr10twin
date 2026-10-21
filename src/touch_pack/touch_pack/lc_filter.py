@@ -1,60 +1,26 @@
 """Filtro da célula de carga e QoS dos tópicos de sensor.
 
-Usado pelos DOIS receivers — `force_receiver` (célula axial XIAO ESP32C6 +
-HX711, em uso na bancada) e `ft_receiver` (FA7155 de 6 eixos) — porque a
-cadeia a jusante (`/load_cell/force_net`) tem de ter a mesma dinâmica
-qualquer que seja a célula, senão os ganhos do explorer mudam de sentido.
+Usado pelo `ft_receiver` (FA7155 de 6 eixos) para o eixo de controle que sai
+em `/load_cell/force_net`; os ganhos do explorer foram ajustados contra esta
+dinâmica.
 """
-import collections
 import math
 
 from rclpy.qos import (QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy,
                        QoSHistoryPolicy)
 
-from .constants import LC_NOMINAL_RATE_HZ
+from .constants import FT_NOMINAL_RATE_HZ
 
 MEDIAN_N = 3                  # rejeita glitch isolado de 1 amostra
                               # (5 custa 24 ms de lag e rende só 0,15 mN)
-ONE_EURO_FREQ      = LC_NOMINAL_RATE_HZ   # chute até o 1º dt medido
+ONE_EURO_FREQ      = FT_NOMINAL_RATE_HZ   # chute até o 1º dt medido
 ONE_EURO_MINCUTOFF = 0.3      # Hz — repouso (↓ = zero mais firme, +lag parado)
 ONE_EURO_BETA_N    = 0.1      # Hz por (N/s) — responsividade ao contato
 ONE_EURO_DCUTOFF   = 1.0      # Hz — cutoff do estimador de derivada
 
 ONE_EURO_MAXCUTOFF_FRAC = 1.0 / 3.0
 ONE_EURO_MAXCUTOFF_HZ   = 2.0
-LC_SLOW_WIN_S = 2.0
 
-
-class _BoxcarFilter:
-
-    def __init__(self, win_s: float = LC_SLOW_WIN_S):
-        self._win_s = max(1e-3, float(win_s))
-        self._buf: collections.deque = collections.deque()   # (t_cum, v)
-        self._sum = 0.0
-        self._t = 0.0
-
-    @property
-    def win_s(self) -> float:
-        return self._win_s
-
-    @property
-    def span_s(self) -> float:
-        """Extensão temporal do que está na janela agora (s)."""
-        if len(self._buf) < 2:
-            return 0.0
-        return self._buf[-1][0] - self._buf[0][0]
-
-    def update(self, v: float, dt: float | None = None) -> float:
-        """``dt`` = intervalo real desde a amostra anterior (s); None usa a
-        taxa nominal."""
-        self._t += dt if dt else (1.0 / LC_NOMINAL_RATE_HZ)
-        self._buf.append((self._t, v))
-        self._sum += v
-        # Descarta pela ESQUERDA mantendo ao menos 1 amostra: a janela cobre
-        # `win_s` de sinal, e nunca esvazia num dt maior que ela.
-        while len(self._buf) > 1 and self._t - self._buf[0][0] > self._win_s:
-            self._sum -= self._buf.popleft()[1]
-        return self._sum / len(self._buf)
 
 NOMINAL_V_PER_N = 1.0
 

@@ -1,0 +1,10 @@
+09:22:50 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+
+09:22:51 Build Finished. 0 errors, 0 warnings. (took 1s.63ms)
+

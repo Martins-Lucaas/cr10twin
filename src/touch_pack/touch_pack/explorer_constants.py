@@ -335,9 +335,9 @@ _QS_SETTLE_MAX_TICKS = 33    # teto da espera (~1 s a 33 Hz)
 # Deriva que conta como "assentado": a mediana da 2ª metade da janela contra a
 # da 1ª. Deriva e não pico-a-pico, porque o ptp cresce com o tamanho da janela
 # mesmo num sinal estacionário — é o mesmo critério que o tare do
-# force_receiver usa (_window_drift), e pelo mesmo motivo.
+# ft_receiver usa (window_drift), e pelo mesmo motivo.
 # 2σ do sinal que a MALHA vê, não do sensor cru — mesma correção do
-# HOLD_TOL_N. Com o σ cru isto valia 0,046 N e ficou MAIOR que a banda de
+# HOLD_TOL_N. Com o σ cru isto valeria 0,044 N, MAIOR que a banda de
 # 0,02 N pedida em 07/09/2026: o laço declararia "assentado" ainda fora da
 # banda, que é a contradição que o test_no_overshoot trava.
 _QS_SETTLE_DRIFT_N = 2.0 * _FORCE_CTRL_SIGMA_N
@@ -582,13 +582,11 @@ _SERVOJ_T_MIN_S = 0.020
 # num material viscoelástico (silicone) é outra coisa. Não é malha de força na
 # onda: é adaptação LENTA de um parâmetro, um ciclo por vez.
 _FMOD_K_ADAPT_ALPHA = 0.35    # EMA da correção por ciclo
-# N: fundamental medida abaixo disso é ruído. O valor FICA com a FA7155, e
-# só agora ele é folgado de verdade. O ruído do lock-in sobre N amostras vale
-# 4σ/√(2N): com o cru da FA7155 (σ = 21,9 mN) e ~400 amostras por ciclo a
-# 1 Hz dá 3,1 mN, então o piso é ~10× o chão. Com a HX711 crua (σ = 112 mN,
-# ~24 amostras/ciclo) o mesmo cálculo dava 65 mN — o piso ficava ABAIXO do
-# ruído e não filtrava nada. Baixá-lo agora só liberaria adaptação para ondas
-# de amplitude menor que o CONTACT_ON_N, que não é ensaio que a bancada peça.
+# N: fundamental medida abaixo disso é ruído. O ruído do lock-in sobre N
+# amostras vale 4σ/√(2N): com o cru da FA7155 (σ = 21,9 mN) e ~400 amostras
+# por ciclo a 1 Hz dá 3,1 mN, então o piso é ~10× o chão. Baixá-lo só
+# liberaria adaptação para ondas de amplitude menor que o CONTACT_ON_N, que
+# não é ensaio que a bancada peça.
 _FMOD_K_ADAPT_MIN_DF_N = 0.03
 _FMOD_MAX_AMP_N = 5.0     # N: amplitude (pico) máxima aceita, por segurança
 # Teto do passo por tick, em FORÇA projetada (Δx = ΔF/K). O passo da onda é
@@ -657,15 +655,11 @@ _FMOD_AMP_RAMP_CYCLES = 3.0    # ciclos até 100 %
 # 154 ms deixa de ser um problema de estabilidade e vira o que é: um
 # deslocamento conhecido entre o comando e a medida, que se desconta ao
 # indexar (ver fmod_measure_lag_s).
-# Bins de fase por ciclo. O número nasceu amarrado à MEDIDA: com a HX711 a
-# 24 Hz, uma onda de 1 Hz dava ~24 amostras por ciclo, ou seja ~1 ponto por
-# bin, e mais bins seriam bins vazios. Com a FA7155 (~400 Hz entregues, ver
-# FT_NOMINAL_RATE_HZ) são ~400 amostras por ciclo a 1 Hz — ~16 por bin — e a
-# medida deixou de ser o limitante. Quem limita agora é o COMANDO: no pior
-# caso a onda sai com _FMOD_MIN_PTS_PER_CYCLE (5) pontos por período, e
-# correção indexada em mais bins do que há pontos comandados não tem onde ser
-# aplicada. Por isso 24 FICA: a célula nova deu folga na medida, não no
-# comando.
+# Bins de fase por ciclo. Com a FA7155 (~400 Hz entregues, ver
+# FT_NOMINAL_RATE_HZ) são ~400 amostras por ciclo a 1 Hz — ~16 por bin —, então
+# a medida não é o limitante. Quem limita é o COMANDO: no pior caso a onda sai
+# com _FMOD_MIN_PTS_PER_CYCLE (5) pontos por período, e correção indexada em
+# mais bins do que há pontos comandados não tem onde ser aplicada.
 _FMOD_ILC_BINS  = 24
 _FMOD_ILC_ALPHA = 0.4     # ganho de aprendizado por ciclo
 # Teto da correção, em frações da amplitude em posição. O ILC corrige erro de
@@ -704,9 +698,7 @@ _FMOD_ILC_MIN_MEAS_GAIN = 0.70
 # conta: dos 154 ms medidos a 1 Hz sobram os ~14° de transporte do executor
 # e do material, ~39 ms. Em compensação o cru não tem filtro nenhum, e é o
 # ruído dele que passa a dimensionar o piso: σ = 21,9 mN, logo 0,10 N são
-# 4,6σ — margem sã contra um corte espúrio. Na HX711 crua (σ = 112 mN) esse
-# mesmo piso valia 0,9σ e o guarda teria cortado no ruído; o piso só virou
-# defensável agora.
+# 4,6σ — margem sã contra um corte espúrio.
 _FMOD_BAND_TOL_FRAC = 0.15     # da amplitude pedida
 _FMOD_BAND_TOL_MIN_N = 0.10    # N: piso, para amplitudes pequenas
 # Acima deste atraso (fração do período) o limitador POR PASSO é desligado e
@@ -741,11 +733,9 @@ _FMOD_LIMIT_RECOVER_STEP = 0.05
 # ILC saem todos da mesma sequência, e o 3º harmônico já exige 6 amostras por
 # período para não dobrar sobre os outros. Com 8 a conta fecha com margem.
 #
-# É este número que separa as duas células a 10 Hz: a FA7155 entrega ~400 Hz
-# (40 amostras por período, folgado) e a HX711 entrega 24 Hz — menos de 3 por
-# período, abaixo até de Nyquist para o 2º harmônico. Uma onda de 10 Hz medida
-# a 24 Hz não sai "imprecisa", sai ALIASADA: o log de fim imprimiria números
-# que não descrevem onda nenhuma.
+# A 10 Hz a FA7155 entrega ~400 Hz (40 amostras por período, folgado). Uma
+# fonte abaixo de 8× a frequência da onda não sai "imprecisa", sai ALIASADA:
+# o log de fim imprimiria números que não descrevem onda nenhuma.
 _FMOD_MIN_MEAS_RATE_MULT = 8.0
 # Razão mínima entre a amplitude em POSIÇÃO e a banda morta do ServoJ. Abaixo
 # dela a onda comandada sai quantizada em poucos degraus: a banda morta vale

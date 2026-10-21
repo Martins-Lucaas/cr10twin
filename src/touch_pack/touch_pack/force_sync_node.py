@@ -1,7 +1,6 @@
 """
-force_sync_node.py — Pareia em tempo real a célula de carga (XIAO,
-serial USB via force_receiver) com o touch sensor (STM32 → PC plotter,
-UDP 8081).
+force_sync_node.py — Pareia em tempo real a célula de carga (FA7155,
+RS485 via ft_receiver) com o touch sensor (STM32 → PC plotter, UDP 8081).
 
 Tópico publicado:
   /touch_sync/data   touch_pack_msgs/SyncedTouch   par sincronizado
@@ -28,8 +27,7 @@ from touch_pack_msgs.msg import SyncedTouch
 
 from .constants import SYNC_MAX_AGE_S
 
-# Teto de emissão. O par só é tão fresco quanto a fonte MAIS LENTA (a
-# célula, 10-80 Hz conforme o RATE do HX711).
+# Teto de emissão. O par só é tão fresco quanto a fonte MAIS LENTA.
 SYNC_RATE_HZ    = 100.0   # teto do republish (nunca acima disto)
 WATCHDOG_RATE_HZ = 20.0   # timer de segurança quando não há amostra nova
 

@@ -1,0 +1,2447 @@
+#include "stm32f7xx_hal.h"
+#include "usb_device.h"
+#include "usbd_cdc_if.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+
+/* ============================================================
+ * SISTEMA COM 2 SENSORES 5x5
+ *
+ * PINAGEM:
+ *
+ * SENSOR 1:
+ * C0 = PA0 = ADC_CHANNEL_0
+ * C1 = PA3 = ADC_CHANNEL_3
+ * C2 = PA4 = ADC_CHANNEL_4
+ * C3 = PA6 = ADC_CHANNEL_6
+ * C4 = PB1 = ADC_CHANNEL_9
+ *
+ * SENSOR 2:
+ * C0 = PA5 = ADC_CHANNEL_5
+ * C1 = PA7 = ADC_CHANNEL_7
+ * C2 = PC0 = ADC_CHANNEL_10
+ * C3 = PC3 = ADC_CHANNEL_13
+ * C4 = PC2 = ADC_CHANNEL_12
+ *
+ * LINHAS COMPARTILHADAS:
+ * L0 = PD0
+ * L1 = PD1
+ * L2 = PF3
+ * L3 = PF5
+ * L4 = PF10
+ *
+ * USB:
+ * DATA,S1,<25 ADCs>,S2,<25 ADCs>,t=<timestamp>
+ * MM1=1,t=<timestamp>
+ * MM2=1,t=<timestamp>
+ * ============================================================ */
+
+
+/* ============================================================
+ * DEBUG
+ * ============================================================ */
+
+#define DEBUG_ADC_PORT GPIOB
+#define DEBUG_ADC_PIN  GPIO_PIN_8
+
+#define DEBUG_IZH_PORT GPIOB
+#define DEBUG_IZH_PIN  GPIO_PIN_9
+
+
+/* ============================================================
+ * MATRIZES
+ * ============================================================ */
+
+#define NUM_SENSORS 2
+
+#define ROWS 5
+#define COLS 5
+
+#define NUM_TAXELS (ROWS * COLS)
+
+/*
+ * 5 ADCs do Sensor 1
+ * +
+ * 5 ADCs do Sensor 2
+ */
+#define ADC_CHANNELS (NUM_SENSORS * COLS)
+
+#define DIFF_BUFFER 25
+
+
+/* ============================================================
+ * IZH - AFERENTE RA
+ * ============================================================ */
+
+#define A_RA 0.1f
+#define B_RA 0.2f
+#define C_RA -65.0f
+#define D_RA 2.0f
+#define G_RA 1000.0f
+
+
+/* ============================================================
+ * IZH - AFERENTE SA
+ * ============================================================ */
+
+#define A_SA 0.02f
+#define B_SA 0.2f
+#define C_SA -65.0f
+#define D_SA 8.0f
+#define G_SA 40.0f
+
+
+/* ============================================================
+ * CUNEIFORME MULTIMODAL
+ * ============================================================ */
+
+#define A_CN 0.02f
+#define B_CN 0.2f
+#define C_CN -65.0f
+#define D_CN 8.0f
+
+#define G_CN 100000.0f
+
+
+/* ============================================================
+ * SIMULACAO
+ * ============================================================ */
+
+#define DT 0.10f
+
+#define VTH 30.0f
+
+#define V_MIN 0.0f
+#define V_MAX 3.2f
+
+
+/* ============================================================
+ * USB
+ * ============================================================ */
+
+#define USB_TX_BUFFER_SIZE 8192
+#define USB_PACKET_SIZE 64
+
+
+/* ============================================================
+ * SINAPSE
+ * ============================================================ */
+
+#define G_MAX 1.0f
+#define W_INB 0.0f
+
+#define TEMPLATE_SIZE 20
+
+
+/* ============================================================
+ * ESTRUTURAS
+ * ============================================================ */
+
+typedef struct
+{
+    float v_RA;
+    float u_RA;
+
+    float v_SA;
+    float u_SA;
+
+    float I;
+
+} Taxel;
+
+
+typedef struct
+{
+    float v_CN;
+    float u_CN;
+
+} CuneateNeuron;
+
+
+/* ============================================================
+ * HANDLES
+ * ============================================================ */
+
+ADC_HandleTypeDef hadc1;
+
+DMA_HandleTypeDef hdma_adc1;
+
+TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim2;
+
+
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
+
+/* ============================================================
+ * VARIAVEIS
+ * ============================================================ */
+
+Taxel taxels[NUM_SENSORS][NUM_TAXELS];
+
+CuneateNeuron CN[NUM_SENSORS];
+
+
+/*
+ * ============================================================
+ * BUFFER DMA
+ * ============================================================
+ *
+ * SENSOR 1:
+ *
+ * adc_buffer[0] = PA0 = ADC0
+ * adc_buffer[1] = PA3 = ADC3
+ * adc_buffer[2] = PA4 = ADC4
+ * adc_buffer[3] = PA6 = ADC6
+ * adc_buffer[4] = PB1 = ADC9
+ *
+ * SENSOR 2:
+ *
+ * adc_buffer[5] = PA5 = ADC5
+ * adc_buffer[6] = PA7 = ADC7
+ * adc_buffer[7] = PC0 = ADC10
+ * adc_buffer[8] = PC3 = ADC13
+ * adc_buffer[9] = PC2 = ADC12
+ *
+ * ============================================================
+ */
+
+uint16_t adc_buffer[ADC_CHANNELS] = {0};
+
+
+/*
+ * Ultimos valores ADC de cada taxel
+ */
+volatile uint16_t
+last_adc[NUM_SENSORS][NUM_TAXELS] = {0};
+
+
+/*
+ * ============================================================
+ * DOUBLE BUFFER ADC
+ * ============================================================
+ *
+ * A interrupcao salva um frame completo.
+ * O main envia o frame pela USB.
+ */
+
+uint16_t
+adc_frame[2][NUM_SENSORS][NUM_TAXELS] = {0};
+
+volatile uint8_t adc_write_buffer = 0;
+volatile uint8_t adc_ready_buffer = 0;
+
+volatile uint8_t adc_frame_ready = 0;
+
+volatile uint32_t
+adc_frame_timestamp[2] = {0};
+
+
+/*
+ * Linha atualmente selecionada
+ */
+volatile uint8_t current_row = 0;
+
+
+/*
+ * ============================================================
+ * BUFFER PARA DERIVADA RA
+ * ============================================================
+ */
+
+float
+I_buffer[NUM_SENSORS][NUM_TAXELS][DIFF_BUFFER] = {0};
+
+uint8_t
+I_index[NUM_SENSORS][NUM_TAXELS] = {0};
+
+
+/*
+ * ============================================================
+ * TEMPLATE SINAPTICO
+ * ============================================================
+ */
+
+float g_template[TEMPLATE_SIZE];
+
+
+float gain_RA[NUM_SENSORS][NUM_TAXELS];
+
+float gain_SA[NUM_SENSORS][NUM_TAXELS];
+
+
+const float gain_RA_init[NUM_TAXELS] =
+{
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f
+};
+
+
+const float gain_SA_init[NUM_TAXELS] =
+{
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f,
+    1.0f,1.0f,1.0f,1.0f,1.0f
+};
+
+
+uint8_t
+template_idx_RA[NUM_SENSORS][NUM_TAXELS] = {0};
+
+uint8_t
+template_idx_SA[NUM_SENSORS][NUM_TAXELS] = {0};
+
+
+uint8_t
+template_idx_INH_RA[NUM_SENSORS][NUM_TAXELS] = {0};
+
+uint8_t
+template_idx_INH_SA[NUM_SENSORS][NUM_TAXELS] = {0};
+
+
+/*
+ * Corrente multimodal independente
+ * para cada sensor
+ */
+float I_total_MM[NUM_SENSORS] =
+{
+    0.0f,
+    0.0f
+};
+
+
+/*
+ * Spike multimodal pendente
+ */
+volatile uint8_t
+cn_mm_spike_pending[NUM_SENSORS] = {0};
+
+volatile uint32_t
+cn_mm_spike_timestamp[NUM_SENSORS] = {0};
+
+
+/*
+ * ============================================================
+ * USB RING BUFFER
+ * ============================================================
+ */
+
+uint8_t
+usb_tx_buffer[USB_TX_BUFFER_SIZE];
+
+volatile uint16_t usb_head = 0;
+volatile uint16_t usb_tail = 0;
+
+
+/* ============================================================
+ * PROTOTIPOS
+ * ============================================================ */
+
+void SystemClock_Config(void);
+
+void MX_GPIO_Init(void);
+void MX_DMA_Init(void);
+void MX_ADC1_Init(void);
+
+void MX_TIM6_Init(void);
+void MX_TIM2_Init(void);
+
+
+void init_template(void);
+
+void select_row(uint8_t row);
+
+
+bool izhikevich_step(
+    float *v,
+    float *u,
+    float I,
+    float a,
+    float b,
+    float c,
+    float d
+);
+
+
+void update_taxels(
+    uint8_t sensor,
+    Taxel *t,
+    uint16_t *adc,
+    uint8_t row_idx
+);
+
+
+void process_cuneate(
+    uint8_t sensor,
+    uint32_t tstamp
+);
+
+
+bool send_adc_frame_both(
+    uint8_t buffer_idx,
+    uint32_t tstamp
+);
+
+
+void send_pending_cn_mm(void);
+
+
+uint16_t usb_buffer_free_space(void);
+
+bool usb_buffer_write_atomic(
+    const char *data,
+    uint16_t len
+);
+
+void usb_buffer_process(void);
+
+
+/* ============================================================
+ * TEMPLATE
+ * ============================================================ */
+
+void init_template(void)
+{
+    g_template[0] = 0.0f;
+
+    for (int i = 1;
+         i < TEMPLATE_SIZE;
+         i++)
+    {
+        g_template[i] =
+            G_MAX *
+            expf(
+                -(float)(i - 1) /
+                4.0f
+            );
+    }
+}
+
+
+/* ============================================================
+ * USB BUFFER
+ * ============================================================ */
+
+uint16_t usb_buffer_free_space(void)
+{
+    uint16_t head = usb_head;
+    uint16_t tail = usb_tail;
+
+    if (head >= tail)
+    {
+        return
+            (USB_TX_BUFFER_SIZE - 1U)
+            - (head - tail);
+    }
+
+    return
+        tail - head - 1U;
+}
+
+
+/* ============================================================ */
+
+bool usb_buffer_write_atomic(
+    const char *data,
+    uint16_t len
+)
+{
+    if (len == 0U)
+    {
+        return true;
+    }
+
+    /*
+     * So grava se a mensagem inteira couber.
+     */
+    if (usb_buffer_free_space() < len)
+    {
+        return false;
+    }
+
+    for (uint16_t i = 0;
+         i < len;
+         i++)
+    {
+        usb_tx_buffer[usb_head] =
+            (uint8_t)data[i];
+
+        usb_head =
+            (usb_head + 1U)
+            % USB_TX_BUFFER_SIZE;
+    }
+
+    return true;
+}
+
+
+/* ============================================================ */
+
+void usb_buffer_process(void)
+{
+    static uint8_t
+    packet[USB_PACKET_SIZE];
+
+    uint16_t len = 0;
+
+    uint16_t temp_tail =
+        usb_tail;
+
+
+    while (
+        (temp_tail != usb_head) &&
+        (len < USB_PACKET_SIZE)
+    )
+    {
+        packet[len++] =
+            usb_tx_buffer[temp_tail];
+
+        temp_tail =
+            (temp_tail + 1U)
+            % USB_TX_BUFFER_SIZE;
+    }
+
+
+    if (
+        (len > 0U) &&
+        (hUsbDeviceFS.dev_state ==
+         USBD_STATE_CONFIGURED)
+    )
+    {
+        if (
+            CDC_Transmit_FS(
+                packet,
+                len
+            ) == USBD_OK
+        )
+        {
+            usb_tail =
+                temp_tail;
+        }
+    }
+}
+
+
+/* ============================================================
+ * SELECAO DAS LINHAS
+ *
+ * LINHAS COMPARTILHADAS PELOS DOIS SENSORES
+ *
+ * L0 -> PD0
+ * L1 -> PD1
+ * L2 -> PF3
+ * L3 -> PF5
+ * L4 -> PF10
+ *
+ * Uma linha fica LOW
+ * e as outras ficam HIGH.
+ * ============================================================ */
+
+const uint8_t row_masks[ROWS] =
+{
+    0b11110,
+    0b11101,
+    0b11011,
+    0b10111,
+    0b01111
+};
+
+
+/* ============================================================ */
+
+void select_row(uint8_t row)
+{
+    if (row >= ROWS)
+    {
+        return;
+    }
+
+    uint8_t mask =
+        row_masks[row];
+
+
+    /*
+     * L0 = PD0
+     */
+    HAL_GPIO_WritePin(
+        GPIOD,
+        GPIO_PIN_0,
+        (mask & (1U << 0))
+            ? GPIO_PIN_SET
+            : GPIO_PIN_RESET
+    );
+
+
+    /*
+     * L1 = PD1
+     */
+    HAL_GPIO_WritePin(
+        GPIOD,
+        GPIO_PIN_1,
+        (mask & (1U << 1))
+            ? GPIO_PIN_SET
+            : GPIO_PIN_RESET
+    );
+
+
+    /*
+     * L2 = PF3
+     */
+    HAL_GPIO_WritePin(
+        GPIOF,
+        GPIO_PIN_3,
+        (mask & (1U << 2))
+            ? GPIO_PIN_SET
+            : GPIO_PIN_RESET
+    );
+
+
+    /*
+     * L3 = PF5
+     */
+    HAL_GPIO_WritePin(
+        GPIOF,
+        GPIO_PIN_5,
+        (mask & (1U << 3))
+            ? GPIO_PIN_SET
+            : GPIO_PIN_RESET
+    );
+
+
+    /*
+     * L4 = PF10
+     */
+    HAL_GPIO_WritePin(
+        GPIOF,
+        GPIO_PIN_10,
+        (mask & (1U << 4))
+            ? GPIO_PIN_SET
+            : GPIO_PIN_RESET
+    );
+}
+
+
+/* ============================================================
+ * IZHIKEVICH
+ * ============================================================ */
+
+bool izhikevich_step(
+    float *v,
+    float *u,
+    float I,
+    float a,
+    float b,
+    float c,
+    float d
+)
+{
+    *v +=
+        DT *
+        (
+            0.04f *
+            (*v) *
+            (*v)
+
+            + 5.0f *
+            (*v)
+
+            + 140.0f
+
+            - (*u)
+
+            + I
+        );
+
+
+    *u +=
+        DT *
+        (
+            a *
+            (
+                b * (*v)
+                - (*u)
+            )
+        );
+
+
+    if (*v >= VTH)
+    {
+        *v = c;
+
+        *u += d;
+
+        return true;
+    }
+
+    return false;
+}
+
+
+/* ============================================================
+ * PROCESSAMENTO DOS TAXELS
+ *
+ * RA e SA sao calculados internamente.
+ * Eles alimentam o neuronio CN_MM.
+ * ============================================================ */
+
+void update_taxels(
+    uint8_t sensor,
+    Taxel *t,
+    uint16_t *adc,
+    uint8_t row_idx
+)
+{
+    HAL_GPIO_WritePin(
+        DEBUG_IZH_PORT,
+        DEBUG_IZH_PIN,
+        GPIO_PIN_SET
+    );
+
+
+    for (int i = 0;
+         i < COLS;
+         i++)
+    {
+        int global_idx =
+            row_idx * COLS + i;
+
+
+        /* ====================================================
+         * ADC -> TENSAO
+         * ==================================================== */
+
+        float V =
+            adc[i] *
+            (V_MAX / 4095.0f);
+
+
+        float Vn =
+            (V_MAX - V) /
+            (V_MAX - V_MIN);
+
+
+        float I_raw =
+            Vn;
+
+
+        /* ====================================================
+         * DERIVADA PARA RA
+         * ==================================================== */
+
+        uint8_t idx =
+            I_index[sensor][global_idx];
+
+
+        float I_old =
+            I_buffer
+            [sensor]
+            [global_idx]
+            [idx];
+
+
+        I_buffer
+        [sensor]
+        [global_idx]
+        [idx] =
+            I_raw;
+
+
+        I_index
+        [sensor]
+        [global_idx] =
+            (idx + 1U)
+            % DIFF_BUFFER;
+
+
+        float dI =
+            fabsf(
+                I_raw -
+                I_old
+            )
+            /
+            (DIFF_BUFFER * DT);
+
+
+        if (fabsf(dI) < 0.01f)
+        {
+            dI = 0.0f;
+        }
+
+
+        float I_RA =
+            G_RA *
+            fabsf(dI);
+
+
+        float I_SA =
+            G_SA *
+            I_raw;
+
+
+        /* ====================================================
+         * RA
+         * ==================================================== */
+
+        bool spike_ra =
+            izhikevich_step(
+                &t[i].v_RA,
+                &t[i].u_RA,
+                I_RA,
+                A_RA,
+                B_RA,
+                C_RA,
+                D_RA
+            );
+
+
+        if (spike_ra)
+        {
+            template_idx_RA
+            [sensor]
+            [global_idx] = 1;
+
+
+            template_idx_INH_RA
+            [sensor]
+            [global_idx] = 1;
+        }
+
+
+        /* ====================================================
+         * SA
+         * ==================================================== */
+
+        bool spike_sa =
+            izhikevich_step(
+                &t[i].v_SA,
+                &t[i].u_SA,
+                I_SA,
+                A_SA,
+                B_SA,
+                C_SA,
+                D_SA
+            );
+
+
+        if (spike_sa)
+        {
+            template_idx_SA
+            [sensor]
+            [global_idx] = 1;
+
+
+            template_idx_INH_SA
+            [sensor]
+            [global_idx] = 1;
+        }
+
+
+        /* ====================================================
+         * SINAPSE EXCITATORIA RA
+         * ==================================================== */
+
+        float I_ra = 0.0f;
+
+
+        uint8_t idx_ra =
+            template_idx_RA
+            [sensor]
+            [global_idx];
+
+
+        if (idx_ra > 0U)
+        {
+            I_ra =
+                gain_RA
+                [sensor]
+                [global_idx]
+                *
+                g_template[idx_ra];
+
+
+            idx_ra++;
+
+
+            if (
+                idx_ra >=
+                TEMPLATE_SIZE
+            )
+            {
+                idx_ra = 0;
+            }
+
+
+            template_idx_RA
+            [sensor]
+            [global_idx] =
+                idx_ra;
+        }
+
+
+        /* ====================================================
+         * SINAPSE EXCITATORIA SA
+         * ==================================================== */
+
+        float I_sa = 0.0f;
+
+
+        uint8_t idx_sa =
+            template_idx_SA
+            [sensor]
+            [global_idx];
+
+
+        if (idx_sa > 0U)
+        {
+            I_sa =
+                gain_SA
+                [sensor]
+                [global_idx]
+                *
+                g_template[idx_sa];
+
+
+            idx_sa++;
+
+
+            if (
+                idx_sa >=
+                TEMPLATE_SIZE
+            )
+            {
+                idx_sa = 0;
+            }
+
+
+            template_idx_SA
+            [sensor]
+            [global_idx] =
+                idx_sa;
+        }
+
+
+        /* ====================================================
+         * MULTIMODAL RECEBE RA + SA
+         * ==================================================== */
+
+        I_total_MM[sensor] +=
+            I_ra;
+
+        I_total_MM[sensor] +=
+            I_sa;
+
+
+        /* Salva ADC */
+        last_adc
+        [sensor]
+        [global_idx] =
+            adc[i];
+    }
+
+
+    HAL_GPIO_WritePin(
+        DEBUG_IZH_PORT,
+        DEBUG_IZH_PIN,
+        GPIO_PIN_RESET
+    );
+}
+
+
+/* ============================================================
+ * NEURONIO CUNEIFORME MULTIMODAL
+ * ============================================================ */
+
+void process_cuneate(
+    uint8_t sensor,
+    uint32_t tstamp
+)
+{
+    float I_inh =
+        0.0f;
+
+
+    /* ========================================================
+     * INIBICAO RA
+     * ======================================================== */
+
+    for (int k = 0;
+         k < NUM_TAXELS;
+         k++)
+    {
+        uint8_t idx_inh_ra =
+            template_idx_INH_RA
+            [sensor]
+            [k];
+
+
+        if (idx_inh_ra > 0U)
+        {
+            I_inh -=
+                W_INB *
+                g_template[idx_inh_ra];
+
+
+            idx_inh_ra++;
+
+
+            if (
+                idx_inh_ra >=
+                TEMPLATE_SIZE
+            )
+            {
+                idx_inh_ra = 0;
+            }
+
+
+            template_idx_INH_RA
+            [sensor]
+            [k] =
+                idx_inh_ra;
+        }
+    }
+
+
+    /* ========================================================
+     * INIBICAO SA
+     * ======================================================== */
+
+    for (int k = 0;
+         k < NUM_TAXELS;
+         k++)
+    {
+        uint8_t idx_inh_sa =
+            template_idx_INH_SA
+            [sensor]
+            [k];
+
+
+        if (idx_inh_sa > 0U)
+        {
+            I_inh -=
+                W_INB *
+                g_template[idx_inh_sa];
+
+
+            idx_inh_sa++;
+
+
+            if (
+                idx_inh_sa >=
+                TEMPLATE_SIZE
+            )
+            {
+                idx_inh_sa = 0;
+            }
+
+
+            template_idx_INH_SA
+            [sensor]
+            [k] =
+                idx_inh_sa;
+        }
+    }
+
+
+    /* ========================================================
+     * NORMALIZACAO
+     * ======================================================== */
+
+    float I_MM_norm =
+        I_total_MM[sensor] /
+        (NUM_TAXELS * 2.0f);
+
+
+    float I_final_MM =
+        (I_MM_norm + I_inh)
+        *
+        G_CN;
+
+
+    bool spike_mm =
+        izhikevich_step(
+            &CN[sensor].v_CN,
+            &CN[sensor].u_CN,
+            I_final_MM,
+            A_CN,
+            B_CN,
+            C_CN,
+            D_CN
+        );
+
+
+    /*
+     * Nao faz snprintf na interrupcao.
+     * Apenas marca o spike.
+     */
+    if (spike_mm)
+    {
+        cn_mm_spike_timestamp[sensor] =
+            tstamp;
+
+        cn_mm_spike_pending[sensor] =
+            1;
+    }
+
+
+    I_total_MM[sensor] =
+        0.0f;
+}
+
+
+/* ============================================================
+ * ENVIO ADC DOS DOIS SENSORES
+ * ============================================================ */
+
+bool send_adc_frame_both(
+    uint8_t buffer_idx,
+    uint32_t tstamp
+)
+{
+    char msg[512];
+
+
+    int n =
+        snprintf(
+            msg,
+            sizeof(msg),
+
+            "DATA,S1,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+
+            "S2,"
+
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+            "%u,%u,%u,%u,%u,"
+
+            "t=%lu\r\n",
+
+
+            /* SENSOR 1 */
+
+            (unsigned)
+            adc_frame[buffer_idx][0][0],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][1],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][2],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][3],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][4],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][5],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][6],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][7],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][8],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][9],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][10],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][11],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][12],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][13],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][14],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][15],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][16],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][17],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][18],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][19],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][20],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][21],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][22],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][23],
+
+            (unsigned)
+            adc_frame[buffer_idx][0][24],
+
+
+            /* SENSOR 2 */
+
+            (unsigned)
+            adc_frame[buffer_idx][1][0],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][1],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][2],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][3],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][4],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][5],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][6],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][7],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][8],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][9],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][10],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][11],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][12],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][13],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][14],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][15],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][16],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][17],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][18],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][19],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][20],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][21],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][22],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][23],
+
+            (unsigned)
+            adc_frame[buffer_idx][1][24],
+
+
+            (unsigned long)
+            tstamp
+        );
+
+
+    if (
+        (n <= 0) ||
+        ((size_t)n >= sizeof(msg))
+    )
+    {
+        return false;
+    }
+
+
+    return
+        usb_buffer_write_atomic(
+            msg,
+            (uint16_t)n
+        );
+}
+
+
+/* ============================================================
+ * ENVIO DOS SPIKES CN_MM
+ * ============================================================ */
+
+void send_pending_cn_mm(void)
+{
+    for (
+        uint8_t sensor = 0;
+        sensor < NUM_SENSORS;
+        sensor++
+    )
+    {
+        if (
+            cn_mm_spike_pending[sensor]
+            == 0U
+        )
+        {
+            continue;
+        }
+
+
+        uint32_t timestamp;
+
+
+        __disable_irq();
+
+        timestamp =
+            cn_mm_spike_timestamp[sensor];
+
+        __enable_irq();
+
+
+        char msg[64];
+
+        int n;
+
+
+        if (sensor == 0U)
+        {
+            n =
+                snprintf(
+                    msg,
+                    sizeof(msg),
+
+                    "MM1=1,t=%lu\r\n",
+
+                    (unsigned long)
+                    timestamp
+                );
+        }
+        else
+        {
+            n =
+                snprintf(
+                    msg,
+                    sizeof(msg),
+
+                    "MM2=1,t=%lu\r\n",
+
+                    (unsigned long)
+                    timestamp
+                );
+        }
+
+
+        if (
+            (n > 0) &&
+            ((size_t)n < sizeof(msg))
+        )
+        {
+            if (
+                usb_buffer_write_atomic(
+                    msg,
+                    (uint16_t)n
+                )
+            )
+            {
+                __disable_irq();
+
+                cn_mm_spike_pending[sensor] =
+                    0U;
+
+                __enable_irq();
+            }
+        }
+    }
+}
+
+
+/* ============================================================
+ * ADC CALLBACK
+ *
+ * DMA:
+ *
+ * adc_buffer[0..4] = SENSOR 1
+ * adc_buffer[5..9] = SENSOR 2
+ * ============================================================ */
+
+void HAL_ADC_ConvCpltCallback(
+    ADC_HandleTypeDef *hadc
+)
+{
+    if (hadc != &hadc1)
+    {
+        return;
+    }
+
+
+    HAL_GPIO_WritePin(
+        DEBUG_ADC_PORT,
+        DEBUG_ADC_PIN,
+        GPIO_PIN_SET
+    );
+
+
+    /* ========================================================
+     * SENSOR 1
+     *
+     * adc_buffer[0..4]
+     * ======================================================== */
+
+    update_taxels(
+        0,
+
+        &taxels
+        [0]
+        [current_row * COLS],
+
+        &adc_buffer[0],
+
+        current_row
+    );
+
+
+    /* ========================================================
+     * SENSOR 2
+     *
+     * adc_buffer[5..9]
+     * ======================================================== */
+
+    update_taxels(
+        1,
+
+        &taxels
+        [1]
+        [current_row * COLS],
+
+        &adc_buffer[COLS],
+
+        current_row
+    );
+
+
+    /* ========================================================
+     * TERMINOU AS 5 LINHAS
+     * ======================================================== */
+
+    if (
+        current_row ==
+        (ROWS - 1)
+    )
+    {
+        uint32_t tstamp =
+            __HAL_TIM_GET_COUNTER(
+                &htim2
+            );
+
+
+        /*
+         * Um CN_MM para cada sensor
+         */
+        process_cuneate(
+            0,
+            tstamp
+        );
+
+        process_cuneate(
+            1,
+            tstamp
+        );
+
+
+        /*
+         * Salva frame ADC completo
+         */
+        uint8_t wb =
+            adc_write_buffer;
+
+
+        for (
+            int sensor = 0;
+            sensor < NUM_SENSORS;
+            sensor++
+        )
+        {
+            for (
+                int i = 0;
+                i < NUM_TAXELS;
+                i++
+            )
+            {
+                adc_frame
+                [wb]
+                [sensor]
+                [i] =
+
+                    last_adc
+                    [sensor]
+                    [i];
+            }
+        }
+
+
+        adc_frame_timestamp[wb] =
+            tstamp;
+
+
+        adc_ready_buffer =
+            wb;
+
+
+        adc_frame_ready =
+            1;
+
+
+        adc_write_buffer =
+            wb ^ 1U;
+    }
+
+
+    /*
+     * Seleciona proxima linha
+     */
+    current_row =
+        (current_row + 1U)
+        % ROWS;
+
+
+    select_row(
+        current_row
+    );
+
+
+    HAL_GPIO_WritePin(
+        DEBUG_ADC_PORT,
+        DEBUG_ADC_PIN,
+        GPIO_PIN_RESET
+    );
+}
+
+
+/* ============================================================
+ * MAIN
+ * ============================================================ */
+
+int main(void)
+{
+    HAL_Init();
+
+
+    SystemClock_Config();
+
+
+    MX_GPIO_Init();
+
+    MX_DMA_Init();
+
+    MX_ADC1_Init();
+
+    MX_TIM6_Init();
+
+    MX_TIM2_Init();
+
+    MX_USB_DEVICE_Init();
+
+
+    init_template();
+
+
+    /* ========================================================
+     * INICIALIZA CN_MM
+     * ======================================================== */
+
+    for (
+        int sensor = 0;
+        sensor < NUM_SENSORS;
+        sensor++
+    )
+    {
+        CN[sensor].v_CN =
+            -30.0f;
+
+
+        CN[sensor].u_CN =
+            B_CN *
+            CN[sensor].v_CN;
+    }
+
+
+    /* ========================================================
+     * INICIALIZA OS 50 TAXELS
+     * ======================================================== */
+
+    for (
+        int sensor = 0;
+        sensor < NUM_SENSORS;
+        sensor++
+    )
+    {
+        for (
+            int i = 0;
+            i < NUM_TAXELS;
+            i++
+        )
+        {
+            taxels[sensor][i].v_RA =
+                -30.0f;
+
+
+            taxels[sensor][i].u_RA =
+                B_RA *
+                taxels[sensor][i].v_RA;
+
+
+            taxels[sensor][i].v_SA =
+                -30.0f;
+
+
+            taxels[sensor][i].u_SA =
+                B_SA *
+                taxels[sensor][i].v_SA;
+
+
+            taxels[sensor][i].I =
+                0.0f;
+
+
+            gain_RA[sensor][i] =
+                gain_RA_init[i];
+
+
+            gain_SA[sensor][i] =
+                gain_SA_init[i];
+        }
+    }
+
+
+    /* ========================================================
+     * PRIMEIRA LINHA
+     * ======================================================== */
+
+    current_row = 0;
+
+    select_row(
+        current_row
+    );
+
+
+    /* ========================================================
+     * TIMESTAMP
+     * ======================================================== */
+
+    HAL_TIM_Base_Start(
+        &htim2
+    );
+
+
+    /* ========================================================
+     * ADC + DMA
+     *
+     * 10 conversoes:
+     *
+     * S1 = 5
+     * S2 = 5
+     * ======================================================== */
+
+    if (
+        HAL_ADC_Start_DMA(
+            &hadc1,
+
+            (uint32_t *)
+            adc_buffer,
+
+            ADC_CHANNELS
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    /* ========================================================
+     * INICIA TRIGGER DO ADC
+     * ======================================================== */
+
+    if (
+        HAL_TIM_Base_Start(
+            &htim6
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    const char boot_msg[] =
+
+        "BOOT OK - "
+        "S1+S2 ADC / "
+        "MM EVENT ONLY\r\n";
+
+
+    usb_buffer_write_atomic(
+        boot_msg,
+
+        (uint16_t)
+        (sizeof(boot_msg) - 1U)
+    );
+
+
+    /* ========================================================
+     * LOOP PRINCIPAL
+     * ======================================================== */
+
+    while (1)
+    {
+        /*
+         * Drena USB
+         */
+        usb_buffer_process();
+
+
+        /*
+         * Envia MM1/MM2
+         */
+        send_pending_cn_mm();
+
+
+        /*
+         * Envia ultimo frame ADC
+         */
+        if (adc_frame_ready)
+        {
+            uint8_t buffer_idx;
+
+            uint32_t timestamp;
+
+
+            __disable_irq();
+
+
+            buffer_idx =
+                adc_ready_buffer;
+
+
+            timestamp =
+                adc_frame_timestamp
+                [buffer_idx];
+
+
+            adc_frame_ready =
+                0;
+
+
+            __enable_irq();
+
+
+            send_adc_frame_both(
+                buffer_idx,
+                timestamp
+            );
+        }
+
+
+        usb_buffer_process();
+    }
+}
+
+
+/* ============================================================
+ * GPIO
+ * ============================================================ */
+
+void MX_GPIO_Init(void)
+{
+    GPIO_InitTypeDef g = {0};
+
+
+    /* ========================================================
+     * CLOCK DOS GPIOs
+     * ======================================================== */
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    /*
+     * IMPORTANTE:
+     * PC0, PC2 e PC3 pertencem ao Sensor 2.
+     */
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+
+    /* ========================================================
+     * LINHAS COMPARTILHADAS
+     *
+     * L0 = PD0
+     * L1 = PD1
+     * L2 = PF3
+     * L3 = PF5
+     * L4 = PF10
+     * ======================================================== */
+
+    g.Mode =
+        GPIO_MODE_OUTPUT_PP;
+
+    g.Pull =
+        GPIO_NOPULL;
+
+    g.Speed =
+        GPIO_SPEED_FREQ_LOW;
+
+
+    /*
+     * PD0 e PD1
+     */
+    g.Pin =
+        GPIO_PIN_0 |
+        GPIO_PIN_1;
+
+
+    HAL_GPIO_Init(
+        GPIOD,
+        &g
+    );
+
+
+    /*
+     * PF3, PF5 e PF10
+     */
+    g.Pin =
+        GPIO_PIN_3 |
+        GPIO_PIN_5 |
+        GPIO_PIN_10;
+
+
+    HAL_GPIO_Init(
+        GPIOF,
+        &g
+    );
+
+
+    /* ========================================================
+     * SENSOR 1 - ADC
+     *
+     * PA0
+     * PA3
+     * PA4
+     * PA6
+     * PB1
+     * ======================================================== */
+
+    g.Mode =
+        GPIO_MODE_ANALOG;
+
+    g.Pull =
+        GPIO_NOPULL;
+
+
+    /*
+     * PA0, PA3, PA4 e PA6
+     */
+    g.Pin =
+        GPIO_PIN_0 |
+        GPIO_PIN_3 |
+        GPIO_PIN_4 |
+        GPIO_PIN_6;
+
+
+    HAL_GPIO_Init(
+        GPIOA,
+        &g
+    );
+
+
+    /*
+     * PB1
+     */
+    g.Pin =
+        GPIO_PIN_1;
+
+
+    HAL_GPIO_Init(
+        GPIOB,
+        &g
+    );
+
+
+    /* ========================================================
+     * SENSOR 2 - ADC
+     *
+     * PA5
+     * PA7
+     * PC0
+     * PC3
+     * PC2
+     * ======================================================== */
+
+
+    /*
+     * PA5 e PA7
+     */
+    g.Pin =
+        GPIO_PIN_5;
+
+
+    HAL_GPIO_Init(
+        GPIOA,
+        &g
+    );
+
+    /* PB0 - Sensor 2 C1 = ADC8 */
+    g.Pin = GPIO_PIN_0;
+
+    HAL_GPIO_Init(GPIOB, &g);
+
+
+    /*
+     * PC0, PC2 e PC3
+     */
+    g.Pin =
+        GPIO_PIN_0 |
+        GPIO_PIN_2 |
+        GPIO_PIN_3;
+
+
+    HAL_GPIO_Init(
+        GPIOC,
+        &g
+    );
+
+
+    /* ========================================================
+     * DEBUG
+     *
+     * PB8 = ADC
+     * PB9 = IZH
+     * ======================================================== */
+
+    g.Mode =
+        GPIO_MODE_OUTPUT_PP;
+
+    g.Pull =
+        GPIO_NOPULL;
+
+    g.Speed =
+        GPIO_SPEED_FREQ_VERY_HIGH;
+
+
+    g.Pin =
+        DEBUG_ADC_PIN |
+        DEBUG_IZH_PIN;
+
+
+    HAL_GPIO_Init(
+        GPIOB,
+        &g
+    );
+
+
+    HAL_GPIO_WritePin(
+        DEBUG_ADC_PORT,
+        DEBUG_ADC_PIN,
+        GPIO_PIN_RESET
+    );
+
+
+    HAL_GPIO_WritePin(
+        DEBUG_IZH_PORT,
+        DEBUG_IZH_PIN,
+        GPIO_PIN_RESET
+    );
+}
+
+
+/* ============================================================
+ * DMA
+ * ============================================================ */
+
+void MX_DMA_Init(void)
+{
+    __HAL_RCC_DMA2_CLK_ENABLE();
+
+
+    hdma_adc1.Instance =
+        DMA2_Stream0;
+
+
+    hdma_adc1.Init.Channel =
+        DMA_CHANNEL_0;
+
+
+    hdma_adc1.Init.Direction =
+        DMA_PERIPH_TO_MEMORY;
+
+
+    hdma_adc1.Init.PeriphInc =
+        DMA_PINC_DISABLE;
+
+
+    hdma_adc1.Init.MemInc =
+        DMA_MINC_ENABLE;
+
+
+    hdma_adc1.Init.PeriphDataAlignment =
+        DMA_PDATAALIGN_HALFWORD;
+
+
+    hdma_adc1.Init.MemDataAlignment =
+        DMA_MDATAALIGN_HALFWORD;
+
+
+    hdma_adc1.Init.Mode =
+        DMA_CIRCULAR;
+
+
+    hdma_adc1.Init.Priority =
+        DMA_PRIORITY_HIGH;
+
+
+    hdma_adc1.Init.FIFOMode =
+        DMA_FIFOMODE_DISABLE;
+
+
+    if (
+        HAL_DMA_Init(
+            &hdma_adc1
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    __HAL_LINKDMA(
+        &hadc1,
+        DMA_Handle,
+        hdma_adc1
+    );
+
+
+    HAL_NVIC_SetPriority(
+        DMA2_Stream0_IRQn,
+        0,
+        0
+    );
+
+
+    HAL_NVIC_EnableIRQ(
+        DMA2_Stream0_IRQn
+    );
+}
+
+
+/* ============================================================
+ * DMA IRQ
+ * ============================================================ */
+
+void DMA2_Stream0_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(
+        &hdma_adc1
+    );
+}
+
+
+/* ============================================================
+ * ADC1
+ *
+ * TOTAL = 10 CONVERSOES
+ * ============================================================ */
+
+void MX_ADC1_Init(void)
+{
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+
+    ADC_ChannelConfTypeDef c = {0};
+
+
+    hadc1.Instance =
+        ADC1;
+
+
+    hadc1.Init.Resolution =
+        ADC_RESOLUTION_12B;
+
+
+    hadc1.Init.ScanConvMode =
+        ENABLE;
+
+
+    hadc1.Init.ContinuousConvMode =
+        DISABLE;
+
+
+    hadc1.Init.NbrOfConversion =
+        ADC_CHANNELS;
+
+
+    hadc1.Init.ExternalTrigConv =
+        ADC_EXTERNALTRIGCONV_T6_TRGO;
+
+
+    hadc1.Init.ExternalTrigConvEdge =
+        ADC_EXTERNALTRIGCONVEDGE_RISING;
+
+
+    hadc1.Init.DMAContinuousRequests =
+        ENABLE;
+
+
+    if (
+        HAL_ADC_Init(
+            &hadc1
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    /*
+     * ========================================================
+     * ORDEM DO DMA
+     * ========================================================
+     *
+     * SENSOR 1
+     *
+     * [0] PA0 = ADC_CHANNEL_0
+     * [1] PA3 = ADC_CHANNEL_3
+     * [2] PA4 = ADC_CHANNEL_4
+     * [3] PA6 = ADC_CHANNEL_6
+     * [4] PB1 = ADC_CHANNEL_9
+     *
+     *
+     * SENSOR 2
+     *
+     * [5] PA5 = ADC_CHANNEL_5
+     * [6] PA7 = ADC_CHANNEL_7
+     * [7] PC0 = ADC_CHANNEL_10
+     * [8] PC3 = ADC_CHANNEL_13
+     * [9] PC2 = ADC_CHANNEL_12
+     *
+     * ========================================================
+     */
+
+
+    uint32_t ch[ADC_CHANNELS] =
+    {
+        /* ================================================
+         * SENSOR 1
+         * ================================================ */
+
+        ADC_CHANNEL_0,     /* PA0 */
+
+        ADC_CHANNEL_3,     /* PA3 */
+
+        ADC_CHANNEL_4,     /* PA4 */
+
+        ADC_CHANNEL_6,     /* PA6 */
+
+        ADC_CHANNEL_9,     /* PB1 */
+
+
+        /* ================================================
+         * SENSOR 2
+         * ================================================ */
+
+        ADC_CHANNEL_5,     /* PA5 */
+
+        ADC_CHANNEL_8,     /* PA7 */
+
+        ADC_CHANNEL_10,    /* PC0 */
+
+        ADC_CHANNEL_13,    /* PC3 */
+
+        ADC_CHANNEL_12     /* PC2 */
+    };
+
+
+    for (
+        int i = 0;
+        i < ADC_CHANNELS;
+        i++
+    )
+    {
+        c.Channel =
+            ch[i];
+
+
+        c.Rank =
+            i + 1;
+
+
+        c.SamplingTime =
+            ADC_SAMPLETIME_15CYCLES;
+
+
+        if (
+            HAL_ADC_ConfigChannel(
+                &hadc1,
+                &c
+            )
+            != HAL_OK
+        )
+        {
+            Error_Handler();
+        }
+    }
+}
+
+
+/* ============================================================
+ * TIM6
+ *
+ * TRIGGER DO ADC
+ * ============================================================ */
+
+void MX_TIM6_Init(void)
+{
+    __HAL_RCC_TIM6_CLK_ENABLE();
+
+
+    htim6.Instance =
+        TIM6;
+
+
+    htim6.Init.Prescaler =
+        83;
+
+
+    htim6.Init.Period =
+        199;
+
+
+    if (
+        HAL_TIM_Base_Init(
+            &htim6
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    TIM_MasterConfigTypeDef s =
+    {
+        0
+    };
+
+
+    s.MasterOutputTrigger =
+        TIM_TRGO_UPDATE;
+
+
+    s.MasterSlaveMode =
+        TIM_MASTERSLAVEMODE_DISABLE;
+
+
+    if (
+        HAL_TIMEx_MasterConfigSynchronization(
+            &htim6,
+            &s
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+}
+
+
+/* ============================================================
+ * TIM2
+ *
+ * TIMESTAMP
+ * ============================================================ */
+
+void MX_TIM2_Init(void)
+{
+    __HAL_RCC_TIM2_CLK_ENABLE();
+
+
+    htim2.Instance =
+        TIM2;
+
+
+    htim2.Init.Prescaler =
+        83;
+
+
+    htim2.Init.Period =
+        0xFFFFFFFF;
+
+
+    if (
+        HAL_TIM_Base_Init(
+            &htim2
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+}
+
+
+/* ============================================================
+ * CLOCK
+ * ============================================================ */
+
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef o =
+    {
+        0
+    };
+
+
+    RCC_ClkInitTypeDef c =
+    {
+        0
+    };
+
+
+    o.OscillatorType =
+        RCC_OSCILLATORTYPE_HSE;
+
+
+    o.HSEState =
+        RCC_HSE_BYPASS;
+
+
+    o.PLL.PLLState =
+        RCC_PLL_ON;
+
+
+    o.PLL.PLLSource =
+        RCC_PLLSOURCE_HSE;
+
+
+    o.PLL.PLLM =
+        8;
+
+
+    o.PLL.PLLN =
+        336;
+
+
+    o.PLL.PLLP =
+        RCC_PLLP_DIV2;
+
+
+    o.PLL.PLLQ =
+        7;
+
+
+    if (
+        HAL_RCC_OscConfig(
+            &o
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+
+
+    c.ClockType =
+        RCC_CLOCKTYPE_SYSCLK |
+        RCC_CLOCKTYPE_HCLK |
+        RCC_CLOCKTYPE_PCLK1 |
+        RCC_CLOCKTYPE_PCLK2;
+
+
+    c.SYSCLKSource =
+        RCC_SYSCLKSOURCE_PLLCLK;
+
+
+    c.AHBCLKDivider =
+        RCC_SYSCLK_DIV1;
+
+
+    c.APB1CLKDivider =
+        RCC_HCLK_DIV4;
+
+
+    c.APB2CLKDivider =
+        RCC_HCLK_DIV2;
+
+
+    if (
+        HAL_RCC_ClockConfig(
+            &c,
+            FLASH_LATENCY_5
+        )
+        != HAL_OK
+    )
+    {
+        Error_Handler();
+    }
+}
+
+
+/* ============================================================
+ * ERROR
+ * ============================================================ */
+
+void Error_Handler(void)
+{
+    __disable_irq();
+
+
+    while (1)
+    {
+    }
+}

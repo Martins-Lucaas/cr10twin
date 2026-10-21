@@ -27,10 +27,8 @@ def test_fk_pointing_pose_is_perpendicular():
 def test_fk_tool_offsets_along_approach():
     """T_end desloca o TCP pela translação do attach expressa no frame do
     flange (T_fl_R · att_t). Os dois attachs são AXIAIS, então isso reduz a
-    att_z·z_flange. (Uma montagem antiga da célula axial pendurava o TCP com
-    offset lateral em y — cantilever. A pilha de `MONTAGEM_COMPLETA.step`,
-    tanto quanto a da FA7155, é centrada no flange, e T_TOUCH_TOOL_ATTACH não
-    tem componente em y.)"""
+    att_z·z_flange. (A pilha da FA7155 é centrada no flange, e
+    T_TOUCH_TOOL_ATTACH não tem componente em y.)"""
     q = _RNG.uniform(-1.5, 1.5, 6)
     T_fl = forward_kinematics(q, include_hand=False)
     for att in (T_HAND_ATTACH, T_TOUCH_TOOL_ATTACH):

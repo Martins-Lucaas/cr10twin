@@ -1,10 +1,10 @@
 """ft_serial.py — Transporte RS485 da célula de 6 eixos FA7155 (modo ATIVO).
 
-Diferenças que importam em relação ao lc_serial.py (XIAO + HX711):
+O que importa saber deste transporte:
 
 * Não há firmware nosso no caminho. O FA7155 é um escravo RS485 que começa a
   cuspir quadros sozinho ao ser energizado ("send automatically", manual
-  §4.1) — o PC só escuta. Um conversor USB↔RS485 (ZK-U485/CH340) faz a ponte.
+  §4.1) — o PC só escuta. Um conversor USB↔RS485 (CH343) faz a ponte.
 * O quadro é BINÁRIO e de tamanho fixo (28 bytes), não uma linha ASCII: não dá
   para sincronizar por fim de linha. A ressincronização é por cabeçalho + CRC.
 * O sensor NÃO carimba nem numera as amostras. `seq` e `t_us` são gerados
@@ -125,8 +125,8 @@ class FtFrameParser:
             vals = _PAYLOAD.unpack(frame[2:26])
             i = j + FT_FRAME_LEN
             # Um NaN envenena o One-Euro do receiver PARA SEMPRE (x_prev vira
-            # NaN e toda saída seguinte é NaN até reiniciar o nó) — mesma
-            # guarda do lc_serial.py, aqui aplicada aos seis eixos.
+            # NaN e toda saída seguinte é NaN até reiniciar o nó) — guarda
+            # aplicada aos seis eixos.
             if not all(math.isfinite(v) for v in vals):
                 self.bad_values += 1
                 continue

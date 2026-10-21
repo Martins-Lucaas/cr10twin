@@ -1,0 +1,161 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include <stdio.h>
+
+/* Private defines -----------------------------------------------------------*/
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS*COLS)
+
+/* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+TIM_HandleTypeDef htim6;
+UART_HandleTypeDef huart3;
+
+/* Izhikevich model variables */
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+float I[NUM_SENSORS];
+
+char uart_buf[128];
+
+/* Function prototypes -------------------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_TIM6_Init(void);
+void Error_Handler(void);
+
+/* Izhikevich functions */
+void izhikevich_init(void){
+    for(int i=0; i<NUM_SENSORS; i++){
+        v[i] = -65.0f;
+        u[i] = b*v[i];
+        I[i] = 0.0f;
+    }
+}
+
+void izhikevich_update(float dt){
+    for(int i=0; i<NUM_SENSORS; i++){
+        if(v[i] >= 30.0f){
+            v[i] = c;
+            u[i] += d;
+        }
+        float dv = 0.04f*v[i]*v[i] + 5*v[i] + 140 - u[i] + I[i];
+        float du = a*(b*v[i]-u[i]);
+        v[i] += dv*dt;
+        u[i] += du*dt;
+    }
+}
+
+void read_adc_sensors(void){
+    for(int i=0; i<NUM_SENSORS; i++){
+        // Substitua abaixo pelo código de leitura real do ADC
+        I[i] = 0.0f; // placeholder
+    }
+}
+
+void send_spikes_uart(void){
+    int len = 0;
+    len += sprintf(uart_buf, "Spikes: ");
+    for(int i=0; i<NUM_SENSORS; i++){
+        if(v[i] >= 30.0f){
+            len += sprintf(uart_buf+len, "1 ");
+        } else {
+            len += sprintf(uart_buf+len, "0 ");
+        }
+    }
+    len += sprintf(uart_buf+len, "\r\n");
+    HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, len, 10);
+}
+
+/* Main program -------------------------------------------------------------*/
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_USART3_UART_Init();
+    MX_TIM6_Init();
+
+    izhikevich_init();
+
+    while(1)
+    {
+        read_adc_sensors();
+        izhikevich_update(0.001f); // dt em segundos
+        send_spikes_uart();
+        HAL_Delay(10); // 100 Hz
+    }
+}
+
+/* System Clock Configuration */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    HAL_PWR_EnableBkUpAccess();
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLM = 8;
+    RCC_OscInitStruct.PLL.PLLN = 160;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ = 4;
+    RCC_OscInitStruct.PLL.PLLR = 2;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) Error_Handler();
+
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                                |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) Error_Handler();
+}
+
+/* Peripherals init functions */
+static void MX_GPIO_Init(void){ /* STM gerado */ }
+static void MX_DMA_Init(void){ /* STM gerado */ }
+static void MX_ADC1_Init(void){ /* STM gerado */ }
+static void MX_USART3_UART_Init(void){ /* STM gerado */ }
+static void MX_TIM6_Init(void){ /* STM gerado */ }
+
+/* Error Handler */
+void Error_Handler(void)
+{
+    __disable_irq();
+    while(1) {}
+}
+
+

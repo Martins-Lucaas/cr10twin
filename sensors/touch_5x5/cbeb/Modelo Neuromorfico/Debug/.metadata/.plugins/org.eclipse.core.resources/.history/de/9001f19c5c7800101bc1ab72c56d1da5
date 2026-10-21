@@ -1,0 +1,152 @@
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+
+/* Defines -------------------------------------------------------------------*/
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS*COLS)
+
+/* Izhikevich parameters */
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+
+/* USER VARIABLES -----------------------------------------------------------*/
+uint32_t adc_buffer[COLS];   // ADC via DMA
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+float I[NUM_SENSORS];
+uint8_t current_row = 0;
+
+/* Peripheral handles */
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+TIM_HandleTypeDef htim6;
+
+/* Function prototypes */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM6_Init(void);
+
+/* MAIN ---------------------------------------------------------------------*/
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_TIM6_Init();
+
+    // Initialize Izhikevich variables
+    for(int i=0;i<NUM_SENSORS;i++){
+        v[i] = c;
+        u[i] = b*v[i];
+    }
+
+    // Start ADC in DMA
+    HAL_ADC_Start_DMA(&hadc1, adc_buffer, COLS);
+
+    // Start TIM6
+    HAL_TIM_Base_Start_IT(&htim6);
+
+    while(1)
+    {
+        // loop vazio, tudo no timer
+    }
+}
+
+/* TIM6 callback -----------------------------------------------------------*/
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if(htim->Instance == TIM6)
+    {
+        // Ativar linha atual
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_3, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3|GPIO_PIN_5, GPIO_PIN_RESET);
+
+        switch(current_row){
+            case 0: HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET); break;
+            case 1: HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET); break;
+            case 2: HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3, GPIO_PIN_SET); break;
+            case 3: HAL_GPIO_WritePin(GPIOF, GPIO_PIN_5, GPIO_PIN_SET); break;
+        }
+
+        // Processar ADC e aplicar Izhikevich
+        for(int col=0; col<COLS; col++){
+            int idx = current_row*COLS + col;
+            I[idx] = (float)adc_buffer[col]/4095.0f * 3.3f; // tensão 0-3.3V
+
+            // Izhikevich update
+            v[idx] += 0.04f*v[idx]*v[idx] + 5*v[idx] + 140 - u[idx] + I[idx];
+            u[idx] += a*(b*v[idx] - u[idx]);
+
+            if(v[idx]>=30.0f){
+                v[idx] = c;
+                u[idx] += d;
+
+                // Gera spike GPIO (pino da linha)
+                switch(current_row){
+                    case 0: HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0); break;
+                    case 1: HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_3); break;
+                    case 2: HAL_GPIO_TogglePin(GPIOF, GPIO_PIN_3); break;
+                    case 3: HAL_GPIO_TogglePin(GPIOF, GPIO_PIN_5); break;
+                }
+            }
+        }
+
+        // Próxima linha
+        current_row = (current_row+1)%ROWS;
+    }
+}
+
+/* ADC1 init ---------------------------------------------------------------*/
+static void MX_ADC1_Init(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = COLS;
+    hadc1.Init.DMAContinuousRequests = ENABLE;
+    hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    if(HAL_ADC_Init(&hadc1)!=HAL_OK){Error_Handler();}
+
+    // Channels
+    uint32_t channels[COLS] = {ADC_CHANNEL_10, ADC_CHANNEL_12, ADC_CHANNEL_9, ADC_CHANNEL_1};
+    for(int i=0;i<COLS;i++){
+        sConfig.Channel = channels[i];
+        sConfig.Rank = i+1;
+        sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+        if(HAL_ADC_ConfigChannel(&hadc1,&sConfig)!=HAL_OK){Error_Handler();}
+    }
+}
+
+/* TIM6 init ---------------------------------------------------------------*/
+static void MX_TIM6_Init(void)
+{
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+    htim6.Instance = TIM6;
+    htim6.Init.Prescaler = 40-1; // exemplo para 4kHz se APB1=160MHz
+    htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim6.Init.Period = 1000-1; // ajuste fino
+    htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    if(HAL_TIM_Base_Init(&htim6)!=HAL_OK){Error_Handler();}
+
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    if(HAL_TIMEx_MasterConfigSynchronization(&htim6,&sMasterConfig)!=HAL_OK){Error_Handler();}
+}
+

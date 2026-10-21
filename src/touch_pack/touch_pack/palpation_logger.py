@@ -109,10 +109,10 @@ from .constants import (
     ARM_JOINTS as _ARM_JOINTS,
     RUNS_DIR as OUTPUT_DIR,
     TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
-    TOUCH_ROWS_DEFAULT, TOUCH_COLS_DEFAULT, TOUCH_EVENT_TYPES,
+    TOUCH_SENSOR_DEFAULT, touch_sensor_spec, TOUCH_EVENT_TYPES,
     PHASE_CODES, run_dir, run_id_from_msg,
     RUN_SAMPLES_CSV, RUN_MATRIX_CSV, RUN_PARAMS_JSON,
-    lc_calib_fingerprint, tool_tcp_mm,
+    tool_tcp_mm,
 )
 
 
@@ -249,21 +249,10 @@ class PalpationLogger(Node):
         # launch em 4×4 a GUI publicava 16 taxels, o logger exigia 25 e
         # descartava 100% dos frames — o run inteiro saía com taxel_* vazios e
         # só um warning estrangulado dizia por quê.
-        _sensor = str(self.declare_parameter('sensor', '5').value).strip()
-        if _sensor == '4':
-            self._rows, self._cols = 4, 4
-        else:
-            self._rows, self._cols = TOUCH_ROWS_DEFAULT, TOUCH_COLS_DEFAULT
+        spec = touch_sensor_spec(
+            self.declare_parameter('sensor', TOUCH_SENSOR_DEFAULT).value)
+        self._rows, self._cols = spec.rows, spec.cols
         self._n_taxels = self._rows * self._cols
-        # Qual CÉLULA gerou o run. Vem do MESMO argumento de launch que
-        # escolheu o receiver e a aba da GUI, porque sem ele o run fica
-        # AMBÍGUO: as colunas lc_voltage_raw_v/lc_voltage_v são VOLTS com a
-        # célula axial e NEWTONS com a FA7155, e nada mais no diretório do run
-        # diz qual. Dois anos de dados depois, ninguém reconstrói isso.
-        _cell = str(self.declare_parameter(
-            'force_sensor', 'ft6').value).strip().lower()
-        self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
-            else 'ft6'
 
         self._lock = threading.Lock()
         self._csv_fh: IO | None = None
@@ -359,25 +348,14 @@ class PalpationLogger(Node):
             params = {}
         # PROVENIÊNCIA — não vem da PalpationStart, vem do ambiente do run, e
         # é o que torna o CSV interpretável fora desta semana:
-        #   force_sensor  qual célula estava no cabo;
-        #   lc_voltage_unit  a unidade REAL das colunas lc_voltage_*, que muda
-        #     com a célula (V na axial, N na FA7155 — ver o cabeçalho do
-        #     ft_receiver_node);
-        #   tool_tcp_mm  o comprimento do TCP, que mudou 94,5 mm entre as duas
-        #     pilhas e reinterpreta toda coordenada cartesiana do run.
-        params['force_sensor'] = self._force_sensor
-        params['lc_voltage_unit'] = ('V' if self._force_sensor == 'load_cell'
-                                     else 'N')
-        # COM QUE CALIBRAÇÃO este dado foi medido. Oito hex dos números da
-        # reta (não do arquivo), que é o que permite comparar um run desta
-        # máquina com um de outra sem confiar em nomes de arquivo. Vazio com
-        # a FA7155, que vem calibrada de fábrica e não tem reta local.
-        try:
-            params['lc_calib_fingerprint'] = (
-                lc_calib_fingerprint()
-                if self._force_sensor == 'load_cell' else '')
-        except Exception:
-            params['lc_calib_fingerprint'] = ''
+        #   force_sensor  qual célula gerou o run (runs antigos gravaram
+        #     'load_cell' aqui);
+        #   lc_voltage_unit  a unidade REAL das colunas lc_voltage_*: newtons
+        #     com a FA7155 — ver o cabeçalho do ft_receiver_node;
+        #   tool_tcp_mm  o comprimento do TCP, que reinterpreta toda
+        #     coordenada cartesiana do run.
+        params['force_sensor'] = 'ft6'
+        params['lc_voltage_unit'] = 'N'
         try:
             params['tool_tcp_mm'] = tool_tcp_mm()
         except Exception:
@@ -628,16 +606,15 @@ class PalpationLogger(Node):
     def _cb_lc_sample(self, msg: LoadCellSample) -> None:
         """Uma linha do CSV unificado por amostra da célula — sinal canônico.
 
-        O arquivo sai na taxa da CÉLULA, que é o HX711: 10 Hz com o pino RATE
-        em GND (como vêm as placas vermelhas de fábrica) ou 80 Hz com ele em
-        DVDD. Não há caminho de 1 kHz aqui — o conversor não passa de 80 SPS.
-        O toque, que chega a ~834 Hz, é portanto DECIMADO neste arquivo: cada
+        O arquivo sai na taxa da CÉLULA (~400 Hz com a FA7155). O toque, que
+        chega a ~834 Hz, é portanto DECIMADO neste arquivo: cada
         linha leva o último frame recebido, e `taxel_age_ms` diz quão velho
         ele era. Para o toque em taxa cheia use os CSVs crus da GUI
         (`__adc.csv`), que gravam toda linha do firmware.
 
-        `lc_t_us`/`touch_t_us` são os relógios dos DOIS firmwares, os únicos
-        tempos desta linha que não passaram pela pilha ROS — é com eles que se
+        `lc_t_us` é carimbado pelo host na leitura da serial (o FA7155 não
+        carimba) e `touch_t_us` é o relógio do firmware do toque — os únicos
+        tempos desta linha que não passaram pela pilha ROS. É com eles que se
         reamostra as duas fontes num eixo comum depois da coleta. `t_unix`
         continua sendo a hora de CHEGADA, útil só para ordenar."""
         now = time.time()

@@ -215,12 +215,20 @@ class SensorsMixin:
         left = tk.Frame(body, bg=BG)
         left.pack(side='left', fill='both', expand=True, padx=(0, 8))
 
+        spec = self._touch_spec
         hdr = tk.Frame(left, bg=BG); hdr.pack(fill='x')
-        tk.Label(hdr, text='Touch Sensor (STM32) — Izhikevich',
+        tk.Label(hdr, text=f'Touch Sensor {spec.rows}×{spec.cols} (STM32) — '
+                           'Izhikevich',
                  font=FONT_HEAD, bg=BG, fg=TEXT).pack(side='left')
         self._sens_touch_status_lbl = tk.Label(
             hdr, text='', font=FONT_SMALL, bg=BG, fg=TEXT_DIM)
         self._sens_touch_status_lbl.pack(side='right')
+        # Qual firmware tem de estar gravado na STM: o parser aceita os dois
+        # protocolos, mas o layout da figura segue `sensor:=`.
+        tk.Label(left, text=f'{spec.label} · firmware em {spec.folder}/ · '
+                            "troque com sensor:='4' | '5'",
+                 font=FONT_SMALL, bg=BG, fg=TEXT_DIM, anchor='w'
+                 ).pack(fill='x')
 
         plot_holder = tk.Frame(left, bg=PANEL, highlightthickness=1,
                                highlightbackground=BORDER)
@@ -770,7 +778,7 @@ class SensorsMixin:
             self._touch_value = float(msg.data)
             self._touch_last_ts = time.time()
     def _spawn_touch_receiver(self) -> None:
-        """Inicia o touch_receiver_node (UDP 8081) junto com o force_receiver.
+        """Inicia o touch_receiver_node (UDP 8081) junto com o receiver da célula.
         Best-effort: o touch sensor é opcional — falha aqui não bloqueia a
         célula de carga; o painel apenas fica em 'aguardando'."""
         if self._touch_rx_proc is not None and self._touch_rx_proc.poll() is None:

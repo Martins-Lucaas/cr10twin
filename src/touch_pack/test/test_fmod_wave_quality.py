@@ -177,12 +177,12 @@ def test_a_frase_separa_o_que_o_braco_comanda_do_que_a_celula_mede():
     assert 'FA7155 at 400 Hz' in txt
 
 
-def test_trocar_a_celula_muda_so_a_metade_da_medida():
+def test_a_taxa_da_celula_muda_so_a_metade_da_medida():
     """O tick do ServoJ é do firmware do CR10; nenhuma célula o altera."""
     from touch_pack.palpation_gui import fmod_cadence_phrase, fmod_wave_dt
     hz, dt = 0.5, fmod_wave_dt(0.5)
     ft = fmod_cadence_phrase(hz, dt, 400.0, 'FA7155', True)
-    hx = fmod_cadence_phrase(hz, dt, 24.0, 'HX711', False)
+    hx = fmod_cadence_phrase(hz, dt, 24.0, 'SLOW', False)
     assert ft.split(',')[0] == hx.split(',')[0] == '67 commanded points per cycle (30 ms ServoJ tick)'
     assert '800 samples per cycle' in ft and '48 samples per cycle' in hx
 
@@ -195,16 +195,12 @@ def test_a_frase_nao_afirma_taxa_medida_quando_e_nominal():
     assert ' at 400 Hz' not in txt
 
 
-def test_a_taxa_vem_da_celula_configurada_e_prefere_a_medida():
+def test_a_taxa_prefere_a_medida():
     import types
     from touch_pack.palpation_gui import PalpationGUI
-    from touch_pack.constants import FT_NOMINAL_RATE_HZ, LC_NOMINAL_RATE_HZ
-    stub = types.SimpleNamespace(_force_sensor='ft6', _ft_rate_hz=None)
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ
+    stub = types.SimpleNamespace(_ft_rate_hz=None)
     assert PalpationGUI._force_cell_rate(stub) == (FT_NOMINAL_RATE_HZ,
                                                    'FA7155', False)
     stub._ft_rate_hz = 405.3
     assert PalpationGUI._force_cell_rate(stub) == (405.3, 'FA7155', True)
-    # a HX711 não publica taxa: só resta a nominal, e a frase não mente
-    stub._force_sensor = 'load_cell'
-    assert PalpationGUI._force_cell_rate(stub) == (LC_NOMINAL_RATE_HZ,
-                                                   'HX711', False)

@@ -1,7 +1,7 @@
 """
 sim_force_bridge.py — fecha a malha de força NA SIMULAÇÃO.
 
-O `force_receiver` real lê a célula pela USB; em Gazebo não há porta serial,
+O `ft_receiver` real lê a FA7155 pela RS485; em Gazebo não há porta serial,
 então sem este nó `/load_cell/force_net` fica mudo e o explorer recusa todo
 ensaio por "leitura velha".
 
@@ -20,7 +20,7 @@ Parâmetros (todos com default sensato):
     offset       0.0   N a subtrair (tara). O peso da pilha abaixo da célula
                        ≈ 5,5 N com a ferramenta na vertical; deixe 0.0 e use
                        a compensação de gravidade do explorer, ou meça e fixe.
-    filter_hz    0.0   1 polo passa-baixa (Hz) p/ imitar a banda da HX711.
+    filter_hz    0.0   1 polo passa-baixa (Hz) p/ imitar a banda da célula.
                        0 = sem filtro (o plugin já traz ruído gaussiano).
     rate_hz     80.0   taxa de republicação.
 """

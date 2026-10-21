@@ -40,7 +40,7 @@ def _feed_force(n, value: float):
 
 
 def _keep_force_fresh(n, value: float, duration_s: float) -> threading.Thread:
-    """Renova a leitura a ~50 Hz, como a ESP32 faria. Alimenta uma vez
+    """Renova a leitura a ~50 Hz, como uma célula real faria. Alimenta uma vez
     de forma síncrona antes da thread, evitando a race em que a fase
     começa sem nenhuma leitura (abortaria por 'stale')."""
     _feed_force(n, value)

@@ -35,5 +35,5 @@ services:
 
     # ── Hardware real: descomente e ajuste as portas ──────────────────
     # devices:
-    #   - /dev/ttyACM0:/dev/ttyACM0    # célula de carga (XIAO ESP32S3)
+    #   - /dev/ttyUSB0:/dev/ttyUSB0    # célula de carga (FA7155 via CH343)
     #   - /dev/ttyACM1:/dev/ttyACM1    # sensor tátil (STM32)

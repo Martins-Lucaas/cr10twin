@@ -1,0 +1,896 @@
+#include "stm32f7xx_hal.h"
+#include "usb_device.h"
+#include "usbd_cdc_if.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+
+// DEFINIÇÕES
+#define DEBUG_ADC_PORT GPIOB
+#define DEBUG_ADC_PIN  GPIO_PIN_8 //(GPIO DE PULSO PRA ADC)
+#define DEBUG_IZH_PORT GPIOB
+#define DEBUG_IZH_PIN  GPIO_PIN_9//(GPIO DE PULSO PRA Izhikevich)
+
+//////////////////////////////////////////////
+#define ROWS 4
+#define COLS 4
+#define NUM_TAXELS (ROWS*COLS)
+#define DIFF_BUFFER 16
+static uint8_t row_mask = 0x0E;
+
+// IZH PARAMETERS
+
+/* Adap Rapida */
+#define A_RA 0.1f
+#define B_RA 0.2f
+#define C_RA -65.0f
+#define D_RA 2.0f
+#define G_RA 1000.0f
+
+/* Adap lenta */
+#define A_SA 0.02f
+#define B_SA 0.2f
+#define C_SA -65.0f
+#define D_SA 8.0f
+#define G_SA 20.0f
+
+/* Cuneate Neuron */
+#define A_CN 0.211f
+#define B_CN 0.228f
+#define C_CN -27.668f
+#define D_CN 31.761f
+#define G_CN 6.310e+09f
+
+
+
+#define DT 0.10f
+
+#define VTH 30.0f
+#define V_MIN 0.0f
+#define V_MAX 3.3f
+#define USB_TX_BUFFER_SIZE 4096
+#define USB_PACKET_SIZE 64
+#define SEND_INTERVAL_MS 100  // envio ADC a cada 10 ms
+
+// Para neuronio de segunda ordem
+#define TAU_SYN 4.0f
+#define G_MAX 23e-8f
+
+#define W_INB 0.19450982f // peso inibitorio, é o mesmo para todos
+/////////////
+
+#define TEMPLATE_SIZE 20
+
+
+float g_template[TEMPLATE_SIZE];
+
+float gain_RA[NUM_TAXELS];
+float gain_SA[NUM_TAXELS];
+
+float gain_SA_init[NUM_TAXELS] = {
+		0.2547,	0.6273,	0.3109,	0.3306,
+		0.3025,	0.2508,	0.3910,	0.0010,
+		0.4050, 0.0010,	0.2231,	0.0010,
+		0.0074,	0.0010,	0.0010,	0.1524
+    };
+
+float gain_RA_init[NUM_TAXELS] = {
+
+		0.3661, 0.0191,	0.2154,	0.1476,
+		0.3476, 0.0044,	0.0032, 0.8846,
+		0.3689,	0.0035,	0.2996, 0.0018,
+		0.1454,	0.0922,	0.2811, 0.0838
+    };
+
+
+float I_inh = 0.0f;
+
+//  ESTRUTURAS
+typedef struct {
+    float v_RA;
+    float u_RA;
+
+    float v_SA;
+    float u_SA;
+
+    float I;
+} Taxel;
+
+typedef struct {
+	  float v_CN;
+	  float u_CN;
+} CuneateNeuron;
+
+// HANDLES
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim2;
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
+// VARIÁVEIS
+Taxel taxels[NUM_TAXELS];
+uint16_t adc_buffer[COLS];
+uint8_t current_row = 0;
+
+volatile uint8_t spike_flags_RA[NUM_TAXELS] = {0};
+volatile uint8_t spike_flags_SA[NUM_TAXELS] = {0};
+
+volatile uint16_t last_adc[NUM_TAXELS] = {0};
+
+float I_buffer[NUM_TAXELS][DIFF_BUFFER] = {0}; // corrente excitatória
+uint8_t I_index[NUM_TAXELS] = {0};
+
+float I_inh_buffer[NUM_TAXELS][DIFF_BUFFER] = {0}; // corrente inibitória
+uint8_t I_inh_index[NUM_TAXELS] = {0};
+
+uint8_t usb_tx_buffer[USB_TX_BUFFER_SIZE];
+volatile uint16_t usb_head = 0;
+volatile uint16_t usb_tail = 0;
+
+float g_syn_RA[NUM_TAXELS] = {0};
+float g_syn_SA[NUM_TAXELS] = {0};
+
+uint8_t template_idx_RA[NUM_TAXELS] = {0};
+uint8_t template_idx_SA[NUM_TAXELS] = {0}; // em qual posição do template cada neurônio está
+
+uint8_t template_idx_INH_RA[NUM_TAXELS] = {0};
+uint8_t template_idx_INH_SA[NUM_TAXELS] = {0};
+
+CuneateNeuron CN;
+
+// PROTÓTIPOS
+void SystemClock_Config(void);
+void MX_GPIO_Init(void);
+void MX_DMA_Init(void);
+void MX_ADC1_Init(void);
+void MX_TIM6_Init(void);
+void MX_TIM2_Init(void);
+void select_row(uint8_t row);
+void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx);
+bool process_spikes(void);
+void send_adc_continuous(void);
+void usb_buffer_write(const char *data, uint16_t len);
+void usb_buffer_process(void);
+
+
+float update_synapse(float *g_syn, bool spike);
+float compute_Isyn(float g_syn);
+
+// VER VALOR POSIÇÃO DA PRIMEIRA
+
+void init_template(void)
+{
+    g_template[0] = 0.0f;
+
+    for(int i = 1; i < TEMPLATE_SIZE; i++)
+    {
+        g_template[i] =
+            G_MAX * expf(-(float)(i-1) / 4.0f);
+
+    }
+}
+
+
+// USB BUFFER
+void usb_buffer_write(const char *data, uint16_t len)
+{
+    for (uint16_t i = 0; i < len; i++)
+    {
+        uint16_t next = (usb_head + 1) % USB_TX_BUFFER_SIZE;
+        if (next != usb_tail)
+        {
+            usb_tx_buffer[usb_head] = data[i];
+            usb_head = next;
+        }
+        else
+        {
+            // Buffer cheio, descarta o dado
+            break;
+        }
+    }
+}
+
+void usb_buffer_process(void)
+{
+    static uint8_t packet[USB_PACKET_SIZE];
+    uint16_t len = 0;
+    uint16_t temp_tail = usb_tail;
+
+    while (temp_tail != usb_head && len < USB_PACKET_SIZE)
+    {
+        packet[len++] = usb_tx_buffer[temp_tail];
+        temp_tail = (temp_tail + 1) % USB_TX_BUFFER_SIZE;
+    }
+
+    if (len > 0)
+    {
+        if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED)
+        {
+            if (CDC_Transmit_FS(packet, len) == USBD_OK)
+            {
+                usb_tail = temp_tail; // confirma envio
+            }
+        }
+    }
+}
+
+// SELECT ROW
+static inline uint8_t row4(uint8_t v)
+{
+    return ((v << 1) | (v >> 3)) & 0x0F;
+}
+
+const uint8_t row_masks[ROWS] = {
+    0b11110,
+    0b11101,
+    0b11011,
+    0b10111
+};
+
+void select_row(uint8_t row)
+{
+
+	HAL_GPIO_WritePin(GPIOF, GPIO_PIN_5,  (row_mask & (1<<0)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3,  (row_mask & (1<<1)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3,  (row_mask & (1<<2)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0,  (row_mask & (1<<3)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	row_mask = row4(row_mask);
+}
+
+// Modelo de Izhikevith
+
+bool izhikevich_step(float *v, float *u, float I,
+                     float a, float b, float c, float d)
+{
+    *v += DT * (0.04f * (*v) * (*v) + 5.0f * (*v) + 140.0f - (*u) + I);
+    *u += DT * (a * (b * (*v) - (*u)));
+
+    if (*v >= VTH)
+    {
+        *v = c;
+        *u += d;
+        return true;
+    }
+
+    return false;
+}
+
+float update_synapse(float *g_syn, bool spike)
+{
+    // decaimento
+    *g_syn -= (DT / TAU_SYN) * (*g_syn);
+
+    // incremento por spike
+    if (spike)
+        *g_syn += G_MAX;
+
+
+    return *g_syn;
+}
+
+float compute_Isyn(float g_syn)
+{
+    return g_syn;
+}
+
+void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
+{
+    HAL_GPIO_WritePin(DEBUG_IZH_PORT,
+                      DEBUG_IZH_PIN,
+                      GPIO_PIN_SET);
+
+    static float I_total = 0.0f;
+
+    for (int i = 0; i < COLS; i++)
+    {
+        int global_idx = row_idx * COLS + i;
+
+        // =====================================================
+        // ADC -> CORRENTE
+        // =====================================================
+
+        float V = adc[i] * (V_MAX / 4095.0f);
+
+        float Vn =
+            (V_MAX - V) / (V_MAX - V_MIN);
+
+        float I_raw = Vn;
+
+        uint8_t idx = I_index[global_idx];
+
+        float I_old =
+            I_buffer[global_idx][idx];
+
+        I_buffer[global_idx][idx] = I_raw;
+
+        I_index[global_idx] =
+            (idx + 1) % DIFF_BUFFER;
+
+        float dI =
+            fabsf(I_raw - I_old) /
+            (DIFF_BUFFER * DT);
+
+        if (fabsf(dI) < 0.01f)
+            dI = 0.0f;
+
+        float I_RA =
+            (G_RA * fabsf(dI));
+
+        float I_SA =
+            (G_SA * I_raw);
+
+        // =====================================================
+        // NEURÔNIO RA
+        // =====================================================
+
+        bool spike_ra = izhikevich_step(
+            &t[i].v_RA,
+            &t[i].u_RA,
+            I_RA,
+            A_RA,
+            B_RA,
+            C_RA,
+            D_RA
+        );
+
+        if (spike_ra)
+        {
+            spike_flags_RA[global_idx] = 1;
+
+            // excitatória
+            template_idx_RA[global_idx] = 1;
+
+            // inibitória
+            template_idx_INH_RA[global_idx] = 1;
+        }
+
+        // =====================================================
+        // NEURÔNIO SA
+        // =====================================================
+
+        bool spike_sa = izhikevich_step(
+            &t[i].v_SA,
+            &t[i].u_SA,
+            I_SA,
+            A_SA,
+            B_SA,
+            C_SA,
+            D_SA
+        );
+
+        if (spike_sa)
+        {
+            spike_flags_SA[global_idx] = 1;
+
+            // excitatória
+            template_idx_SA[global_idx] = 1;
+
+            // inibitória
+            template_idx_INH_SA[global_idx] = 1;
+        }
+
+        // =====================================================
+        // SINAPSE EXCITATÓRIA RA
+        // =====================================================
+
+        float I_ra = 0.0f;
+
+        uint8_t idx_ra =
+            template_idx_RA[global_idx];
+
+        if(idx_ra > 0)
+        {
+            I_ra =
+                gain_RA[global_idx] *
+                g_template[idx_ra];
+
+            idx_ra++;
+
+            if(idx_ra >= TEMPLATE_SIZE)
+            {
+                idx_ra = 0;
+            }
+
+            template_idx_RA[global_idx] = idx_ra;
+        }
+
+        // =====================================================
+        // SINAPSE EXCITATÓRIA SA
+        // =====================================================
+
+        float I_sa = 0.0f;
+
+        uint8_t idx_sa =
+            template_idx_SA[global_idx];
+
+        if(idx_sa > 0)
+        {
+            I_sa =
+                gain_SA[global_idx] *
+                g_template[idx_sa];
+
+            idx_sa++;
+
+            if(idx_sa >= TEMPLATE_SIZE)
+            {
+                idx_sa = 0;
+            }
+
+            template_idx_SA[global_idx] = idx_sa;
+        }
+
+        // =====================================================
+        // SOMA EXCITATÓRIA
+        // =====================================================
+
+        I_total += I_ra;
+
+        I_total += I_sa;
+
+        last_adc[global_idx] = adc[i];
+    }
+
+    // =========================================================
+    // PROCESSA PÓS-SINÁPTICO APÓS TODAS AS LINHAS
+    // =========================================================
+
+    if (row_idx == (ROWS - 1))
+    {
+        uint32_t tstamp =
+            __HAL_TIM_GET_COUNTER(&htim2);
+
+        // =====================================================
+        // CORRENTE INIBITÓRIA GLOBAL
+        // =====================================================
+
+        float I_inh = 0.0f;
+
+        // ---------- INIBIÇÃO RA ----------
+
+        for(int k = 0; k < NUM_TAXELS; k++)
+        {
+            uint8_t idx_inh_ra =
+                template_idx_INH_RA[k];
+
+            if(idx_inh_ra > 0)
+            {
+                I_inh -=
+                    W_INB *
+                    g_template[idx_inh_ra];
+
+                idx_inh_ra++;
+
+                if(idx_inh_ra >= TEMPLATE_SIZE)
+                {
+                    idx_inh_ra = 0;
+                }
+
+                template_idx_INH_RA[k] =
+                    idx_inh_ra;
+            }
+        }
+
+        // ---------- INIBIÇÃO SA ----------
+
+        for(int k = 0; k < NUM_TAXELS; k++)
+        {
+            uint8_t idx_inh_sa =
+                template_idx_INH_SA[k];
+
+            if(idx_inh_sa > 0)
+            {
+                I_inh -=
+                    W_INB *
+                    g_template[idx_inh_sa];
+
+                idx_inh_sa++;
+
+                if(idx_inh_sa >= TEMPLATE_SIZE)
+                {
+                    idx_inh_sa = 0;
+                }
+
+                template_idx_INH_SA[k] =
+                    idx_inh_sa;
+            }
+        }
+
+        // =====================================================
+        // NORMALIZAÇÃO
+        // =====================================================
+
+        //I_total *= ganho;
+        //I_inh   *= ganho;
+
+        // =====================================================
+        // CORRENTE FINAL
+        // =====================================================
+
+        //float I_final =
+            //(I_total - I_inh)*ganho;
+
+        //I_total *= correction;
+        //I_inh   *= correction;
+
+        float I_final =
+            (I_total + I_inh)*G_CN;
+        // =====================================================
+        // NEURÔNIO PÓS-SINÁPTICO
+        // =====================================================
+
+        bool spike_post = izhikevich_step(
+            &CN.v_CN,
+            &CN.u_CN,
+            I_final,
+            A_CN,
+            B_CN,
+            C_CN,
+            D_CN
+        );
+
+        // =====================================================
+        // DEBUG USB
+        // =====================================================
+
+        char msg[120];
+
+        int n = snprintf(
+            msg,
+            sizeof(msg),
+            "TOTAL,t=%lu,Iexc=%.6f,Iinh=%.6f,Ifinal=%.6f\r\n",
+            tstamp,
+            I_total,
+            I_inh,
+            I_final
+        );
+
+        usb_buffer_write(msg, n);
+
+        if (spike_post)
+        {
+            char msg2[80];
+
+            int n2 = snprintf(
+                msg2,
+                sizeof(msg2),
+                "POST,t=%lu,Ifinal=%.6f\r\n",
+                tstamp,
+                I_final
+            );
+
+            usb_buffer_write(msg2, n2);
+        }
+
+        // =====================================================
+        // RESET
+        // =====================================================
+
+        I_total = 0.0f;
+    }
+
+    HAL_GPIO_WritePin(DEBUG_IZH_PORT,
+                      DEBUG_IZH_PIN,
+                      GPIO_PIN_RESET);
+}
+// PROCESS SPIKES
+bool process_spikes(void)
+{
+    static char batch_msg[USB_TX_BUFFER_SIZE];
+    static uint16_t batch_count = 0;
+    char msg[80];
+    uint32_t tstamp = __HAL_TIM_GET_COUNTER(&htim2);
+    bool has_spike = false;
+
+    for (int i = 0; i < NUM_TAXELS; i++)
+    {
+        if (spike_flags_RA[i])
+        {
+            spike_flags_RA[i] = 0;
+            has_spike = true;
+
+            int n = snprintf(msg, sizeof(msg),
+                             "RA,idx=%d,adc=%d,t=%lu\r\n",
+                             i, last_adc[i], tstamp);
+
+            memcpy(batch_msg + batch_count, msg, n);
+            batch_count += n;
+        }
+
+        if (spike_flags_SA[i])
+        {
+            spike_flags_SA[i] = 0;
+            has_spike = true;
+
+            int n = snprintf(msg, sizeof(msg),
+                             "SA,idx=%d,adc=%d,t=%lu\r\n",
+                             i, last_adc[i], tstamp);
+
+            memcpy(batch_msg + batch_count, msg, n);
+            batch_count += n;
+        }
+    }
+
+    if (batch_count > 0)
+    {
+        usb_buffer_write(batch_msg, batch_count);
+        batch_count = 0;
+    }
+
+    return has_spike;
+}
+
+// SEND ADC CONTINUOUS
+void send_adc_continuous(void)
+{
+    static char batch_msg[USB_TX_BUFFER_SIZE];
+    static uint16_t batch_count = 0;
+    static uint32_t last_time = 0;
+
+    uint32_t tstamp = __HAL_TIM_GET_COUNTER(&htim2);
+    if ((tstamp - last_time) < (SEND_INTERVAL_MS * 1000)) return;
+    last_time = tstamp;
+
+    char msg[128];
+    for (uint8_t i = 0; i < NUM_TAXELS; i++)
+    {
+        int n = snprintf(msg, sizeof(msg),
+                         "DATA,idx=%d,adc=%d,t=%lu\r\n",
+                         i, last_adc[i], tstamp);
+
+        if ((batch_count + n) >= USB_TX_BUFFER_SIZE)
+            n = USB_TX_BUFFER_SIZE - batch_count;
+
+        memcpy(batch_msg + batch_count, msg, n);
+        batch_count += n;
+    }
+
+    if (batch_count > 0)
+    {
+        usb_buffer_write(batch_msg, batch_count);
+        batch_count = 0;
+    }
+}
+
+// CALLBACK ADC
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc == &hadc1)
+    {
+    	HAL_GPIO_WritePin(DEBUG_ADC_PORT, DEBUG_ADC_PIN, GPIO_PIN_SET);///// PULSO NO GPIO ADC NO INICIO DA DIGITALIZAÇÃO
+
+    	///////////////////////////
+
+    	select_row(current_row); //Seleciona linha antes de processar ADC
+        update_taxels(&taxels[current_row * COLS], adc_buffer, current_row);
+        current_row = (current_row + 1) % ROWS;
+        //if (current_row >= ROWS)
+			//current_row=0;
+
+        /////////////////////////////////
+        HAL_GPIO_WritePin(DEBUG_ADC_PORT, DEBUG_ADC_PIN, GPIO_PIN_RESET);///// PULSO NO GPIO ADC NO FIM DIGITALIZAÇÃO
+    }
+}
+
+// MAIN
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_TIM6_Init();
+    MX_TIM2_Init();
+    MX_USB_DEVICE_Init();
+
+    CN.v_CN = -30.0f;
+    CN.u_CN = B_CN * CN.v_CN;
+
+    init_template();
+
+    for (int i = 0; i < NUM_TAXELS; i++)
+    {
+        taxels[i].v_RA = -30.0f;
+        taxels[i].u_RA = B_RA * taxels[i].v_RA;
+        taxels[i].v_SA = -30.0f;
+        taxels[i].u_SA = B_SA * taxels[i].v_SA;
+
+        taxels[i].I = 0.0f;
+    }
+
+    select_row(0);
+
+    HAL_TIM_Base_Start(&htim2);
+    HAL_TIM_Base_Start(&htim6);
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, COLS);
+
+
+    for (int i = 0; i < NUM_TAXELS; i++)
+    {
+        gain_RA[i] = gain_RA_init[i];
+        gain_SA[i] = gain_SA_init[i];
+    }
+
+    usb_buffer_write("BOOT OK\r\n", 9);
+
+
+    while (1)
+    {
+        bool spikes = process_spikes();  // envia spikes se houver
+        if (!spikes)
+        {
+            send_adc_continuous();       // envia ADC contínuo se não houver spikes
+        }
+        usb_buffer_process();            // envia USB
+    }
+}
+
+// GPIO
+void MX_GPIO_Init(void)
+{
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+    GPIO_InitTypeDef g = {0};
+
+    /* LINHAS */
+    g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pull = GPIO_NOPULL;
+    g.Speed = GPIO_SPEED_FREQ_LOW;
+
+    g.Pin = GPIO_PIN_0 | GPIO_PIN_3;
+    HAL_GPIO_Init(GPIOC, &g);
+
+    g.Pin = GPIO_PIN_3 | GPIO_PIN_5;
+    HAL_GPIO_Init(GPIOF, &g);
+
+    /* PINOS ADC */
+    g.Mode = GPIO_MODE_ANALOG;
+    g.Pull = GPIO_NOPULL;
+    g.Pin = GPIO_PIN_0 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_6; // ADC0, ADC3, ADC4, ADC6
+    HAL_GPIO_Init(GPIOA, &g);
+
+    //g.Pin = GPIO_PIN_1; // ADC9
+    //HAL_GPIO_Init(GPIOB, &g);
+
+    ///////////////////////////////////////////////////////////
+
+    __HAL_RCC_GPIOB_CLK_ENABLE(); //// DEFINIÇÃO DE GPIO COMO OUTPUT
+
+
+    g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pull = GPIO_NOPULL;
+    g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+
+    g.Pin = DEBUG_ADC_PIN | DEBUG_IZH_PIN;
+    HAL_GPIO_Init(GPIOB, &g);
+
+    /////////////////////////////////////////////////////////////////
+}
+
+// DMA
+void MX_DMA_Init(void)
+{
+    __HAL_RCC_DMA2_CLK_ENABLE();
+
+    hdma_adc1.Instance = DMA2_Stream0;
+    hdma_adc1.Init.Channel = DMA_CHANNEL_0;
+    hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_adc1.Init.Mode = DMA_CIRCULAR;
+    hdma_adc1.Init.Priority = DMA_PRIORITY_HIGH;
+    hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+
+    HAL_DMA_Init(&hdma_adc1);
+    __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
+
+    HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+}
+
+void DMA2_Stream0_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&hdma_adc1);
+}
+
+// ADC
+void MX_ADC1_Init(void)
+{
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+    ADC_ChannelConfTypeDef c = {0};
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ENABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.NbrOfConversion = COLS;
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T6_TRGO;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+    hadc1.Init.DMAContinuousRequests = ENABLE;
+    HAL_ADC_Init(&hadc1);
+
+    uint32_t ch[COLS] = {
+    	ADC_CHANNEL_0,
+		ADC_CHANNEL_3,
+		ADC_CHANNEL_4,
+    	ADC_CHANNEL_6,
+    	//ADC_CHANNEL_9,
+    };
+
+    for (int i = 0; i < COLS; i++)
+    {
+        c.Channel = ch[i];
+        c.Rank = i + 1;
+        c.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+        HAL_ADC_ConfigChannel(&hadc1, &c);
+    }
+}
+
+// TIM6
+void MX_TIM6_Init(void)
+{
+    __HAL_RCC_TIM6_CLK_ENABLE();
+
+    htim6.Instance = TIM6;
+    htim6.Init.Prescaler = 83;
+    htim6.Init.Period = 249; //microsegundos -- cada taxel atualizado em 1 ms
+
+    HAL_TIM_Base_Init(&htim6);
+
+    TIM_MasterConfigTypeDef s = {0};
+    s.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    s.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim6, &s);
+}
+
+// ========================== TIM2
+void MX_TIM2_Init(void)
+{
+    __HAL_RCC_TIM2_CLK_ENABLE();
+
+    htim2.Instance = TIM2;
+    htim2.Init.Prescaler = 83;
+    htim2.Init.Period = 0xFFFFFFFF;
+    HAL_TIM_Base_Init(&htim2);
+}
+
+// ========================== CLOCK ==========================
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef o = {0};
+    RCC_ClkInitTypeDef c = {0};
+
+    o.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    o.HSEState = RCC_HSE_BYPASS;
+    o.PLL.PLLState = RCC_PLL_ON;
+    o.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    o.PLL.PLLM = 8;
+    o.PLL.PLLN = 336;
+    o.PLL.PLLP = RCC_PLLP_DIV2;
+    o.PLL.PLLQ = 7;
+    HAL_RCC_OscConfig(&o);
+
+    c.ClockType = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK |
+                  RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    c.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    c.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    c.APB1CLKDivider = RCC_HCLK_DIV4;
+    c.APB2CLKDivider = RCC_HCLK_DIV2;
+    HAL_RCC_ClockConfig(&c, FLASH_LATENCY_5);
+}
+
+void Error_Handler(void)
+{
+    __disable_irq();
+    while (1);
+}

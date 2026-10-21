@@ -94,8 +94,8 @@ from .constants import (
     hold_tol_n as _hold_tol_n_for,
     FORCE_SETPOINT_MAX_N,
     FT_NOMINAL_RATE_HZ,
-    LC_NOMINAL_RATE_HZ,
     HOME_POSE_FILE, tool_stamp, tool_stamp_mismatch,
+    TOUCH_SENSOR_DEFAULT, touch_sensor_spec,
     PALPATION_PARAMS_FILE, new_run_id,
     TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
     MATRIX_SAFE_Z_MM_DEFAULT, MATRIX_SAFE_Z_MM_MIN, MATRIX_SAFE_Z_MM_MAX,
@@ -157,7 +157,6 @@ _N_PER_KGF = 9.80665
 
 # Tema + widgets compartilhados (cores, named fonts do Tk — ver o aviso
 # sobre o bug do fontconfig em ui_helpers — tooltip e botões do header).
-from .gui_lc_axial import LcAxialMixin
 from .gui_loadcell import FtAxesMixin
 from .gui_ft_arrow import FtArrowMixin
 from .gui_ft_charts import FtChartsMixin
@@ -246,7 +245,7 @@ except Exception:  # pragma: no cover
 
 
 # A GUI NÃO ABRE a serial da célula — uma tty admite um leitor só, e o
-# force_receiver é o dono exclusivo da porta.
+# ft_receiver é o dono exclusivo da porta.
 
 log = logging.getLogger('touch_pack.palpation_gui')
 
@@ -332,8 +331,8 @@ def fmod_cadence_phrase(hz: float, dt_s: float, rate_hz: float,
     pontos por ciclo mesmo com a célula a 400 Hz. Não é contradição — 67 é
     1/(0,5·30 ms), o tick do ServoJ, e a célula não tem como aumentá-lo (o
     teto é o `t` mínimo do firmware, 20 ms). Quem a célula multiplica é a
-    outra metade, a MEDIDA: ~800 amostras por ciclo na FA7155 contra ~48 na
-    HX711, e é dela que o ILC tira os bins de fase. Dizer as duas lado a
+    outra metade, a MEDIDA: ~800 amostras por ciclo na FA7155, e é dela que
+    o ILC tira os bins de fase. Dizer as duas lado a
     lado é o que evita ler a cadência do braço como se fosse a do sensor.
 
     Função pura — testável sem Tk e sem bancada.
@@ -374,7 +373,7 @@ HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
 
 
 # Nó ROS + GUI
-class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMixin, FtChartsMixin, FtArrowMixin,
+class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMixin, FtArrowMixin,
                    ManualExtrasMixin, TrajRecMixin,
                    MatrixMixin, CameraMixin, Manip3DTabMixin, HandMixin,
                    IMUMixin, Node):
@@ -431,17 +430,12 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Tópico latched que indica se o drag teach está activo.
         self._drag_pub = self.create_publisher(Bool, '/palpation/drag_mode', QOS_COMMAND)
         # /load_cell/force_net e /load_cell/sample_net NÃO saem mais daqui:
-        # quem os publica é o force_receiver, dono da porta serial. Enquanto
+        # quem os publica é o ft_receiver, dono da porta serial. Enquanto
         # esta janela os produzia, a malha de segurança do explorer (corte de
         # 15 N, margem de 12 N, detecção de contato) dependia do Tk estar
         # responsivo — e não existia operação sem GUI. Aqui só se PEDE o tare.
         self._lc_tare_req_pub = self.create_publisher(
             Empty, '/load_cell/tare', 10)
-        # Zero do FIRMWARE da célula axial: o force_receiver retransmite isto
-        # como o byte 'Z' na serial do XIAO. É outra coisa que o tare acima —
-        # aquele subtrai no software, este refaz a referência dentro do MCU.
-        self._lc_rezero_pub = self.create_publisher(
-            Empty, '/load_cell/rezero', 10)
         # Canal de comando do SENSOR (Modbus pela 485) — o tare acima é do
         # host; este mexe no hardware. Ver ft_modbus.py.
         self._ft_cmd_pub = self.create_publisher(
@@ -627,19 +621,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             Float32, '/load_cell/force_net', self._cb_lc_force_net_gui, QOS_SENSOR)
         self.create_subscription(
             Float32, '/load_cell/force', self._cb_lc_force_raw_gui, QOS_SENSOR)
-        # Tensão crua da ponte — só existe com a célula axial no ar. É o que
-        # a aba Calibration mede; sem ela o wizard fica dizendo que espera.
-        self.create_subscription(
-            Float32, '/load_cell/voltage', self._cb_lc_voltage, QOS_SENSOR)
         # Estado e desfecho do tare — de propriedade do receiver.
         self.create_subscription(
             Bool, '/load_cell/tared', self._cb_lc_tared, 10)
-        # Se a força publicada tem origem. O que o Bool SIGNIFICA depende da
-        # célula: no force_receiver é "há reta slope/intercept carregada"
-        # (sem ela não sai força nenhuma); no ft_receiver é "há quadros
-        # válidos chegando", porque a FA7155 já vem calibrada de fábrica.
-        self.create_subscription(
-            Bool, '/load_cell/calibrated', self._cb_lc_calibrated, 10)
         self.create_subscription(
             String, '/load_cell/tare_result', self._cb_lc_tare_result, 10)
         self.create_subscription(
@@ -674,22 +658,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Espelho do tare, para EXIBIÇÃO. O dono da referência e do auto-tare
         # de partida é o receiver, que tem a porta.
         self._lc_tare_done: bool = False
-        self._lc_calibrated: bool = False
         # Força de contato tare-compensada (N, positiva = compressão).
         self._lc_force_net: float = 0.0
         self._lc_force_net_ts: float = 0.0
-        # Tensão da ponte (V, domínio ×PGA) da célula axial — só o
-        # force_receiver publica isto; a FA7155 entrega newton e não tem
-        # tensão nenhuma a mostrar. É a entrada do wizard de calibração.
-        self._lc_voltage: float = 0.0
-        self._lc_voltage_ts: float = 0.0
-        # Chegadas de /load_cell/voltage, para a taxa MEDIDA da aba. 2 s a
-        # 80 Hz (o pino RATE em DVDD) cabem em 160.
-        self._lc_arrivals: collections.deque = collections.deque(maxlen=200)
-        # Coleta do wizard em curso: None ou (t_fim, [amostras]). Mora AQUI e
-        # não na fatia porque a callback do ROS a lê, e ela roda desde o
-        # __init__ — muito antes de a aba de calibração existir.
-        self._lc_capture: tuple[float, list[float]] | None = None
 
         # ── Célula de 6 eixos FA7155 (/ft_sensor/wrench) ──────────────
         # Último wrench recebido, por eixo. Alimenta a aba "6 Axes" e as seis
@@ -714,9 +685,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # rajada para a estimativa balançar vários Hz entre repinturas.
         self._ft_arrivals: collections.deque = collections.deque(
             maxlen=int(FT_NOMINAL_RATE_HZ))
-        # Subprocesso do force_receiver_node (gerenciado pelo botão Conectar)
         # Touch sensor (STM32 → PC plotter → UDP via touch_receiver)
-        # Gerenciado junto com o force_receiver pelo mesmo botão Conectar.
         self._touch_value: float = 0.0
         self._touch_last_ts: float = 0.0
         self._touch_rx_proc: subprocess.Popen | None = None
@@ -724,31 +693,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Porta da serial do STM32: '' (default) → auto-detect (/dev/ttyACMx).
         self._touch_port = str(self.declare_parameter(
             'touch_serial_port', '').value).strip()
-        # Tipo do sensor de toque (launch: sensor:='5' | '4')
-        # '5' (DEFAULT) → grade 5×5 SEM TOTAL, que é a montada na bancada; o
-        # sinal publicado em /touch_sensor/value é a ativação média por frame
-        # (ver touch_source).
-        # '4' → grade 4×4 com linha TOTAL/Ifinal (firmware Izhikevich clássico).
-        # Qualquer outro valor cai no 5×5. O palpation_logger recebe ESTE mesmo
+        # Sensor de toque (launch: sensor:='5' | '4') — tudo que difere entre
+        # os dois está em TOUCH_SENSORS. O palpation_logger recebe ESTE mesmo
         # parâmetro pelo launch: se as grades divergirem ele descarta todos os
         # frames e o run sai sem tátil.
-        _sensor = str(self.declare_parameter('sensor', '5').value).strip()
-        if _sensor == '4':
-            self._touch_rows, self._touch_cols, self._touch_has_total = 4, 4, True
-        else:
-            self._touch_rows, self._touch_cols, self._touch_has_total = 5, 5, False
+        self._touch_spec = touch_sensor_spec(
+            self.declare_parameter('sensor', TOUCH_SENSOR_DEFAULT).value)
+        self._touch_rows = self._touch_spec.rows
+        self._touch_cols = self._touch_spec.cols
+        self._touch_has_total = self._touch_spec.has_total
         self._touch_taxels = self._touch_rows * self._touch_cols
-        # Qual CÉLULA está no cabo. Mesmo argumento que o launch usa para
-        # escolher o receiver, repassado para cá — a GUI não tem como
-        # descobrir sozinha qual nó subiu, e adivinhar pelos tópicos daria uma
-        # aba que muda sozinha quando o driver engasga por 3 s.
-        # 'load_cell' (default, a viga S de 100 kg) → abas Reading +
-        # Calibration; 'ft6' (FA7155) → aba 6 Axes. Valor desconhecido cai no
-        # default, como no launch.
-        _cell = str(self.declare_parameter(
-            'force_sensor', 'ft6').value).strip().lower()
-        self._force_sensor = _cell if _cell in ('load_cell', 'ft6') \
-            else 'ft6'
         # Real x simulado. A GUI não distingue as duas fontes pelo tópico —
         # ambas publicam /load_cell/force_net —, então sem este parâmetro a
         # tela mostra força de Gazebo com a mesma cara da força de bancada.
@@ -799,7 +753,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # amostra. (Antes limitava a 100 Hz "porque os consumidores eram
         # ≤50 Hz".) Atenção: quem consome na taxa da CÉLULA (o
         # palpation_logger, cujo sinal canônico é /load_cell/force_net) sai
-        # a 10-80 Hz — limite do HX711, não deste publisher.
+        # a ~400 Hz — limite da FA7155, não deste publisher.
         self._touch_pub_period = 0.0
         self._touch_pub_last = 0.0
         # Gravação do stream sincronizado (botão na aba Palpação)
@@ -827,9 +781,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # que data cada amostra de 1 ms, em vez do relógio do PC (t_unix).
         self._rec_header = (
             # load_cell_raw_n é a MESMA leitura de force_net_n antes do tare:
-            # a diferença entre as duas é o zero vigente na linha. A coluna de
-            # tensão saiu com a célula axial — a FA7155 não tem tensão, entrega
-            # newtons calibrados de fábrica.
+            # a diferença entre as duas é o zero vigente na linha.
             ['t_rel_s', 't_unix', 'touch_t_stm_s', 'force_net_n',
              'load_cell_raw_n', 'touch_i_final']
             # Seis eixos do FA7155, em N e N·m já calibrados de fábrica.
@@ -920,8 +872,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Com a serial aberta, o assinante do próprio eco sai de cena já aqui
         # (senão só sairia no primeiro hot-plug, 2 s depois).
         self._reconcile_touch_echo_sub()
-        # A célula NÃO é aberta aqui: o force_receiver é o dono da serial do
-        # XIAO e a GUI só assina /load_cell/voltage (ver o topo do arquivo).
+        # A célula NÃO é aberta aqui: o ft_receiver é o dono da serial
+        # (ver o topo do arquivo).
         self.root.after(200, self._refresh_sensors_tab)
         # Hot-plug serial↔rede: reconcilia a fonte do toque a cada 2 s.
         self.root.after(2000, self._retry_touch_source)
@@ -2151,7 +2103,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         self._mlc_status_lbl.pack(side='right')
 
         tk.Label(card,
-                 text='Receiver connection, tare and calibration live in '
+                 text='Receiver connection and tare live in '
                       'the “Load Cell” tab.',
                  font=FONT_SMALL, bg=PANEL, fg=TEXT_MUTED, anchor='w',
                  justify='left', wraplength=300
@@ -2854,35 +2806,14 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
 
 
 
-    # Aba "Célula de Carga" — o conteúdo é o da célula que está no cabo
+    # Aba "Célula de Carga" — seis eixos da FA7155
     def _build_loadcell_tab(self, root: tk.Frame):
-        """Monta as sub-abas da célula selecionada em `force_sensor`.
-
-        Montar as duas seria pior que escolher: com a viga S no cabo a aba de
-        seis eixos mostraria seis canais mortos (ninguém publica
-        /ft_sensor/wrench), e com a FA7155 no cabo o wizard ofereceria
-        calibrar um sensor que já vem calibrado de fábrica. Só o que tem
-        dado atrás é construído — o que também poupa os refreshes.
-        """
         sub_nb = ttk.Notebook(root, style='Tactile.TNotebook')
         sub_nb.pack(fill='both', expand=True)
-
-        if self._force_sensor == 'ft6':
-            tab_axes = tk.Frame(sub_nb, bg=BG)
-            sub_nb.add(tab_axes, text='6 Axes')
-            self._build_lc_axes_tab(self._scrollable(tab_axes))
-            self.root.after(80, self._refresh_ft_axes)
-            return
-
-        # Célula axial de 100 kg: leitura ao vivo + o wizard que produz a reta
-        # sem a qual o force_receiver não publica força nenhuma.
-        tab_read = tk.Frame(sub_nb, bg=BG)
-        sub_nb.add(tab_read, text='Reading')
-        self._build_lc_reading_tab(self._scrollable(tab_read))
-
-        tab_calib = tk.Frame(sub_nb, bg=BG)
-        sub_nb.add(tab_calib, text='Calibration')
-        self._build_lc_calibration_tab(self._scrollable(tab_calib))
+        tab_axes = tk.Frame(sub_nb, bg=BG)
+        sub_nb.add(tab_axes, text='6 Axes')
+        self._build_lc_axes_tab(self._scrollable(tab_axes))
+        self.root.after(80, self._refresh_ft_axes)
 
 
     def _ensure_palpation_logger(self) -> None:
@@ -3219,16 +3150,13 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         self._update_fmod_preview()
 
     def _force_cell_rate(self) -> tuple[float, str, bool]:
-        """(taxa, nome, medida?) da célula que está no cabo.
+        """(taxa, nome, medida?) da célula.
 
         A FA7155 publica a taxa real (/load_cell/rate_hz, ou a estimativa
-        local do _cb_ft_wrench quando o receiver é antigo); a HX711 não
-        publica nenhuma, então ali só resta a nominal. `medida` existe para
-        a frase não afirmar "at 400 Hz" quando o número é um chute de
+        local do _cb_ft_wrench quando o receiver é antigo). `medida` existe
+        para a frase não afirmar "at 400 Hz" quando o número é um chute de
         catálogo.
         """
-        if getattr(self, '_force_sensor', 'ft6') != 'ft6':
-            return LC_NOMINAL_RATE_HZ, 'HX711', False
         r = getattr(self, '_ft_rate_hz', None)
         if r and math.isfinite(float(r)) and float(r) > 0.0:
             return float(r), 'FA7155', True
@@ -3656,8 +3584,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
             lc_ts     = self._lc_force_net_ts
             f_raw     = self._lc_force_raw        # a mesma leitura pré-tare
             lc_tared  = self._lc_tare_done
-            lc_cal    = self._lc_calibrated
-            volt_ts   = self._lc_voltage_ts
             phase_t0  = self._phase_t_start
             touch_val = self._touch_value
             touch_ts  = self._touch_last_ts
@@ -3684,17 +3610,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         # Históricos das sparklines: alimentados sempre, senão o gráfico
         # abriria um buraco do tamanho do tempo passado em outra aba.
         has_data = lc_ts > 0.0 and (time.time() - lc_ts) < 3.0
-        # Indicador do cabeçalho, TRÊS estados. Com a FA7155 bastavam dois —
-        # quadros chegando é o único "online" que ela tem, e força sai junto.
-        # A célula axial mudou isso: o force_receiver só publica force_net com
-        # CALIBRAÇÃO e TARE, então a placa pode estar perfeitamente viva e sem
-        # força nenhuma. Reduzir isso a "OFFLINE" mandava o operador conferir
-        # o cabo quando o que faltava era apertar Tare.
-        volt_fresh = volt_ts > 0.0 and (time.time() - volt_ts) < 3.0
+        # Indicador do cabeçalho: quadros chegando é o único "online" que a
+        # FA7155 tem, e força sai junto.
         if has_data:
             dot_cor, dot_txt = OK, 'ONLINE'
-        elif volt_fresh:
-            dot_cor, dot_txt = WARN, 'NO FORCE'
         else:
             dot_cor, dot_txt = TEXT_DIM, 'OFFLINE'
         self._cell_dot_lbl.config(fg=dot_cor)
@@ -3723,21 +3642,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
         if not has_data:
             self.force_value_lbl.config(text='—   N', fg=TEXT_DIM)
             self.force_kgf_lbl.config(text='—   kgf', fg=TEXT_DIM)
-            # Nomeia a peça que falta em vez de mandar "start the force
-            # receiver": com a célula axial o receiver quase sempre JÁ está no
-            # ar, e o que falta é a reta ou o zero.
-            if not volt_fresh:
-                porque = ('waiting for /load_cell/force_net — start the force '
-                          'receiver, or check the cell cable')
-            elif not lc_cal:
-                porque = ('cell alive, no calibration loaded — fit and save '
-                          'one in the Load Cell → Calibration tab')
-            elif not lc_tared:
-                porque = ('cell alive and calibrated, waiting for the tare — '
-                          'unload the tip and press Tare')
-            else:
-                porque = 'waiting for /load_cell/force_net'
-            self.force_status_lbl.config(text=porque, fg=TEXT_DIM)
+            self.force_status_lbl.config(
+                text=('waiting for /load_cell/force_net — start the force '
+                      'receiver, or check the cell cable'), fg=TEXT_DIM)
             self.err_value_lbl.config(text='—  N', fg=TEXT_DIM)
             self.fz_lbl.config(text='—  N')
             self.fkgf_lbl.config(text='—  kgf')
@@ -3981,7 +3888,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 'Palpation mode unavailable: open the launch with '
                 'end_effector:=touch_tool.', WARN)
             return
-        # Reentrância: o caminho sem force_receiver agenda o start para 1,8 s
+        # Reentrância: o caminho do auto-tare agenda o start para 1,8 s
         # depois e VOLTA, deixando o botão vivo — dois cliques nessa janela
         # publicavam dois /palpation/start. O explorer tem sua própria guarda,
         # mas evitar a segunda publicação é mais barato que confiar nela.
@@ -4344,7 +4251,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, LcAxialMix
                 self.get_logger().warning(f'SpeedFactor(10) falhou: {exc}')
 
         # Pré-voo do canal TÁTIL. O start garante sozinho a célula
-        # (force_receiver + tare) e o logger, mas NÃO garantia o toque: com o
+        # (receiver + tare) e o logger, mas NÃO garantia o toque: com o
         # STM32 fora do cabo o run ia até o fim e as colunas taxel_* saíam
         # vazias, sem uma linha de aviso. Avisa e deixa seguir — coletar só
         # força é um ensaio legítimo; perder o tátil sem saber, não.

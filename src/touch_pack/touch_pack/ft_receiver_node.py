@@ -1,18 +1,18 @@
 """ft_receiver_node.py — Driver da célula de 6 eixos FA7155 (RS485 → USB).
 
-Papel: é o `force_receiver` da célula nova. Dono EXCLUSIVO da porta do
-conversor USB-RS485, e a única fonte de `/load_cell/force_net` quando roda.
-NUNCA suba os dois receivers ao mesmo tempo — dois publicadores no tópico da
-malha de segurança fazem o explorer regular contra a média de duas células.
+Papel: dono EXCLUSIVO da porta do conversor USB-RS485, e a única fonte de
+`/load_cell/force_net` quando roda. NUNCA suba junto com o sim_force_bridge —
+dois publicadores no tópico da malha de segurança fazem o explorer regular
+contra a média de duas fontes.
 
-O que muda em relação ao force_receiver (XIAO + HX711):
+O que este driver faz:
 
 * Seis canais em vez de um. Todos são publicados em `/ft_sensor/wrench`
   (geometry_msgs/WrenchStamped), filtrados e tarados; o cru sai em
   `/ft_sensor/wrench_raw`.
 * Não há arquivo de calibração. O FA7155 entrega N e N·m calibrados de
-  fábrica, então `slope`/`intercept` deixam de existir e `/load_cell/calibrated`
-  passa a significar "há quadros válidos chegando". O que sobra do lado do
+  fábrica, então `/load_cell/calibrated` significa "há quadros válidos
+  chegando". O que sobra do lado do
   host é o TARE — que aqui zera os SEIS eixos, não só um.
 * Há DOIS zeros, e eles são coisas diferentes. O `/load_cell/rezero` refaz o
   TARE do host (subtração no software, some ao reiniciar o nó). O zero do
@@ -21,13 +21,12 @@ O que muda em relação ao force_receiver (XIAO + HX711):
   fala"; a análise do cliente de fábrica da FIBOS mostrou que ele também é um
   escravo Modbus RTU na mesma linha 485.
 
-Adaptação para a modulação de força EXISTENTE (tactile_explorer): um dos eixos
-faz o papel da antiga célula axial e é publicado em `/load_cell/force_net` com
-a MESMA convenção (COMPRESSÃO POSITIVA, tare aplicado, filtro mediana+One-Euro).
+Contrato com a modulação de força (tactile_explorer): um dos eixos é o de
+controle e é publicado em `/load_cell/force_net` com COMPRESSÃO POSITIVA, tare
+aplicado e filtro mediana+One-Euro.
 Qual eixo e com que sinal é decidido pelos parâmetros `ft_force_axis` /
 `ft_force_sign` — ver FT_FORCE_AXIS_DEFAULT em constants.py e conferir na
-bancada com `scripts/ft_probe.py`. Do explorer para baixo, nada precisa saber
-que a célula mudou.
+bancada com `scripts/ft_probe.py`.
 
 ATENÇÃO ao `/load_cell/sample_net` (o que alimenta o samples.csv): os campos
 `voltage_raw` e `voltage` da LoadCellSample carregam aqui a força do eixo de
@@ -101,7 +100,7 @@ class FtReceiverNode(Node):
         self._wrench_raw_pub = self.create_publisher(
             WrenchStamped, '/ft_sensor/wrench_raw', QOS_SENSOR)
 
-        # ── Contrato da célula axial (o que a modulação consome) ──────
+        # ── Contrato /load_cell/* (o que a modulação consome) ─────────
         self._force_pub = self.create_publisher(
             Float32, '/load_cell/force', QOS_SENSOR)
         self._force_net_pub = self.create_publisher(
@@ -347,8 +346,7 @@ class FtReceiverNode(Node):
     # era lido a 250 Hz — a janela é definida em TEMPO, não em amostras).
     _CAPTURE_WIN_N = 800
     # Estabilidade por DERIVA (mediana da 2ª metade vs a 1ª), não por
-    # pico-a-pico — mesma escolha do force_receiver, pelo mesmo motivo: o ptp
-    # cresce com a janela mesmo em sinal estacionário.
+    # pico-a-pico: o ptp cresce com a janela mesmo em sinal estacionário.
     _TARE_STABLE_N = 0.50
     # Auto-zero lento: cancela deriva térmica sem comer força real. Só atua em
     # repouso E dentro da banda morta — as duas condições, senão ele zeraria o
@@ -402,9 +400,8 @@ class FtReceiverNode(Node):
         self._publish_tare_result('ok', repr(ref), round(drift, 4))
 
     def _on_rezero(self, _msg: Empty) -> None:
-        """`/load_cell/rezero` da GUI. No HX711 isto ia para o firmware; o
-        FA7155 em modo ativo não aceita comando, então o zero possível é o
-        tare do host."""
+        """`/load_cell/rezero`. O FA7155 em modo ativo não aceita comando,
+        então o zero possível é o tare do host."""
         self.get_logger().info(
             'Re-zero pedido: o FA7155 não tem comando de zero (modo ativo, '
             'só transmite) — refazendo o TARE. Mantenha a célula descarregada.')
@@ -414,8 +411,8 @@ class FtReceiverNode(Node):
         """Tare AUTOMÁTICO de partida.
 
         Sem ele nada sai em `/load_cell/force_net` até alguém apertar o botão,
-        e o explorer trata leitura ausente como falha. Diferente do HX711, não
-        há V₀ de calibração com que comparar a deriva: o critério é só a
+        e o explorer trata leitura ausente como falha. Não há V₀ de
+        calibração com que comparar a deriva: o critério é só a
         ESTABILIDADE da janela — que é o que o zero de um sensor já calibrado
         de fábrica precisa.
         """
@@ -471,8 +468,7 @@ class FtReceiverNode(Node):
         if win is not None and self._auto_tare(win):
             tare_done = True
 
-        # Força CRUA do eixo de controle (sem tare) — espelha o
-        # `/load_cell/force` do HX711, que também é pré-tare.
+        # Força CRUA do eixo de controle (sem tare) em `/load_cell/force`.
         f_raw = self._sign * filt[self._axis_i]
         m = Float32(); m.data = float(f_raw)
         self._force_pub.publish(m)

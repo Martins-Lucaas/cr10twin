@@ -70,12 +70,8 @@ T_HAND_ATTACH = np.array([
 #    37,2 …  59,2   acoplador hot-swap  (disco ⌀66 × 10 + haste ⌀15 × 12)
 #    49,7 …  67,7   ponteira F          (face de contato 15 × 17)
 #
-# Este número segue a célula PARAFUSADA, não o `force_sensor` do launch (que
-# só escolhe qual driver sobe). Entre 26/08/2026 e 07/09/2026 valeu 162,2 mm,
-# com a pilha da viga S de 100 kg: ela é 94,5 mm mais longa, e poses ensinadas
-# com ELA não valem mais — para os mesmos ângulos de junta a ponta agora está
-# 94,5 mm mais ALTA (lado seguro). Quem avisa é o carimbo `tool_tcp_mm`
-# (constants.tool_stamp_mismatch), que lê justamente daqui.
+# Poses ensinadas com outra ferramenta não valem: quem avisa é o carimbo
+# `tool_tcp_mm` (constants.tool_stamp_mismatch), que lê justamente daqui.
 T_TOUCH_TOOL_ATTACH = np.array([
     [1.0,  0.0,  0.0,  0.0000],
     [0.0,  1.0,  0.0,  0.0000],

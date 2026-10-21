@@ -21,7 +21,33 @@ Digital twin of the **Dobot CR10** industrial arm coupled to the **COVVI Hand** 
 
 Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtual platform to support the training of users of multi-DOF prosthetic hands. The same hardware (CR10 + COVVI) is reused in a second **tactile palpation** cell, which reproduces the protocol of Gupta et al. 2021 with force control and Cartesian sliding.
 
-> 🎬 **Project overview video:** [`images/tcc_video_visao_geral.mp4`](images/tcc_video_visao_geral.mp4) *(11 MB — GitHub plays it in the file viewer)*
+---
+
+## Videos
+
+Click a strip to open the video — GitHub plays it in the file viewer.
+
+<p align="center">
+  <a href="images/tcc_video_visao_geral.mp4"><img src="images/poster_overview.jpg" width="90%" alt="Video thumbnail: overview of the bench — the operator moves the real CR10 with the COVVI hand while the Gazebo twin follows on the monitor"/></a>
+</p>
+<p align="center"><em><strong>Overview (52 s)</strong> — the bench end to end: GUI, real arm with the COVVI hand and the Gazebo twin following it.</em></p>
+
+<p align="center">
+  <a href="images/real_to_sim_drag_teach_bench.mp4"><img src="images/poster_real_to_sim_drag_teach.jpg" width="90%" alt="Video thumbnail: the operator drags the real CR10 by hand while the twin on the monitor reproduces the motion"/></a>
+</p>
+<p align="center"><em><strong>Real-to-Sim drag teach (27 s)</strong> — the arm is moved by hand with the motors released; the twin on the left monitor mirrors it from the 125 Hz feedback.</em></p>
+
+<p align="center">
+  <a href="images/tcc_video_2026-07-06_10-53-14.mp4"><img src="images/poster_drag_teach_covvi_hand.jpg" width="44%" alt="Video thumbnail: drag teach of the CR10 carrying the COVVI hand"/></a>
+  <a href="images/tcc_screencast_2026-07-06_10-30-20.webm"><img src="images/poster_gui_covvi_grips_gazebo.jpg" width="52%" alt="Video thumbnail: Manual Control tab applying COVVI factory grips to the simulated hand in Gazebo"/></a>
+</p>
+<p align="center"><em><strong>Drag teach with the COVVI hand (20 s)</strong> · <strong>Manual Control → COVVI grips in Gazebo (51 s)</strong>.</em></p>
+
+<p align="center">
+  <a href="images/palpation_fa7155_touch_side_x.mp4"><img src="images/poster_fa7155_touch_x.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a glass plate, seen from the sensor's +Y side"/></a>
+  <a href="images/palpation_fa7155_touch_side_y.mp4"><img src="images/poster_fa7155_touch_y.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a layered sample, seen from the sensor's +X side"/></a>
+</p>
+<p align="center"><em><strong>The real CR10 with the FA7155 cell touching a sample</strong>, filmed from two sides of the sensor (9 s · 10 s).</em></p>
 
 ---
 
@@ -37,6 +63,11 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 </p>
 <p align="center"><em>At startup, <code>real_pose_sync</code> reads the real arm's pose and drives Gazebo to it (~3 s), so the twin is born synchronized rather than in an arbitrary URDF pose.</em></p>
 
+<p align="center">
+  <img src="data/latency/latency_real_to_sim_20260910_124249.png" width="80%" alt="Plot of joint 6 over 20 s: the digital twin curve trails the physical arm curve by 72 ms; the real curve shifted by 72 ms overlaps the twin"/>
+</p>
+<p align="center"><em>Mirroring latency, measured by cross-correlating the simulated and physical joint series (<code>latency_probe</code> / <code>hand_latency_probe</code>). Real-to-Sim on 10/09/2026: <strong>arm ≈ 72 ms</strong> (median of 16 runs, 71–80 ms) and <strong>COVVI hand ≈ 135 ms</strong> (4 runs). Raw series and results in <code>data/latency/</code> and <code>data/latency_hand/</code>. Plot labels are in Portuguese.</em></p>
+
 ---
 
 ## Hardware
@@ -46,8 +77,9 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 | Arm | **Dobot CR10A** | 6-DOF, 1300 mm reach, 10 kg payload, ±0.03 mm repeatability, TCP/IP V4 protocol |
 | Hand | **COVVI Hand** | 5 fingers + 31 joints (6 primary + 25 mimic), ECI Ethernet interface |
 | Camera | Gazebo RGB | 848×480, 70° FoV, mounted behind the conveyor |
-| Load cell | 100 kg S-type cell + HX711 on a **XIAO ESP32S3** | **USB CDC only** at 115200 baud, one line per sample: `F,<seq>,<t_us>,<v_sensor>`. The WiFi/UDP path was removed on 27/07/2026 (packet loss + jitter in the HX711 front end) |
-| Touch sensor | STM32 + taxel array — **4×4 or 5×5**, selected with `sensor:=4\|5` | USB-CDC at 115200 baud; Izhikevich neuromorphic model (RA/SA spikes + `I_final`). Optional UDP relay: **8081** (scalar) · **8082** (raw frame) |
+| Load cell | **FA7155 6-axis F/T cell** (on the bench since 07/09/2026) | RS485 → USB via a **CH343** converter (VID `0x1A86`), polled at 1 Mbps by `ft_receiver`. See `docs/adr/0002` |
+| Touch sensor | STM32 + taxel array — **4×4 or 5×5**, selected with `sensor:=4\|5` (default `5`) | USB-CDC at 115200 baud; Izhikevich neuromorphic model (RA/SA spikes + `I_final`). Optional UDP relay: **8081** (scalar) · **8082** (raw frame) |
+| IMUs | **WBAN-Inercial** — 6 ESPs over Wi-Fi | `imu_node` publishes `/imu/sensor_<id>` (Madgwick orientation); hand mode only (`imu:=true`). `tools/imu_arm_teleop` uses them to teleoperate the CR10 by arm motion |
 
 <p align="center">
   <img src="images/physical_bench_overview_cr10_covvi.jpg" width="31%" alt="Full lab bench: the CR10 arm with the COVVI hand, and the Gazebo digital twin on the monitor in the foreground"/>
@@ -55,6 +87,11 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
   <img src="images/covvi_hand_pinch_grasp_cube.jpg" width="31%" alt="COVVI hand pinching a small 3D-printed cube between thumb and index finger"/>
 </p>
 <p align="center"><em>The real hardware in the lab: the bench with the twin on screen · a <strong>power grasp</strong> on a bottle · a <strong>pinch grasp</strong> on a 3D-printed cube.</em></p>
+
+<p align="center">
+  <img src="images/physical_fa7155_palpation_tool.jpg" width="62%" alt="The palpation end effector on the real CR10: the FA7155 six-axis cell, a blue printed coupler and the tip resting on a glass plate over a layered sample"/>
+</p>
+<p align="center"><em>The current palpation end effector: the <strong>FA7155 6-axis cell</strong> on the flange, the blue printed coupler and the contact tip on a sample. Swapping it for the COVVI hand is what <code>end_effector:=touch_tool</code> vs <code>hand</code> (the default) selects.</em></p>
 
 ---
 
@@ -202,7 +239,7 @@ Each package documents how to run it in its own README.
 |---|---|---|
 | **`grasp_ml_pack`** | Manufacturing cell: conveyor, object detection, pick-and-place with COVVI | [→ grasp_ml_pack/README.md](src/grasp_ml_pack/README.md) |
 | **`hand_pack`** | Combined CR10 + COVVI URDF, hand GUIs, launch helpers | [→ hand_pack/README.md](src/hand_pack/README.md) |
-| **`touch_pack`** | Tactile palpation cell: Gupta 2021 protocol (Touch · Slide · Manual · Matrix map), GUI with 3D manipulation, logging, XIAO load cell + STM32 touch sensor (Izhikevich) | [→ touch_pack/README.md](src/touch_pack/README.md) |
+| **`touch_pack`** | Tactile palpation cell: Gupta 2021 protocol (Touch · Slide · Manual · Matrix map), GUI with 3D manipulation, logging, FA7155 6-axis load cell + STM32 touch sensor (Izhikevich) | [→ touch_pack/README.md](src/touch_pack/README.md) |
 | **`touch_pack_msgs`** | Message package for the palpation cell: `PalpationStart`, `PalpationStatus`, `MatrixPoint`, `SyncedTouch` | — |
 | **`cra_description`** | URDF/Xacro of the Dobot CR10 arm (extracted from the official Dobot repository) | [→ cra_description/README.md](src/cra_description/README.md) |
 
@@ -219,6 +256,17 @@ Each package documents how to run it in its own README.
 | **Real MovJ/RelMovL execution** — palpation run by the real controller instead of ServoJ streaming (`real_movl:=true`, the default) | `real_driver` |
 | **Mirroring latency measurement** — cross-correlates the simulated and physical joint series | `latency_probe` |
 | **Run analysis** — aggregates `sensors/Data/*__summary.json` and classifies each run (`BOM`/`STALL`/`QUIQUE`/`MARGINAL`) | `scripts/analyze_force_runs.py` |
+| **TCP calibration** — 4-point pivot, least-squares, pushed to the controller as `Tool(1)` | `tcp_calib` (Manual Control tab) |
+| **Camera hand control** — MediaPipe tracks your hand and drives the COVVI sliders (sim, and the real hand with ECI ON) | `hand_camera_teleop` (`CAM` button) |
+| **IMU tab** — in `hand` mode the first tab shows the WBAN IMUs, with AG/MAG calibration and recording | `gui_imu`, `imu_node`, `imu_recorder` |
+| **Hand latency measurement** — same cross-correlation, on the COVVI joints | `hand_latency_probe` |
+
+<p align="center">
+  <img src="images/gui_manual_en.png" width="32%" alt="Manual Control tab: CR10 joint sliders on the left, COVVI primary joints and factory grip patterns on the right"/>
+  <img src="images/gui_poses_en.png" width="32%" alt="Poses & Motions tab: saved poses on the left, a motion built from a pose sequence with speed, duration, Run, Loop and Stop"/>
+  <img src="images/gui_manip3d_en.png" width="32%" alt="3D Manipulation tab: the CR10 with the COVVI hand rendered from its meshes, with the live TCP pose and drag options"/>
+</p>
+<p align="center"><em>The <code>palpation_gui</code> today (hand mode): <strong>Manual Control</strong> · <strong>Poses &amp; Motions</strong> · <strong>3D Manipulation</strong>.</em></p>
 
 ---
 
@@ -228,20 +276,27 @@ Each package documents how to run it in its own README.
 cr10twin/
 ├── src/                  ROS 2 workspace (packages in the table above)
 ├── cad/
-│   ├── step/             STEP sources of the palpation TCP — robot coupler, 100 kg cell,
-│   │                     tool coupler, touch_tool and the tips A–F. The touch_pack meshes
-│   │                     and inertias are regenerated from here.
+│   ├── step/             STEP sources of the palpation TCP — FA7155 stack, couplers and
+│   │                     the tips A–F. The touch_pack meshes and inertias are
+│   │                     regenerated from here.
 │   └── SENSOR TÁTIL 5X5/ CAD of the 5×5 tactile sensor
 ├── sensors/
-│   ├── ForceDriver/      Load-cell firmware — PlatformIO/Arduino, XIAO ESP32S3 + HX711
-│   ├── Touch_sensor/     Standalone STM32 plotters (4×4 and 5×5, Linux and Windows) with the
-│   │                     UDP relay to the ROS PC, plus the force-intensity classifier
+│   ├── touch_5x5/        5×5 tactile sensor: firmware/ (STM32, host-tested Makefile), cbeb/
+│   │                     (CubeIDE project), variants/ (other firmwares) and tools/ (plotters,
+│   │                     collection and processing scripts)
+│   ├── touch_4x4/        4×4 tactile sensor: firmware/ (RA+SA+CN) and tools/ (plotter)
+│   ├── touch_dual/       Firmware + interface for both sensors on one STM32 (not used by the GUI)
 │   └── Data/             Palpation runs — created at runtime by `palpation_logger`,
 │                         not versioned. Layout and file formats in touch_pack/README.md
-├── images/               Photos, Gazebo/GUI screenshots, diagrams and videos
+├── data/                 Versioned measurements behind the paper: latency/ and latency_hand/
+│                         (written there directly by the latency probes) and IMU data/
+├── tools/imu_arm_teleop/ Standalone bridge (not a ROS node): WBAN IMUs → CR10 Cartesian teleop
+├── docs/adr/             Design decisions the code does not make obvious — read before
+│                         touching force control, the load cell or firmware
+├── images/               Photos, Gazebo/GUI screenshots, diagrams, videos and their posters
 ├── Docs/                 Vendor manuals (Dobot, COVVI, FA7155) — local only, not versioned
-├── modbus.txt            Dobot Appendix A — Modbus register map (robot as Modbus slave)
-└── serial_demo.lua       RS485 example for the controller — raw serial via 127.0.0.1:60000
+├── Dockerfile · docker-compose.yml   Reproducible ROS 2 Humble environment (also used by CI)
+└── modbus.txt            Dobot Appendix A — Modbus register map (robot as Modbus slave)
 ```
 
 ---
@@ -250,14 +305,9 @@ cr10twin/
 
 - **COVVI hand:** from the GUI (`touch_pack`/`grasp_ml_pack`), enter the IP and click **Connect** → **ECI ON** → **PWR ON**. Internally this starts `ros2 run covvi_hand_driver server <IP>`.
 - **CR10:** set `robot_ip` and use `control_mode:=mirror` (mirrors the real arm in sim) or `real_from_sim`. For *drag teach*, put the controller in **REMOTE mode** on the teach pendant.
-- **Load cell (XIAO + HX711):** firmware under `sensors/ForceDriver/` (ESP32S3, PlatformIO). **The board must be on the USB cable: there is no network fallback.** `force_receiver` is the sole owner of the port and auto-detects it by USB VID; everything else consumes `/load_cell/voltage`. Calibrate in the GUI's **Load Cell** tab.
-- **Touch sensor (STM32):** connects over USB (115200 baud) — the GUI reads the serial port directly in the **Sensors** tab. Pick the array with `sensor:=4` (4×4, sends `I_final`) or `sensor:=5` (5×5, no TOTAL line). Without a local serial port, run a plotter from `sensors/Touch_sensor/` and relay over UDP: port **8081** for the scalar (`touch_receiver`) and **8082** for the raw frame.
-
-<p align="center">
-  <img src="images/physical_cr10_palpation_touch_tool.jpg" width="47%" alt="Real CR10 arm carrying the palpation tool: load cell between 3D-printed couplers with the red contact tip"/>
-  <img src="images/physical_touch_tool_load_cell_5kg.jpg" width="47%" alt="Close-up of the palpation tool showing the load cell sandwiched between the printed couplers"/>
-</p>
-<p align="center"><em>The palpation end effector on the real CR10: the <strong>100 kg load cell</strong> sits between the printed couplers, with the contact tip at the end (photos show the earlier 5 kg build in white; the current parts are all printed in blue). Swapping it for the COVVI hand is what <code>end_effector:=hand</code> vs <code>touch_tool</code> selects.</em></p>
+- **Load cell (FA7155):** RS485 → USB through the CH343 converter, no firmware of ours. `ft_receiver` is the sole owner of the port and auto-detects it by the WCH VID `0x1A86`; it publishes `/ft_sensor/wrench` plus the `/load_cell/*` contract the modulation loop consumes.
+- **IMUs (WBAN-Inercial):** with `end_effector:=hand`, `imu:=true` (default) starts `imu_node`; set `imu_iface` to the local IP of the interface the ESPs are on and `wban_dir` to the KINESIS checkout it imports.
+- **Touch sensor (STM32):** connects over USB (115200 baud) — the GUI reads the serial port directly in the **Sensors** tab. Pick the array with `sensor:=4` (4×4, sends `I_final`) or `sensor:=5` (5×5, no TOTAL line). Flash the firmware from `sensors/touch_5x5/` or `sensors/touch_4x4/` to match. Without a local serial port, run a plotter from that sensor's `tools/` and relay over UDP: port **8081** for the scalar (`touch_receiver`) and **8082** for the raw frame.
 
 ---
 

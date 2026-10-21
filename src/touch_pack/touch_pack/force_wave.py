@@ -22,7 +22,7 @@ import math
 
 import numpy as np
 
-from .constants import LC_NOMINAL_RATE_HZ as _LC_NOMINAL_RATE_HZ
+from .constants import FT_NOMINAL_RATE_HZ as _FT_NOMINAL_RATE_HZ
 from .lc_filter import (
     MEDIAN_N as _MEDIAN_N,
     ONE_EURO_MAXCUTOFF_HZ as _ONE_EURO_MAXCUTOFF_HZ,
@@ -36,7 +36,7 @@ from .explorer_constants import (
 
 
 def fmod_measure_lag_s(freq_hz: float,
-                       rate_hz: float = _LC_NOMINAL_RATE_HZ) -> float:
+                       rate_hz: float = _FT_NOMINAL_RATE_HZ) -> float:
     """Atraso do PIPELINE DE MEDIDA (s) na frequência da onda.
 
     O ILC compara a força medida com o setpoint que a causou, e os dois estão
@@ -52,12 +52,10 @@ def fmod_measure_lag_s(freq_hz: float,
 
     `rate_hz` É A TAXA DA FONTE QUE ESTÁ NO FIO, e ela não é uma constante
     deste arquivo: a mediana de _MEDIAN_N amostras atrasa meia janela, o que
-    vale 41,7 ms na HX711 (24 Hz) e 2,5 ms na FA7155 (~400 Hz entregues em
-    polled — ver FT_NOMINAL_RATE_HZ). Os 39 ms de diferença são 14° a 1 Hz,
-    mais de um bin dos _FMOD_ILC_BINS: assumir a célula errada aqui gira a
-    correção do ILC em fase, que é o erro que esta função existe para não
-    cometer. Por isso o chamador passa a taxa MEDIDA (`_lc_rate_hz`) e o
-    default é só semente para quem chamar sem célula no ar.
+    vale 2,5 ms na FA7155 (~400 Hz entregues em polled — ver
+    FT_NOMINAL_RATE_HZ). Assumir a taxa errada aqui gira a correção do ILC em
+    fase, que é o erro que esta função existe para não cometer. Por isso o chamador passa a taxa MEDIDA (`_lc_rate_hz`)
+    e o default é só semente para quem chamar sem célula no ar.
 
     O termo do filtro NÃO muda com a célula: o One-Euro trava em
     min(rate/3, ONE_EURO_MAXCUTOFF_HZ) e a 24 Hz ou a 400 Hz quem manda é o
@@ -238,8 +236,8 @@ def fmod_preflight(prof: '_ForceProfile', *, servoj_period_s: float,
             f'por período a fundamental e os harmônicos do relatório de FORMA '
             f'dobram uns sobre os outros. O ensaio rodaria, mas o log de fim '
             f'não descreveria a onda. Baixe a frequência para '
-            f'≤{meas_rate_hz/_FMOD_MIN_MEAS_RATE_MULT:.2f} Hz, ou use a '
-            f'FA7155 (~400 Hz) no lugar da HX711 (24 Hz). Modulação '
+            f'≤{meas_rate_hz/_FMOD_MIN_MEAS_RATE_MULT:.2f} Hz, ou confira '
+            f'se a FA7155 está entregando os ~400 Hz nominais. Modulação '
             f'cancelada.')))
 
     # ── 5. existe correção de FORMA nesta frequência? ────────────────
@@ -426,11 +424,10 @@ class _WaveILC:
         # FILTRO Q (suavização circular). Sem ele o ILC realimenta o ruído da
         # célula nos harmônicos altos do vetor, onde a planta não responde, e
         # a correção diverge em poucos ciclos — é o modo de falha clássico do
-        # controle repetitivo. Continua não sendo precaução teórica com a
-        # FA7155, só menos violenta: o cru dela tem σ = 21,9 mN (contra os
-        # 112 mN do cru da HX711) e cada bin agora promedia ~16 amostras em
-        # vez de ~1 a 1 Hz, o que já divide o ruído por ~4. Sobra ~5 mN por
-        # bin realimentados a cada ciclo, e é isso que o Q derruba.
+        # controle repetitivo. Não é precaução teórica com a FA7155: o cru
+        # dela tem σ = 21,9 mN e cada bin promedia ~16 amostras a 1 Hz, o que
+        # divide o ruído por ~4. Sobra ~5 mN por bin realimentados a cada
+        # ciclo, e é isso que o Q derruba.
         upd = (np.roll(upd, 1) + 2.0 * upd + np.roll(upd, -1)) / 4.0
         self.corr = np.clip(self.corr + self.alpha * upd,
                             -self.clip_m, self.clip_m)

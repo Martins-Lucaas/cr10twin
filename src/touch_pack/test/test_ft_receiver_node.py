@@ -276,8 +276,7 @@ def test_sign_parameter_flips_the_control_axis():
 
 
 def test_raw_sample_carries_newtons_not_volts():
-    """Campo herdado do HX711, onde era tensão da ponte. No FA7155 é newton,
-    e o consumidor (`tactile_explorer._cb_lc_sample_net`) escala por isso."""
+    """O campo se chama voltage_raw, mas no FA7155 é newton, e o consumidor (`tactile_explorer._cb_lc_sample_net`) escala por isso."""
     recv = _Recv()
     recv._on_sample(1, 1000, tuple(_linha(7.0)))
     s = recv._sample_pub.msgs[-1]

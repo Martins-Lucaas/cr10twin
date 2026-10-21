@@ -157,22 +157,22 @@ def test_a_formula_analitica_so_vale_onde_o_filtro_domina():
     assert fmod_measure_lag_s(10.0) < fmod_measure_lag_s(1.0)
 
 
-# ── 3. A fase depende da CÉLULA que está no fio ──────────────────────
-# A bancada trocou a HX711 (24 Hz) pela FA7155 (~400 Hz entregues em polled).
-# O termo da mediana do atraso é meia janela DA TAXA DA FONTE, então trocar a
-# célula sem trocar a taxa gira a correção do ILC em fase — o modo de falha
-# do bloco 2 acima, só que silencioso.
+# ── 3. A fase depende da TAXA da fonte que está no fio ───────────────
+# O termo da mediana do atraso é meia janela DA TAXA DA FONTE, então usar a
+# taxa errada gira a correção do ILC em fase — o modo de falha do bloco 2
+# acima, só que silencioso.
 
 def test_o_atraso_da_mediana_segue_a_taxa_da_fonte():
-    """Só o termo da mediana muda com a célula; o do One-Euro não, porque o
+    """Só o termo da mediana muda com a taxa; o do One-Euro não, porque o
     cutoff está travado em 2 Hz nas duas taxas (min(rate/3, 2) = 2)."""
     from touch_pack.tactile_explorer import fmod_measure_lag_s, _FMOD_ILC_BINS
-    from touch_pack.constants import FT_NOMINAL_RATE_HZ, LC_NOMINAL_RATE_HZ
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ
     from touch_pack.lc_filter import MEDIAN_N
     f_hz = 1.0
-    lag_hx = fmod_measure_lag_s(f_hz, LC_NOMINAL_RATE_HZ)
+    lento = 24.0
+    lag_hx = fmod_measure_lag_s(f_hz, lento)
     lag_ft = fmod_measure_lag_s(f_hz, FT_NOMINAL_RATE_HZ)
-    esperado = 0.5 * (MEDIAN_N - 1) * (1.0 / LC_NOMINAL_RATE_HZ
+    esperado = 0.5 * (MEDIAN_N - 1) * (1.0 / lento
                                        - 1.0 / FT_NOMINAL_RATE_HZ)
     assert lag_hx - lag_ft == pytest.approx(esperado, abs=1e-9)
     assert lag_ft == pytest.approx(0.0763, abs=0.001)
@@ -184,7 +184,7 @@ def test_o_atraso_da_mediana_segue_a_taxa_da_fonte():
 
 def test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula():
     """Os call sites do explorer não podem cair no default da função: ele é
-    o nominal da HX711, e a célula no fio é outra."""
+    o nominal, não a taxa MEDIDA da FA7155 no fio."""
     import inspect
     from touch_pack import tactile_explorer as te
     chamadas = [ln for ln in inspect.getsource(te).splitlines()
@@ -196,16 +196,15 @@ def test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula():
 
 
 def test_a_taxa_cai_no_nominal_enquanto_nenhuma_leitura_chegou():
-    """Sem amostra não há taxa medida. O fallback é o pior caso (maior
-    atraso) e, na prática, onda nenhuma roda nesse estado — _FORCE_STALE_S
-    barra antes."""
+    """Sem amostra não há taxa medida. O fallback é o nominal da FA7155 e,
+    na prática, onda nenhuma roda nesse estado — _FORCE_STALE_S barra antes."""
     import threading
     import types
     from touch_pack.tactile_explorer import TactileExplorer
-    from touch_pack.constants import LC_NOMINAL_RATE_HZ
+    from touch_pack.constants import FT_NOMINAL_RATE_HZ
     stub = types.SimpleNamespace(_lc_lock=threading.Lock(),
                                  _lc_rate_ema_hz=0.0)
-    assert TactileExplorer._lc_rate_hz(stub) == LC_NOMINAL_RATE_HZ
+    assert TactileExplorer._lc_rate_hz(stub) == FT_NOMINAL_RATE_HZ
     stub._lc_rate_ema_hz = 399.7
     assert TactileExplorer._lc_rate_hz(stub) == pytest.approx(399.7)
 
@@ -230,7 +229,7 @@ def test_a_taxa_medida_acompanha_a_cadencia_que_chega(monkeypatch):
             te.TactileExplorer._cb_lc_force_net(
                 stub, types.SimpleNamespace(data=1.0))
 
-    alimenta(24.0, 200)      # HX711
+    alimenta(24.0, 200)      # fonte lenta
     assert stub._lc_rate_ema_hz == pytest.approx(24.0, abs=0.5)
     alimenta(400.0, 1000)    # FA7155
     assert stub._lc_rate_ema_hz == pytest.approx(400.0, abs=5.0)

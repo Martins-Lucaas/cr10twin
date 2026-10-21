@@ -1,0 +1,38 @@
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f7xx_hal.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Definições ---------------------------------------------------------------*/
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS * COLS)
+
+/* Parâmetros do modelo Izhikevich */
+static float a = 0.02f;
+static float b = 0.2f;
+static float c = -65.0f;
+static float d = 8.0f;
+
+/* Estados dos neurônios */
+static float v[NUM_SENSORS];
+static float u[NUM_SENSORS];
+
+/* Buffer ADC DMA: 4 linhas por coluna */
+static uint16_t adc_buffer[ROWS];
+
+/* Handles HAL */
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+UART_HandleTypeDef huart3;
+TIM_HandleTypeDef htim6;
+
+/* Coluna ativa */
+volatile uint8_t current_col = 0;
+
+/* =========================
+   Mapeamentos de Hardware
+   ========================= */
+
+/* Linhas (entradas analógicas) -> ADC1 IN0..IN3 (P*
+

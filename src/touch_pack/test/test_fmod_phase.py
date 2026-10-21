@@ -510,12 +510,11 @@ def test_10hz_e_recusado_com_o_servoj_no_padrao():
 
 
 def test_10hz_e_recusado_com_a_celula_lenta():
-    """Uma onda de 10 Hz medida pela HX711 (24 Hz) não sai imprecisa, sai
-    ALIASADA: são 2,4 amostras por período para medir fundamental e 3
-    harmônicos."""
+    """Uma onda de 10 Hz medida a 24 Hz não sai imprecisa, sai ALIASADA:
+    são 2,4 amostras por período para medir fundamental e 3 harmônicos."""
     errs = _errs(_pre(meas_rate_hz=24.0)[1])
     assert any('24 Hz' in e and '80 Hz' in e for e in errs), errs
-    # A FA7155 passa com folga — é o que separa as duas células a 10 Hz.
+    # A FA7155 passa com folga.
     assert _errs(_pre(meas_rate_hz=400.0)[1]) == []
 
 

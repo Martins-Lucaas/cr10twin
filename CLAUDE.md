@@ -32,7 +32,11 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 ### Workflow
 
-1. The graph auto-updates on file changes (via hooks).
+1. The graph auto-updates via hooks (local only — `.claude/` is gitignored):
+   - `.claude/settings.json` PostToolUse on `Edit|Write` → `code-review-graph update --skip-flows`
+   - `.claude/settings.json` SessionStart → `code-review-graph status` (check "Built at commit" vs HEAD)
+   - `.git/hooks/pre-commit` → `update` + `detect-changes --brief` (catches edits made outside Claude)
+   - Flows/communities only refresh on pre-commit or `code-review-graph build`. Fresh clone: run `code-review-graph build` then `code-review-graph install --platform claude-code --no-skills --no-instructions -y`.
 2. Use `detect_changes_tool` for code review.
 3. Use `get_affected_flows_tool` to understand impact.
 4. Use `query_graph_tool` pattern="tests_for" to check coverage.
@@ -103,3 +107,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Decisões do projeto
+
+Antes de mexer em controle de força, célula de carga ou firmware, leia `docs/adr/`. Lá estão decisões que o código não deixa óbvias (ex.: a FA7155 é a única célula; o caminho XIAO/ESP32 foi removido).

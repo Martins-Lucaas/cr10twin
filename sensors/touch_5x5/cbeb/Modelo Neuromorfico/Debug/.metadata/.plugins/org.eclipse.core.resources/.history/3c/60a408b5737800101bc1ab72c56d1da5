@@ -1,0 +1,168 @@
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f7xx_hal.h"
+#include <stdio.h>
+
+/* Definições da matriz sensorial 4x4 */
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS*COLS)
+
+/* Parâmetros do modelo de Izhikevich */
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+
+/* Variáveis do neurônio */
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+
+/* ADC DMA buffer */
+uint16_t adc_buffer[COLS];
+
+/* Handles HAL */
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+UART_HandleTypeDef huart3;
+TIM_HandleTypeDef htim6;
+
+/* Prototipos */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_TIM6_Init(void);
+void Error_Handler(void);
+void process_neurons(void);
+void send_spikes(void);
+
+/* Função principal ----------------------------------------------------------*/
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_USART3_UART_Init();
+    MX_TIM6_Init();
+
+    /* Inicializa neurônios */
+    for(int i=0;i<NUM_SENSORS;i++){
+        v[i] = -65.0f;
+        u[i] = b*v[i];
+    }
+
+    /* Inicia ADC com DMA */
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, COLS);
+
+    /* Inicia Timer para 100 Hz */
+    HAL_TIM_Base_Start_IT(&htim6);
+
+    while(1)
+    {
+        // Loop principal vazio, processamento no timer
+    }
+}
+
+/* Processa modelo Izhikevich para cada linha lida */
+void process_neurons(void)
+{
+    for(int i=0;i<COLS;i++)
+    {
+        int idx = i; // só 1 linha para teste, adaptar se usar todas linhas
+        float I = (float)adc_buffer[i]/4095.0f * 2.0f; // normaliza tensão
+        v[idx] += 0.5f*(0.04f*v[idx]*v[idx] + 5*v[idx] + 140 - u[idx] + I); // Euler
+        v[idx] += 0.5f*(0.04f*v[idx]*v[idx] + 5*v[idx] + 140 - u[idx] + I);
+        u[idx] += a*(b*v[idx]-u[idx]);
+
+        if(v[idx]>=30.0f)
+        {
+            v[idx] = c;
+            u[idx] += d;
+            // envia spike
+            char msg[32];
+            sprintf(msg,"Spikes: %d %d %d %d\r\n",
+                    (int)(v[0]>=30.0f),(int)(v[1]>=30.0f),
+                    (int)(v[2]>=30.0f),(int)(v[3]>=30.0f));
+            HAL_UART_Transmit(&huart3,(uint8_t*)msg,strlen(msg),10);
+        }
+    }
+}
+
+/* Timer callback para processar neurônios */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if(htim->Instance==TIM6)
+    {
+        process_neurons();
+    }
+}
+
+/* Funções de inicialização Cube HAL ----------------------------------------*/
+void SystemClock_Config(void){ /* Configuração padrão do Cube */ }
+static void MX_GPIO_Init(void){ /* Configuração de GPIO linhas/colunas */ }
+static void MX_DMA_Init(void){ __HAL_RCC_DMA2_CLK_ENABLE(); /* Config DMA ADC */ }
+static void MX_ADC1_Init(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ENABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.NbrOfDiscConversion = 0;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO; // TIM6 TRGO
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = COLS;
+    hadc1.Init.DMAContinuousRequests = ENABLE;
+    hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+
+    if(HAL_ADC_Init(&hadc1)!=HAL_OK){ Error_Handler(); }
+
+    for(int i=0;i<COLS;i++)
+    {
+        sConfig.Channel = i; // ADC_CHANNEL_0 + i
+        sConfig.Rank = i+1;
+        sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+        if(HAL_ADC_ConfigChannel(&hadc1,&sConfig)!=HAL_OK) { Error_Handler(); }
+    }
+}
+
+static void MX_USART3_UART_Init(void)
+{
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    if(HAL_UART_Init(&huart3)!=HAL_OK){ Error_Handler(); }
+}
+
+static void MX_TIM6_Init(void)
+{
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+    htim6.Instance = TIM6;
+    htim6.Init.Prescaler = 10800-1;
+    htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim6.Init.Period = 1000-1;
+    if(HAL_TIM_Base_Init(&htim6)!=HAL_OK){ Error_Handler(); }
+
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    if(HAL_TIMEx_MasterConfigSynchronization(&htim6,&sMasterConfig)!=HAL_OK){ Error_Handler(); }
+}
+
+/* Tratamento de erro */
+void Error_Handler(void)
+{
+    while(1) {}
+}

@@ -1,12 +1,12 @@
-"""line_source.py — o ciclo de vida que os três transportes compartilham.
+"""line_source.py — o ciclo de vida que os transportes compartilham.
 
-`FtSerialSource` (FA7155 na USB-RS485), `LoadCellSerialSource` (XIAO na USB) e
-`FtTcpSource` (FA7155 pela 60000 do controlador) resolvem o MESMO problema de
-disponibilidade: o dispositivo pode não estar lá quando o nó sobe, pode sumir
-no meio de um ensaio (replug, cabo, queda de rede) e tem de voltar sozinho
-quando reaparece — sem que o nó ROS saiba de nada disso.
+`FtSerialSource` (FA7155 na USB-RS485) e `FtTcpSource` (FA7155 pela 60000 do
+controlador) resolvem o MESMO problema de disponibilidade: o dispositivo
+pode não estar lá quando o nó sobe, pode sumir no meio de um ensaio (replug,
+cabo, queda de rede) e tem de voltar sozinho quando reaparece — sem que o
+nó ROS saiba de nada disso.
 
-A resposta é uma só nos três: uma thread de fundo que tenta abrir, lê até
+A resposta é uma só nos dois: uma thread de fundo que tenta abrir, lê até
 falhar, fecha, espera e tenta de novo; mais um par `connected`/`error` que a
 GUI lê para dizer ao operador o que está acontecendo. Só três coisas mudam
 entre eles — como se abre, como se fecha, e o que se faz com os bytes.

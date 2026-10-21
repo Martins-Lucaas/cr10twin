@@ -1,0 +1,1253 @@
+12:32:37 **** Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.o"
+arm-none-eabi-gcc -mcpu=cortex-m7 -g3 -DDEBUG -c -x assembler-with-cpp -MMD -MP -MF"Core/Startup/startup_stm32f767zitx.d" -MT"Core/Startup/startup_stm32f767zitx.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Startup/startup_stm32f767zitx.o" "../Core/Startup/startup_stm32f767zitx.s"
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc "../Core/Src/stm32f7xx_hal_msp.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/stm32f7xx_hal_msp.d" -MT"Core/Src/stm32f7xx_hal_msp.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/stm32f7xx_hal_msp.o"
+arm-none-eabi-gcc "../Core/Src/stm32f7xx_it.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/stm32f7xx_it.d" -MT"Core/Src/stm32f7xx_it.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/stm32f7xx_it.o"
+arm-none-eabi-gcc "../Core/Src/syscalls.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/syscalls.d" -MT"Core/Src/syscalls.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/syscalls.o"
+arm-none-eabi-gcc "../Core/Src/sysmem.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/sysmem.d" -MT"Core/Src/sysmem.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/sysmem.o"
+arm-none-eabi-gcc "../Core/Src/system_stm32f7xx.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/system_stm32f7xx.d" -MT"Core/Src/system_stm32f7xx.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/system_stm32f7xx.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  16124	     12	   3100	  19236	   4b24	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+12:35:15 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:184:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  184 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17980	    148	   2620	  20748	   510c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+12:36:28 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:184:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  184 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17980	    148	   2620	  20748	   510c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+12:55:03 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:184:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  184 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17980	    148	   2620	  20748	   510c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+12:56:15 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17980	    148	   2620	  20748	   510c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+13:09:38 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:184:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  184 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17832	    148	   2620	  20600	   5078	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+21:42:44 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:69:5: warning: implicit declaration of function 'SystemClock_Config'; did you mean 'SysTick_Config'? [-Wimplicit-function-declaration]
+   69 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+      |     SysTick_Config
+../Core/Src/main.c:70:5: warning: implicit declaration of function 'MX_GPIO_Init'; did you mean 'HAL_GPIO_Init'? [-Wimplicit-function-declaration]
+   70 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_GPIO_Init
+../Core/Src/main.c:71:5: warning: implicit declaration of function 'MX_ADC1_Init'; did you mean 'HAL_ADC_Init'? [-Wimplicit-function-declaration]
+   71 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_ADC_Init
+../Core/Src/main.c:72:5: warning: implicit declaration of function 'MX_USART3_UART_Init' [-Wimplicit-function-declaration]
+   72 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:117:6: warning: conflicting types for 'SystemClock_Config'; have 'void(void)'
+  117 | void SystemClock_Config(void) {
+      |      ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:69:5: note: previous implicit declaration of 'SystemClock_Config' with type 'void(void)'
+   69 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:148:13: warning: conflicting types for 'MX_GPIO_Init'; have 'void(void)'
+  148 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:148:13: error: static declaration of 'MX_GPIO_Init' follows non-static declaration
+../Core/Src/main.c:70:5: note: previous implicit declaration of 'MX_GPIO_Init' with type 'void(void)'
+   70 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c:173:13: warning: conflicting types for 'MX_ADC1_Init'; have 'void(void)'
+  173 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:173:13: error: static declaration of 'MX_ADC1_Init' follows non-static declaration
+../Core/Src/main.c:71:5: note: previous implicit declaration of 'MX_ADC1_Init' with type 'void(void)'
+   71 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:174:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  174 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:195:13: warning: conflicting types for 'MX_USART3_UART_Init'; have 'void(void)'
+  195 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:195:13: error: static declaration of 'MX_USART3_UART_Init' follows non-static declaration
+../Core/Src/main.c:72:5: note: previous implicit declaration of 'MX_USART3_UART_Init' with type 'void(void)'
+   72 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:195:13: warning: 'MX_USART3_UART_Init' defined but not used [-Wunused-function]
+  195 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:173:13: warning: 'MX_ADC1_Init' defined but not used [-Wunused-function]
+  173 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:148:13: warning: 'MX_GPIO_Init' defined but not used [-Wunused-function]
+  148 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+21:44:16 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:181:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  181 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+21:44:56 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+21:57:58 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:215:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  215 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17948	    148	   2660	  20756	   5114	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+21:58:38 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17948	    148	   2660	  20756	   5114	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+22:06:36 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17948	    148	   2660	  20756	   5114	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+22:12:14 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/main.o: in function `main':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:107:(.text.main+0xa): undefined reference to `SystemClock_Config'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:108:(.text.main+0xe): undefined reference to `MX_GPIO_Init'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:109:(.text.main+0x12): undefined reference to `MX_ADC1_Init'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:110:(.text.main+0x16): undefined reference to `MX_USART3_UART_Init'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+22:14:53 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:229:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  229 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  18288	    148	   2660	  21096	   5268	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+22:22:55 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:229:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  229 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  18288	    148	   2660	  21096	   5268	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+22:23:54 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  18288	    148	   2660	  21096	   5268	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+22:28:39 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:181:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  181 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+22:37:33 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:187:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  187 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17704	    148	   2396	  20248	   4f18	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+22:41:58 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  14856	    132	   2324	  17312	   43a0	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+22:44:36 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:181:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  181 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:06:43 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:178:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  178 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17664	    148	   2396	  20208	   4ef0	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:11:21 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:184:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  184 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17632	    148	   2428	  20208	   4ef0	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:14:43 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:29:34: error: 'PC0_GPIO_Port' undeclared here (not in a function); did you mean 'TCK_GPIO_Port'?
+   29 | GPIO_TypeDef* row_ports[ROWS] = {PC0_GPIO_Port, PC3_GPIO_Port, PF3_GPIO_Port, PF5_GPIO_Port};
+      |                                  ^~~~~~~~~~~~~
+      |                                  TCK_GPIO_Port
+../Core/Src/main.c:29:49: error: 'PC3_GPIO_Port' undeclared here (not in a function); did you mean 'TCK_GPIO_Port'?
+   29 | GPIO_TypeDef* row_ports[ROWS] = {PC0_GPIO_Port, PC3_GPIO_Port, PF3_GPIO_Port, PF5_GPIO_Port};
+      |                                                 ^~~~~~~~~~~~~
+      |                                                 TCK_GPIO_Port
+../Core/Src/main.c:29:64: error: 'PF3_GPIO_Port' undeclared here (not in a function); did you mean 'LD3_GPIO_Port'?
+   29 | GPIO_TypeDef* row_ports[ROWS] = {PC0_GPIO_Port, PC3_GPIO_Port, PF3_GPIO_Port, PF5_GPIO_Port};
+      |                                                                ^~~~~~~~~~~~~
+      |                                                                LD3_GPIO_Port
+../Core/Src/main.c:29:79: error: 'PF5_GPIO_Port' undeclared here (not in a function); did you mean 'LD1_GPIO_Port'?
+   29 | GPIO_TypeDef* row_ports[ROWS] = {PC0_GPIO_Port, PC3_GPIO_Port, PF3_GPIO_Port, PF5_GPIO_Port};
+      |                                                                               ^~~~~~~~~~~~~
+      |                                                                               LD1_GPIO_Port
+../Core/Src/main.c:30:34: error: 'PC0_Pin' undeclared here (not in a function); did you mean 'MCO_Pin'?
+   30 | uint16_t row_pins[ROWS]       = {PC0_Pin,        PC3_Pin,        PF3_Pin,        PF5_Pin};
+      |                                  ^~~~~~~
+      |                                  MCO_Pin
+../Core/Src/main.c:30:50: error: 'PC3_Pin' undeclared here (not in a function); did you mean 'MCO_Pin'?
+   30 | uint16_t row_pins[ROWS]       = {PC0_Pin,        PC3_Pin,        PF3_Pin,        PF5_Pin};
+      |                                                  ^~~~~~~
+      |                                                  MCO_Pin
+../Core/Src/main.c:30:66: error: 'PF3_Pin' undeclared here (not in a function); did you mean 'LD3_Pin'?
+   30 | uint16_t row_pins[ROWS]       = {PC0_Pin,        PC3_Pin,        PF3_Pin,        PF5_Pin};
+      |                                                                  ^~~~~~~
+      |                                                                  LD3_Pin
+../Core/Src/main.c:30:82: error: 'PF5_Pin' undeclared here (not in a function)
+   30 | uint16_t row_pins[ROWS]       = {PC0_Pin,        PC3_Pin,        PF3_Pin,        PF5_Pin};
+      |                                                                                  ^~~~~~~
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:83:5: warning: implicit declaration of function 'SystemClock_Config'; did you mean 'SysTick_Config'? [-Wimplicit-function-declaration]
+   83 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+      |     SysTick_Config
+../Core/Src/main.c:84:5: warning: implicit declaration of function 'MX_GPIO_Init'; did you mean 'HAL_GPIO_Init'? [-Wimplicit-function-declaration]
+   84 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_GPIO_Init
+../Core/Src/main.c:85:5: warning: implicit declaration of function 'MX_ADC1_Init'; did you mean 'HAL_ADC_Init'? [-Wimplicit-function-declaration]
+   85 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_ADC_Init
+../Core/Src/main.c:86:5: warning: implicit declaration of function 'MX_USART3_UART_Init' [-Wimplicit-function-declaration]
+   86 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:113:6: warning: conflicting types for 'SystemClock_Config'; have 'void(void)'
+  113 | void SystemClock_Config(void) {
+      |      ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:83:5: note: previous implicit declaration of 'SystemClock_Config' with type 'void(void)'
+   83 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:148:13: warning: conflicting types for 'MX_ADC1_Init'; have 'void(void)'
+  148 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:148:13: error: static declaration of 'MX_ADC1_Init' follows non-static declaration
+../Core/Src/main.c:85:5: note: previous implicit declaration of 'MX_ADC1_Init' with type 'void(void)'
+   85 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c:171:13: warning: conflicting types for 'MX_USART3_UART_Init'; have 'void(void)'
+  171 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:171:13: error: static declaration of 'MX_USART3_UART_Init' follows non-static declaration
+../Core/Src/main.c:86:5: note: previous implicit declaration of 'MX_USART3_UART_Init' with type 'void(void)'
+   86 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:185:13: warning: conflicting types for 'MX_GPIO_Init'; have 'void(void)'
+  185 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:185:13: error: static declaration of 'MX_GPIO_Init' follows non-static declaration
+../Core/Src/main.c:84:5: note: previous implicit declaration of 'MX_GPIO_Init' with type 'void(void)'
+   84 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c:185:13: warning: 'MX_GPIO_Init' defined but not used [-Wunused-function]
+  185 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:171:13: warning: 'MX_USART3_UART_Init' defined but not used [-Wunused-function]
+  171 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:148:13: warning: 'MX_ADC1_Init' defined but not used [-Wunused-function]
+  148 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:17:56 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:1:10: fatal error: stm32f4xx_hal.h: No such file or directory
+    1 | #include "stm32f4xx_hal.h"
+      |          ^~~~~~~~~~~~~~~~~
+compilation terminated.
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:19:26 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_hal_msp.o: in function `HAL_UART_MspInit':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:221:(.text.HAL_UART_MspInit+0x4a): undefined reference to `Error_Handler'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:21:39 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_hal_msp.o: in function `HAL_UART_MspInit':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:221:(.text.HAL_UART_MspInit+0x4a): undefined reference to `Error_Handler'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:22:01 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:183:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  183 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17696	    148	   2396	  20240	   4f10	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:22:38 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17696	    148	   2396	  20240	   4f10	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:24:50 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:183:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  183 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:30:53 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:183:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  183 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17668	    148	   2396	  20212	   4ef4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:41:35 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:189:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  189 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17904	    148	   2500	  20552	   5048	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:51:16 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:195:28: warning: unused variable 'sConfig' [-Wunused-variable]
+  195 |     ADC_ChannelConfTypeDef sConfig = {0};
+      |                            ^~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  17904	    148	   2500	  20552	   5048	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+10:43:05 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17904	    148	   2500	  20552	   5048	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+10:44:23 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  17904	    148	   2500	  20552	   5048	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+12:04:57 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:52:1: error: unknown type name 'TIM_HandleTypeDef'; did you mean 'PCD_HandleTypeDef'?
+   52 | TIM_HandleTypeDef   htim6;
+      | ^~~~~~~~~~~~~~~~~
+      | PCD_HandleTypeDef
+../Core/Src/main.c:114:36: error: unknown type name 'TIM_HandleTypeDef'; did you mean 'PCD_HandleTypeDef'?
+  114 | void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+      |                                    ^~~~~~~~~~~~~~~~~
+      |                                    PCD_HandleTypeDef
+../Core/Src/main.c: In function 'TIM6_DAC_IRQHandler':
+../Core/Src/main.c:170:34: warning: implicit declaration of function 'HAL_TIM_IRQHandler'; did you mean 'HAL_PCD_IRQHandler'? [-Wimplicit-function-declaration]
+  170 | void TIM6_DAC_IRQHandler(void) { HAL_TIM_IRQHandler(&htim6); }
+      |                                  ^~~~~~~~~~~~~~~~~~
+      |                                  HAL_PCD_IRQHandler
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:197:9: warning: implicit declaration of function 'HAL_TIM_Base_Start_IT'; did you mean 'HAL_DMA_Start_IT'? [-Wimplicit-function-declaration]
+  197 |     if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
+      |         ^~~~~~~~~~~~~~~~~~~~~
+      |         HAL_DMA_Start_IT
+../Core/Src/main.c: In function 'MX_TIM6_Init_4kHz':
+../Core/Src/main.c:234:10: error: request for member 'Instance' in something not a structure or union
+  234 |     htim6.Instance = TIM6;
+      |          ^
+../Core/Src/main.c:235:10: error: request for member 'Init' in something not a structure or union
+  235 |     htim6.Init.Prescaler = psc;
+      |          ^
+../Core/Src/main.c:236:10: error: request for member 'Init' in something not a structure or union
+  236 |     htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+      |          ^
+../Core/Src/main.c:236:30: error: 'TIM_COUNTERMODE_UP' undeclared (first use in this function)
+  236 |     htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+      |                              ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:236:30: note: each undeclared identifier is reported only once for each function it appears in
+../Core/Src/main.c:237:10: error: request for member 'Init' in something not a structure or union
+  237 |     htim6.Init.Period = arr;
+      |          ^
+../Core/Src/main.c:238:10: error: request for member 'Init' in something not a structure or union
+  238 |     htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+      |          ^
+../Core/Src/main.c:238:36: error: 'TIM_AUTORELOAD_PRELOAD_DISABLE' undeclared (first use in this function)
+  238 |     htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+      |                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:239:9: warning: implicit declaration of function 'HAL_TIM_Base_Init' [-Wimplicit-function-declaration]
+  239 |     if (HAL_TIM_Base_Init(&htim6) != HAL_OK) {
+      |         ^~~~~~~~~~~~~~~~~
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:24:13: warning: 'msg' defined but not used [-Wunused-variable]
+   24 | static char msg[64];
+      |             ^~~
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+12:10:13 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:6:10: fatal error: stm32f7xx_hal_tim.h: No such file or directory
+    6 | #include "stm32f7xx_hal_tim.h"
+      |          ^~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+12:39:27 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_adc_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_cortex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_dma_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_exti.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_flash_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_gpio.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_i2c_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pcd_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_pwr_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_rcc_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_tim_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_hal_uart_ex.o"
+arm-none-eabi-gcc "../Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.d" -MT"Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Drivers/STM32F7xx_HAL_Driver/Src/stm32f7xx_ll_usb.o"
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc "../Core/Src/stm32f7xx_hal_msp.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/stm32f7xx_hal_msp.d" -MT"Core/Src/stm32f7xx_hal_msp.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/stm32f7xx_hal_msp.o"
+arm-none-eabi-gcc "../Core/Src/stm32f7xx_it.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/stm32f7xx_it.d" -MT"Core/Src/stm32f7xx_it.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/stm32f7xx_it.o"
+arm-none-eabi-gcc "../Core/Src/system_stm32f7xx.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/system_stm32f7xx.d" -MT"Core/Src/system_stm32f7xx.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/system_stm32f7xx.o"
+../Core/Src/main.c:29:13: warning: 'MX_GPIO_Init' used but never defined
+   29 | static void MX_GPIO_Init(void);
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:30:13: warning: 'MX_DMA_Init' used but never defined
+   30 | static void MX_DMA_Init(void);
+      |             ^~~~~~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/main.o: in function `main':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:38:(.text.main+0xa): undefined reference to `SystemClock_Config'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:40:(.text.main+0xe): undefined reference to `MX_GPIO_Init'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:41:(.text.main+0x12): undefined reference to `MX_DMA_Init'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/main.o: in function `MX_ADC1_Init':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:124:(.text.MX_ADC1_Init+0x6e): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:132:(.text.MX_ADC1_Init+0xac): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/main.o: in function `MX_TIM6_Init':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:146:(.text.MX_TIM6_Init+0x3c): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:150:(.text.MX_TIM6_Init+0x58): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_hal_msp.o: in function `HAL_ADC_MspInit':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:136:(.text.HAL_ADC_MspInit+0x11c): undefined reference to `Error_Handler'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+12:46:48 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  21580	     92	   2556	  24228	   5ea4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+12:51:59 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  21580	     92	   2556	  24228	   5ea4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+13:04:06 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  10880	    108	   2532	  13520	   34d0	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+13:10:36 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:72:5: warning: implicit declaration of function 'SystemClock_Config'; did you mean 'SysTick_Config'? [-Wimplicit-function-declaration]
+   72 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+      |     SysTick_Config
+../Core/Src/main.c:73:5: warning: implicit declaration of function 'MX_GPIO_Init'; did you mean 'HAL_GPIO_Init'? [-Wimplicit-function-declaration]
+   73 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_GPIO_Init
+../Core/Src/main.c:74:5: warning: implicit declaration of function 'MX_USART3_UART_Init' [-Wimplicit-function-declaration]
+   74 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:75:5: warning: implicit declaration of function 'MX_ADC1_Init'; did you mean 'HAL_ADC_Init'? [-Wimplicit-function-declaration]
+   75 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+      |     HAL_ADC_Init
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:108:6: warning: conflicting types for 'SystemClock_Config'; have 'void(void)'
+  108 | void SystemClock_Config(void) {
+      |      ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:72:5: note: previous implicit declaration of 'SystemClock_Config' with type 'void(void)'
+   72 |     SystemClock_Config();
+      |     ^~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:112:13: warning: conflicting types for 'MX_GPIO_Init'; have 'void(void)'
+  112 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:112:13: error: static declaration of 'MX_GPIO_Init' follows non-static declaration
+../Core/Src/main.c:73:5: note: previous implicit declaration of 'MX_GPIO_Init' with type 'void(void)'
+   73 |     MX_GPIO_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c:130:13: warning: conflicting types for 'MX_USART3_UART_Init'; have 'void(void)'
+  130 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:130:13: error: static declaration of 'MX_USART3_UART_Init' follows non-static declaration
+../Core/Src/main.c:74:5: note: previous implicit declaration of 'MX_USART3_UART_Init' with type 'void(void)'
+   74 |     MX_USART3_UART_Init();
+      |     ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:142:13: warning: conflicting types for 'MX_ADC1_Init'; have 'void(void)'
+  142 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:142:13: error: static declaration of 'MX_ADC1_Init' follows non-static declaration
+../Core/Src/main.c:75:5: note: previous implicit declaration of 'MX_ADC1_Init' with type 'void(void)'
+   75 |     MX_ADC1_Init();
+      |     ^~~~~~~~~~~~
+../Core/Src/main.c:142:13: warning: 'MX_ADC1_Init' defined but not used [-Wunused-function]
+  142 | static void MX_ADC1_Init(void) {
+      |             ^~~~~~~~~~~~
+../Core/Src/main.c:130:13: warning: 'MX_USART3_UART_Init' defined but not used [-Wunused-function]
+  130 | static void MX_USART3_UART_Init(void) {
+      |             ^~~~~~~~~~~~~~~~~~~
+../Core/Src/main.c:112:13: warning: 'MX_GPIO_Init' defined but not used [-Wunused-function]
+  112 | static void MX_GPIO_Init(void) {
+      |             ^~~~~~~~~~~~
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+13:12:52 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:171:35: error: 'ADC_EXTERNALTRIG_T6_TRGO' undeclared (first use in this function); did you mean 'ADC_EXTERNALTRIG0_T6_TRGO'?
+  171 |     hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+      |                                   ^~~~~~~~~~~~~~~~~~~~~~~~
+      |                                   ADC_EXTERNALTRIG0_T6_TRGO
+../Core/Src/main.c:171:35: note: each undeclared identifier is reported only once for each function it appears in
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+15:10:19 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:35:23: warning: 'adc_channels' defined but not used [-Wunused-const-variable=]
+   35 | static const uint32_t adc_channels[COLS] = {
+      |                       ^~~~~~~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_it.o: in function `DMA2_Stream0_IRQHandler':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_it.c:220: multiple definition of `DMA2_Stream0_IRQHandler'; ./Core/Src/main.o:C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:225: first defined here
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+15:14:21 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:95:49: warning: implicit declaration of function 'strlen' [-Wimplicit-function-declaration]
+   95 |       HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+      |                                                 ^~~~~~
+../Core/Src/main.c:21:1: note: include '<string.h>' or provide a declaration of 'strlen'
+   20 | #include <stdio.h>
+  +++ |+#include <string.h>
+   21 | /* USER CODE END Includes */
+../Core/Src/main.c:95:49: warning: incompatible implicit declaration of built-in function 'strlen' [-Wbuiltin-declaration-mismatch]
+   95 |       HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+      |                                                 ^~~~~~
+../Core/Src/main.c:95:49: note: include '<string.h>' or provide a declaration of 'strlen'
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  20852	     92	   2348	  23292	   5afc	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+15:24:26 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_hal_msp.o: in function `HAL_ADC_MspInit':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:136:(.text.HAL_ADC_MspInit+0x11c): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:147:(.text.HAL_ADC_MspInit+0x148): undefined reference to `hdma_adc1'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_hal_msp.o: in function `HAL_UART_MspInit':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_hal_msp.c:259:(.text.HAL_UART_MspInit+0x4a): undefined reference to `Error_Handler'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/stm32f7xx_it.o: in function `DMA2_Stream0_IRQHandler':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/stm32f7xx_it.c:228:(.text.DMA2_Stream0_IRQHandler+0x10): undefined reference to `hdma_adc1'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+15:28:13 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'process_neurons':
+../Core/Src/main.c:89:53: warning: implicit declaration of function 'strlen' [-Wimplicit-function-declaration]
+   89 |             HAL_UART_Transmit(&huart3,(uint8_t*)msg,strlen(msg),10);
+      |                                                     ^~~~~~
+../Core/Src/main.c:4:1: note: include '<string.h>' or provide a declaration of 'strlen'
+    3 | #include <stdio.h>
+  +++ |+#include <string.h>
+    4 | 
+../Core/Src/main.c:89:53: warning: incompatible implicit declaration of built-in function 'strlen' [-Wbuiltin-declaration-mismatch]
+   89 |             HAL_UART_Transmit(&huart3,(uint8_t*)msg,strlen(msg),10);
+      |                                                     ^~~~~~
+../Core/Src/main.c:89:53: note: include '<string.h>' or provide a declaration of 'strlen'
+../Core/Src/main.c: In function 'MX_ADC1_Init':
+../Core/Src/main.c:119:35: error: 'ADC_EXTERNALTRIG_T6_TRGO' undeclared (first use in this function); did you mean 'ADC_EXTERNALTRIG0_T6_TRGO'?
+  119 |     hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO; // TIM6 TRGO
+      |                                   ^~~~~~~~~~~~~~~~~~~~~~~~
+      |                                   ADC_EXTERNALTRIG0_T6_TRGO
+../Core/Src/main.c:119:35: note: each undeclared identifier is reported only once for each function it appears in
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+15:31:53 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19132	    108	   2420	  21660	   549c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+15:58:07 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  19132	    108	   2420	  21660	   549c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+16:02:33 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19224	    108	   2444	  21776	   5510	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:05:40 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19228	    108	   2444	  21780	   5514	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:13:47 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19256	    108	   2444	  21808	   5530	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:20:08 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19260	    108	   2444	  21812	   5534	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:21:15 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19256	    108	   2444	  21808	   5530	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:22:32 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19260	    108	   2444	  21812	   5534	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:38:26 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19392	    172	   2444	  22008	   55f8	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:40:27 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19388	    172	   2444	  22004	   55f4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:42:12 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19388	    172	   2444	  22004	   55f4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+16:43:54 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  19388	    172	   2444	  22004	   55f4	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:36:06 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:55:13: warning: 'MX_GPIO_Init' used but never defined
+   55 | static void MX_GPIO_Init(void);
+      |             ^~~~~~~~~~~~
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: ./Core/Src/main.o: in function `main':
+C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:68:(.text.main+0xa): undefined reference to `SystemClock_Config'
+C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: C:/Users/Gabi/Desktop/Neuronio/Modelo Neuromorfico/Debug/Modelo Neuromorfico/Debug/../Core/Src/main.c:69:(.text.main+0xe): undefined reference to `MX_GPIO_Init'
+collect2.exe: error: ld returned 1 exit status
+make: *** [makefile:64: Modelo Neuromorfico.elf] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:37:52 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'SystemClock_Config':
+../Core/Src/main.c:259:5: warning: implicit declaration of function 'HAL_PWREx_ConfigSupply'; did you mean 'HAL_PWR_ConfigPVD'? [-Wimplicit-function-declaration]
+  259 |     HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+      |     HAL_PWR_ConfigPVD
+../Core/Src/main.c:259:28: error: 'PWR_LDO_SUPPLY' undeclared (first use in this function)
+  259 |     HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
+      |                            ^~~~~~~~~~~~~~
+../Core/Src/main.c:259:28: note: each undeclared identifier is reported only once for each function it appears in
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:40:27 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c:37:1: error: unterminated comment
+   37 | /* Linhas (entradas analógicas) -> ADC1 IN0..IN3 (P*
+      | ^
+../Core/Src/main.c:22:17: warning: 'adc_buffer' defined but not used [-Wunused-variable]
+   22 | static uint16_t adc_buffer[ROWS];
+      |                 ^~~~~~~~~~
+../Core/Src/main.c:19:14: warning: 'u' defined but not used [-Wunused-variable]
+   19 | static float u[NUM_SENSORS];
+      |              ^
+../Core/Src/main.c:18:14: warning: 'v' defined but not used [-Wunused-variable]
+   18 | static float v[NUM_SENSORS];
+      |              ^
+../Core/Src/main.c:15:14: warning: 'd' defined but not used [-Wunused-variable]
+   15 | static float d = 8.0f;
+      |              ^
+../Core/Src/main.c:14:14: warning: 'c' defined but not used [-Wunused-variable]
+   14 | static float c = -65.0f;
+      |              ^
+../Core/Src/main.c:13:14: warning: 'b' defined but not used [-Wunused-variable]
+   13 | static float b = 0.2f;
+      |              ^
+../Core/Src/main.c:12:14: warning: 'a' defined but not used [-Wunused-variable]
+   12 | static float a = 0.02f;
+      |              ^
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j8 all" terminated with exit code 2. Build might be incomplete.
+08:42:08 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F767xx -c -I../Core/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc -I../Drivers/STM32F7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F7xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list"   -mcpu=cortex-m7 -T"C:\Users\Gabi\Desktop\Neuronio\Modelo Neuromorfico\Debug\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: Modelo Neuromorfico.elf
+ 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+arm-none-eabi-objdump -h -S Modelo\ Neuromorfico.elf  > "Modelo Neuromorfico.list"
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+Finished building: Modelo Neuromorfico.list
+ 
+08:43:05 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:43:28 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:44:47 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:44:54 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:53:07 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+08:56:50 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:01:45 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:01:58 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:04:02 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:04:49 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:07:28 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:18:10 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:18:52 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:20:14 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 
+09:22:50 **** Incremental Build of configuration Debug for project Modelo Neuromorfico ****
+make -j8 all 
+arm-none-eabi-size  Modelo\ Neuromorfico.elf 
+   text	   data	    bss	    dec	    hex	filename
+  22220	    204	   2420	  24844	   610c	Modelo Neuromorfico.elf
+Finished building: default.size.stdout
+ 

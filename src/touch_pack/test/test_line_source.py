@@ -288,12 +288,12 @@ def test_write_without_an_open_port_says_so():
     """Melhor um RuntimeError com a placa nomeada do que um AttributeError
     em None no meio de uma sessão Modbus."""
     f = _SerialFake('/dev/ttyUSB0')
-    with pytest.raises(RuntimeError, match='XIAO'):
-        f._write_line(b'Z', 'porta serial do XIAO não está aberta')
+    with pytest.raises(RuntimeError, match='FA7155'):
+        f._write_line(b'Z', 'porta serial do FA7155 não está aberta')
 
 
-# ── As três fontes compartilham mesmo a base ──────────────────────────
-def test_all_three_transports_share_one_lifecycle():
+# ── As fontes compartilham mesmo a base ───────────────────────────────
+def test_all_transports_share_one_lifecycle():
     """A guarda do refactor: se alguém reintroduzir um `start`/`stop`/
     `_worker` próprio numa das fontes, as correções de uma param de chegar
     nas outras — que foi como a `stop()` do TCP ganhou o `shutdown()` e as
@@ -301,9 +301,8 @@ def test_all_three_transports_share_one_lifecycle():
     pytest.importorskip('rclpy')
     from touch_pack.ft_serial import FtSerialSource
     from touch_pack.ft_tcp import FtTcpSource
-    from touch_pack.lc_serial import LoadCellSerialSource
 
-    for cls in (FtSerialSource, FtTcpSource, LoadCellSerialSource):
+    for cls in (FtSerialSource, FtTcpSource):
         assert issubclass(cls, ReconnectingSource)
         for nome in ('start', 'stop', '_worker'):
             assert nome not in vars(cls), (

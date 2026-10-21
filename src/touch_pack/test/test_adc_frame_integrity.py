@@ -109,9 +109,8 @@ def test_autodeteccao_prefere_a_cdc_nativa_a_vcp_do_stlink():
     from unittest import mock
     from touch_pack import touch_source as ts
 
-    # Conversor USB-RS485 da FA7155: é ele que hoje disputa /dev/ttyACM*
-    # com o STM32 do toque. (Antes este papel era do XIAO da célula axial,
-    # removida em 20/08/2026 junto com o seu VID.)
+    # Conversor USB-RS485 da FA7155: é ele que disputa /dev/ttyACM* com o
+    # STM32 do toque.
     pico = NS(device='/dev/ttyACM0', vid=0x1A86, pid=0x7523)
     stlink = NS(device='/dev/ttyACM1', vid=0x0483, pid=ts.STLINK_VCP_PID)
     nativa = NS(device='/dev/ttyACM2', vid=0x0483,

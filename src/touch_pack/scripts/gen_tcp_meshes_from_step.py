@@ -6,10 +6,8 @@ posicionados uns em relação aos outros, então as alturas saem do arquivo em v
 de números digitados aqui — que era a fonte de erro toda vez que uma peça mudava
 de espessura.
 
-DUAS pilhas, uma por célula de força (`--stack`):
+Pilha (`--stack`):
 
-    load_cell  célula axial de 100 kg (viga S) — a montada na bancada.
-               MONTAGEM_COMPLETA.step, TCP a 162,2 mm.
     ft6        célula FA7155 de 6 eixos. MONTAGEM_FA7155_stack.step, TCP a
                67,7 mm.
 
@@ -40,10 +38,6 @@ from OCP.gp import gp_Trsf, gp_Vec
 # ── Densidades (kg/m³) ─────────────────────────────────────────────────────
 RHO_PRINTED = 950.0
 RHO_ALU     = 2700.0
-# Aço-liga da viga S de 100 kg. Aqui a geometria SABE mais que o catálogo: o
-# STEP traz os rasgos em S (60,5 cm³ contra 74,0 cm³ do envelope), então
-# integrar a densidade dá um número melhor que o "≈0,5 kg" da folha.
-RHO_STEEL   = 7850.0
 
 # Massa de catálogo do FA7155 (manual §3.1: ≤ 0,3 kg). O STEP do fabricante é
 # um envelope MACIÇO — a 2700 kg/m³ daria 339 g para uma peça que tem cavidade
@@ -60,20 +54,9 @@ FA7155_MASS_KG = 0.300
 # referência de montagem, e ele não é da ferramenta — nem entra na massa nem
 # define a base da pilha.
 #
-# n > 1 funde os sólidos num COMPOUND: um mesh só e uma inércia só. É o caso do
-# laminado tátil, que são três camadas coladas (flex / piezorresistiva / flex)
-# com 0,5 mm somados — separá-las em três links seria mentir sobre um sanduíche
-# que não tem grau de liberdade nenhum.
+# n > 1 funde os sólidos num COMPOUND: um mesh só e uma inércia só — para peças
+# coladas que não têm grau de liberdade nenhum entre si.
 STACKS = {
-    'load_cell': ('MONTAGEM_COMPLETA.step', [
-        (None,            None,                        None,        None, 1),
-        ('coupler_robot', 'acoplador_robo.stl',        RHO_PRINTED, None, 1),
-        ('load_cell',     'celula_carga_100kg.stl',    RHO_STEEL,   None, 1),
-        ('coupler_tool',  'acoplador_tool.stl',        RHO_PRINTED, None, 1),
-        ('touch_tool',    'touch_tool.stl',            RHO_PRINTED, None, 1),
-        ('tool_tip',      'ponteira_D_sensor_5x5.stl', RHO_PRINTED, None, 1),
-        ('tool_tip',      'sensor_5x5_pad.stl',        RHO_PRINTED, None, 3),
-    ]),
     'ft6': ('MONTAGEM_FA7155_stack.step', [
         ('ft_flange',    'fa7155_flange_fixo.stl',          RHO_ALU,     None,           1),
         ('ft_sensor',    'fa7155_sensor.stl',               RHO_ALU,     FA7155_MASS_KG, 1),
@@ -152,9 +135,8 @@ def mass_props(shape, rho: float):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--stack', choices=sorted(STACKS), default='load_cell',
-                    help='qual pilha gerar (default: load_cell, a montada '
-                         'na bancada)')
+    ap.add_argument('--stack', choices=sorted(STACKS), default='ft6',
+                    help='qual pilha gerar (default: ft6)')
     ap.add_argument('--deflection', type=float, default=0.15,
                     help='desvio linear da tesselagem em mm (default 0.15)')
     args = ap.parse_args()

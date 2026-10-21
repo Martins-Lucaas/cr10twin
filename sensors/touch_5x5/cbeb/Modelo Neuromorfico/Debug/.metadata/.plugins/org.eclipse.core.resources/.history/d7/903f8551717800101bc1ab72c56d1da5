@@ -1,0 +1,433 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : App principal - Matriz 4x4 + Izhikevich + ADC DMA + TIM6 TRGO
+  ******************************************************************************
+  * @attention
+  * Copyright (c) 2025.
+  * Este arquivo foi ajustado para ser autossuficiente no CubeIDE.
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS*COLS)
+
+/* Mapeamento de LINHAS (GPIO de saída - seleciona a linha ativa em nível baixo) */
+GPIO_TypeDef* row_ports[ROWS] = {GPIOC, GPIOC, GPIOF, GPIOF};
+uint16_t      row_pins [ROWS] = {GPIO_PIN_0, GPIO_PIN_3, GPIO_PIN_3, GPIO_PIN_5};
+/*            PC0         PC3        PF3         PF5 */
+
+/* Mapeamento de COLUNAS (ADC1 - entradas analógicas) */
+static const uint32_t adc_channels[COLS] = {
+  ADC_CHANNEL_9,   /* PB1 */
+  ADC_CHANNEL_12,  /* PC2 */
+  ADC_CHANNEL_1,   /* PA1 */
+  ADC_CHANNEL_0    /* PA0 */
+};
+
+/* Calibração do sinal -> corrente do modelo */
+#define ADC_RESOLUTION       4095.0f
+#define SENSOR_MAX_VOLTAGE   2.0f   /* Vmax do sensor esperado */
+#define VREF                 3.3f
+#define I_MAX                5.0f   /* Corrente máxima no modelo */
+
+/* Modelo Izhikevich (Regular Spiking) */
+static float a = 0.02f;
+static float b = 0.20f;
+static float c_rst = -65.0f;
+static float d_inc = 8.0f;
+
+static float v[NUM_SENSORS];
+static float u[NUM_SENSORS];
+static float I_in[NUM_SENSORS];
+static uint32_t spikes[NUM_SENSORS];
+
+/* UART print buffer */
+static char txbuf[256];
+
+/* Estado/Buffer ADC+DMA */
+static volatile uint8_t active_row = 0;   /* linha ativa atual */
+static uint32_t adc_buffer[COLS];         /* 4 amostras por TRGO (uma por coluna) */
+
+/* Handles HAL ----------------------------------------------------------------*/
+ADC_HandleTypeDef   hadc1;
+DMA_HandleTypeDef   hdma_adc1;
+TIM_HandleTypeDef   htim6;
+UART_HandleTypeDef  huart3;
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM6_Init_4kHz_TRGO(void);
+
+/* USER CODE BEGIN PFP */
+static inline void select_row(uint8_t row);
+static inline float Calibrate_Input(uint32_t adc_val);
+static inline void izhikevich_step(int idx, float I);
+static inline void pulse_us_GPIOB8(uint32_t us);
+/* USER CODE END PFP */
+
+/* USER CODE BEGIN 0 */
+static inline float Calibrate_Input(uint32_t adc_val) {
+  float adc_max_expected = (SENSOR_MAX_VOLTAGE / VREF) * ADC_RESOLUTION;
+  float normalized = ((float)adc_val) / adc_max_expected;
+  if (normalized > 1.0f) normalized = 1.0f;
+  if (normalized < 0.0f) normalized = 0.0f;
+  return normalized * I_MAX;
+}
+
+static inline void select_row(uint8_t row) {
+  /* Linha ativa em nível baixo; demais alto */
+  for (int r = 0; r < ROWS; r++) {
+    HAL_GPIO_WritePin(row_ports[r], row_pins[r],
+                      (r == row) ? GPIO_PIN_RESET : GPIO_PIN_SET);
+  }
+}
+
+/* Passo do Izhikevich (2 semipassos de 0.5 ms = 1 ms total) */
+static inline void izhikevich_step(int idx, float I) {
+  for (int step = 0; step < 2; step++) {
+    v[idx] += 0.5f * (0.04f * v[idx] * v[idx] + 5.0f * v[idx] + 140.0f - u[idx] + I);
+    u[idx] += a * (b * v[idx] - u[idx]);
+  }
+}
+
+/* Pulso ~10–15us em PB8 (ajuste fino por ensaio) */
+static inline void pulse_us_GPIOB8(uint32_t us) {
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET);
+  volatile uint32_t cycles = us * 80; /* ajuste empírico p/ ~HCLK */
+  while (cycles--) { __NOP(); }
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  Ponto de entrada
+  */
+int main(void)
+{
+  /* Reset periféricos / SysTick */
+  HAL_Init();
+
+  /* Clock */
+  SystemClock_Config();
+
+  /* GPIO / DMA / UART / ADC / TIM */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART3_UART_Init();
+  MX_ADC1_Init();
+  MX_TIM6_Init_4kHz_TRGO();
+
+  /* Inicializa o modelo */
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    v[i] = -65.0f;
+    u[i] = b * v[i];
+    I_in[i] = 0.0f;
+    spikes[i] = 0;
+  }
+
+  /* Começa com linha 0 ativa */
+  active_row = 0;
+  select_row(active_row);
+
+  /* Inicia ADC+DMA (circular). As conversões serão disparadas pelo TRGO do TIM6 */
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, COLS) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* Inicia TIM6 (gera TRGO a cada update) */
+  if (HAL_TIM_Base_Start(&htim6) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* Telemetria periódica */
+  uint32_t last_tx = HAL_GetTick();
+
+  while (1)
+  {
+    /* Envia linha "Spikes: ..." a cada ~100 ms */
+    uint32_t now = HAL_GetTick();
+    if ((now - last_tx) >= 100) {
+      last_tx = now;
+
+      /* Formata 16 inteiros */
+      int len = snprintf(txbuf, sizeof(txbuf),
+                         "Spikes: %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu\r\n",
+                         spikes[0],  spikes[1],  spikes[2],  spikes[3],
+                         spikes[4],  spikes[5],  spikes[6],  spikes[7],
+                         spikes[8],  spikes[9],  spikes[10], spikes[11],
+                         spikes[12], spikes[13], spikes[14], spikes[15]);
+      HAL_UART_Transmit(&huart3, (uint8_t*)txbuf, len, 10);
+    }
+  }
+}
+
+/* Callbacks -----------------------------------------------------------------*/
+
+/* TIM6 update: troca a linha ativa logo após cada sequência ADC disparada.
+   Observação: o TIM6 apenas gera o TRGO; a troca física de linha pode ser
+   feita aqui (PeriodElapsed) para alinhar com novas leituras. */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == TIM6) {
+    /* Seleciona nova linha */
+    select_row(active_row);
+    /* Pequeno settle (~5-10us) */
+    for (volatile int i = 0; i < 800; i++) { __NOP(); }
+    /* Próxima linha no próximo tick */
+    active_row = (active_row + 1U) % ROWS;
+  }
+}
+
+/* Fim da sequência (4 conversões) -> processa taxels da linha anterior */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+  if (hadc->Instance == ADC1) {
+    uint8_t row_processed = (active_row + ROWS - 1U) % ROWS;
+
+    for (int c = 0; c < COLS; c++) {
+      int idx = row_processed * COLS + c;
+
+      float I = Calibrate_Input(adc_buffer[c]);
+      I_in[idx] = I;
+
+      izhikevich_step(idx, I);
+
+      if (v[idx] >= 30.0f) {
+        v[idx] = c_rst;
+        u[idx] += d_inc;
+        spikes[idx]++;
+
+        /* Pulso no PB8 */
+        pulse_us_GPIOB8(12);
+      }
+    }
+  }
+}
+
+/* IRQ handlers finos (mantém padrão Cube) */
+void DMA2_Stream0_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_adc1); }
+
+/* System Clock Config --------------------------------------------------------*/
+void SystemClock_Config(void)
+{
+  /* HSE bypass, PLL @ 160 MHz (ajuste se necessário ao seu hardware) */
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  HAL_PWR_EnableBkUpAccess();
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+  RCC_OscInitStruct.OscillatorType      = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState            = RCC_HSE_BYPASS;   /* ou RCC_HSE_ON se usar cristal */
+  RCC_OscInitStruct.PLL.PLLState        = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource       = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM            = 8;
+  RCC_OscInitStruct.PLL.PLLN            = 320;  /* 8 MHz * 320 / 2 = 128 MHz (se PLLP=RCC_PLLP_DIV2 -> 160 MHz com N=320? Depende de HSE) */
+  RCC_OscInitStruct.PLL.PLLP            = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ            = 8;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+    Error_Handler();
+  }
+
+  RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                   | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4; /* timers em APB1 recebem x2 quando divisor>1 */
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/* GPIO ----------------------------------------------------------------------*/
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+
+  /* PB8 como saída (pulso de spike) */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
+  GPIO_InitStruct.Pin   = GPIO_PIN_8;
+  GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* Linhas: PC0, PC3, PF3, PF5 -> saída push-pull */
+  for (int i = 0; i < ROWS; i++) {
+    GPIO_InitStruct.Pin   = row_pins[i];
+    GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull  = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(row_ports[i], &GPIO_InitStruct);
+  }
+
+  /* Entradas analógicas p/ ADC1: PB1 (IN9), PC2 (IN12), PA1 (IN1), PA0 (IN0) */
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+
+  GPIO_InitStruct.Pin  = GPIO_PIN_1; /* PB1 */
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin  = GPIO_PIN_2; /* PC2 */
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin  = GPIO_PIN_1 | GPIO_PIN_0; /* PA1, PA0 */
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
+
+/* DMA -----------------------------------------------------------------------*/
+static void MX_DMA_Init(void)
+{
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA2 Stream0 IRQ */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+}
+
+/* USART3 --------------------------------------------------------------------*/
+static void MX_USART3_UART_Init(void)
+{
+  __HAL_RCC_USART3_CLK_ENABLE();
+
+  huart3.Instance          = USART3;
+  huart3.Init.BaudRate     = 115200;
+  huart3.Init.WordLength   = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits     = UART_STOPBITS_1;
+  huart3.Init.Parity       = UART_PARITY_NONE;
+  huart3.Init.Mode         = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/* ADC1 + DMA + Trigger por TIM6 --------------------------------------------*/
+static void MX_ADC1_Init(void)
+{
+  __HAL_RCC_ADC1_CLK_ENABLE();
+
+  hadc1.Instance                      = ADC1;
+  hadc1.Init.ClockPrescaler           = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution               = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode             = ADC_SCAN_ENABLE;
+  hadc1.Init.ContinuousConvMode       = DISABLE; /* Externo por TIM6 */
+  hadc1.Init.DiscontinuousConvMode    = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge     = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.ExternalTrigConv         = ADC_EXTERNALTRIGCONV_T6_TRGO; /* <<<< CORRETO NO F7 */
+  hadc1.Init.DataAlign                = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion          = COLS; /* 4 */
+  hadc1.Init.DMAContinuousRequests    = ENABLE; /* com trigger externo + DMA circular */
+  hadc1.Init.EOCSelection             = ADC_EOC_SEQ_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* Configura 4 canais na ordem: PB1(IN9), PC2(IN12), PA1(IN1), PA0(IN0) */
+  ADC_ChannelConfTypeDef sConfig = {0};
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES; /* ajuste se precisar mais tempo */
+
+  sConfig.Channel = ADC_CHANNEL_9;   sConfig.Rank = ADC_REGULAR_RANK_1;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) Error_Handler();
+
+  sConfig.Channel = ADC_CHANNEL_12;  sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) Error_Handler();
+
+  sConfig.Channel = ADC_CHANNEL_1;   sConfig.Rank = ADC_REGULAR_RANK_3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) Error_Handler();
+
+  sConfig.Channel = ADC_CHANNEL_0;   sConfig.Rank = ADC_REGULAR_RANK_4;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) Error_Handler();
+
+  /* Configura DMA2 Stream0 Channel0 para ADC1 em modo CIRCULAR */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+  hdma_adc1.Instance                 = DMA2_Stream0;
+  hdma_adc1.Init.Channel             = DMA_CHANNEL_0;
+  hdma_adc1.Init.Direction           = DMA_PERIPH_TO_MEMORY;
+  hdma_adc1.Init.PeriphInc           = DMA_PINC_DISABLE;
+  hdma_adc1.Init.MemInc              = DMA_MINC_ENABLE;
+  hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+  hdma_adc1.Init.MemDataAlignment    = DMA_MDATAALIGN_WORD;
+  hdma_adc1.Init.Mode                = DMA_CIRCULAR;   /* << circular */
+  hdma_adc1.Init.Priority            = DMA_PRIORITY_HIGH;
+  hdma_adc1.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
+  if (HAL_DMA_Init(&hdma_adc1) != HAL_OK) {
+    Error_Handler();
+  }
+  __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
+}
+
+/* TIM6 -> 4 kHz + TRGO em Update -------------------------------------------*/
+static void MX_TIM6_Init_4kHz_TRGO(void)
+{
+  __HAL_RCC_TIM6_CLK_ENABLE();
+
+  /* Descobre clock real do timer (APB1 x2 quando prescaler !=1) */
+  uint32_t pclk1 = HAL_RCC_GetPCLK1Freq();
+  RCC_ClkInitTypeDef clk;
+  uint32_t flashLatency;
+  HAL_RCC_GetClockConfig(&clk, &flashLatency);
+
+  uint32_t timclk = pclk1;
+  if (clk.APB1CLKDivider != RCC_HCLK_DIV1) timclk = pclk1 * 2U;
+
+  /* Base de 1 MHz -> ARR=250-1 => 4 kHz */
+  uint32_t target_base = 1000000U;
+  uint32_t psc = (timclk / target_base) - 1U;
+  if (psc > 0xFFFF) psc = 0xFFFF;
+  uint32_t arr = (target_base / 4000U) - 1U; /* 250 - 1 */
+
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler         = psc;
+  htim6.Init.CounterMode       = TIM_COUNTERMODE_UP;
+  htim6.Init.Period            = arr;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK) {
+    Error_Handler();
+  }
+
+  /* TRGO = Update event */
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/* Error Handler -------------------------------------------------------------*/
+void Error_Handler(void)
+{
+  __disable_irq();
+  while (1) {
+    /* travado aqui para debug */
+  }
+}
+
+

@@ -6,10 +6,9 @@ de um único módulo ficam nele.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import os
+from typing import NamedTuple
 
 # Cadeia do braço CR10 (convenção URDF).
 ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
@@ -109,13 +108,16 @@ CONTACT_ON_N = 0.12
 # ao gatilho, o verde pisca em ar livre toda vez que o ruído cruza o limiar.
 CONTACT_OFF_FRAC = 0.7
 
-FORCE_NOISE_SIGMA_N = 0.023  # N: σ em repouso. HX711, 17/08/2026, 2390
-
-FORCE_CTRL_SIGMA_N = 0.0015
+# σ em repouso da FA7155, eixo de controle (Fz), medido em 21/10/2026: 30 s
+# parada e descarregada, polled a 1 Mbps, 11 731 amostras a 391 Hz.
+# CRU (o que a onda e o lock-in leem): 22,4 mN.
+FORCE_NOISE_SIGMA_N = 0.022
+# Depois do filtro mediana+One-Euro do ft_receiver (o que a MALHA vê): 2,1 mN.
+FORCE_CTRL_SIGMA_N = 0.0021
 
 
 HOLD_TOL_N     = 0.02
-HOLD_TOL_SIGMA = HOLD_TOL_N / FORCE_CTRL_SIGMA_N   # ≈ 13,3σ
+HOLD_TOL_SIGMA = HOLD_TOL_N / FORCE_CTRL_SIGMA_N   # ≈ 9,5σ
 # Fração do setpoint. Era 5 %, o que fazia a banda valer 0,10 N num alvo de
 # 2 N — o termo do ruído nem chegava a mandar na faixa usada na bancada.
 # A 1 % ela fica nos 0,02 N pedidos em TODO o intervalo de 0 a 2 N, e só
@@ -130,98 +132,6 @@ def hold_tol_n(target_f: float) -> float:
     return max(HOLD_TOL_N, HOLD_TOL_PCT * abs(float(target_f)))
 
 
-LC_USB_VIDS = (
-    0x303A,   # Espressif — o XIAO ESP32C6 só tem USB Serial/JTAG, sempre este VID
-)
-LC_SERIAL_BAUD = 115200       # Serial.begin() do main.cpp
-
-LC_NOMINAL_RATE_HZ = 24.0
-# Piso abaixo do qual o receiver reclama: nesta faixa não é mais "célula
-# lenta", é linha engasgando ou HX711 sem amostra pronta.
-LC_MIN_RATE_HZ = 5.0
-
-
-LC_HX711_AVDD_V   = 3.3
-LC_HX711_BITS     = 24
-LC_HX711_GAIN     = 128       # canal A
-LC_FW_VOLTAGE_SCALE  = LC_HX711_AVDD_V / (2 ** LC_HX711_BITS)   # 196,70 nV
-LC_FW_VOLTAGE_OFFSET = 0.0
-
-# Placa da célula: 100 kg, 2 mV/V. Serve para o valor NOMINAL da sensibilidade
-# — o que vale de fato é o `slope` da calibração; este número existe para o
-# filtro ter uma escala antes do primeiro arquivo e para o wizard saber quando
-# um ajuste saiu absurdo.
-LC_RATED_LOAD_KG          = 100.0
-LC_RATED_SENSITIVITY_MV_V = 2.0
-G_N_PER_KG                = 9.80665
-LC_RATED_FORCE_N          = LC_RATED_LOAD_KG * G_N_PER_KG        # 980,7 N
-# V/N no domínio em que o firmware publica (ponte × PGA):
-#   ponte a fundo de escala = 2 mV/V × 3,3 V = 6,6 mV em 980,7 N
-#   ×128 do PGA             → 8,61e-4 V/N
-# A calibração de 7 pontos de 2026 mediu 8,70e-4 V/N — 1 % acima do nominal,
-# que é o esperado para a tolerância de sensibilidade de uma célula destas.
-LC_NOMINAL_V_PER_N = (
-    (LC_RATED_SENSITIVITY_MV_V * 1e-3 * LC_HX711_AVDD_V / LC_RATED_FORCE_N)
-    * LC_HX711_GAIN)
-# Fundo de escala do ADC no mesmo domínio: ±0,5·AVDD/gain = ±12,89 mV. Leitura
-# além disto não é força, é entrada saturada ou fiação errada.
-LC_FS_VOLTAGE_V = 0.5 * LC_HX711_AVDD_V / LC_HX711_GAIN
-
-LC_FS_COUNTS = 2 ** LC_HX711_BITS // (2 * LC_HX711_GAIN)
-
-# Mínimo de pontos para o wizard aceitar um ajuste. Dois pontos SEMPRE dão
-# reta; com três já existe resíduo, que é o único jeito de a tela avisar que
-# uma massa foi digitada errada.
-LC_CALIB_MIN_POINTS = 3
-# Faixa aceita para o slope ajustado, em torno do nominal. Fora dela o ajuste
-# é recusado com a conta na tela: é o erro clássico de digitar grama onde se
-# pede quilo (fator 1000), e ele passaria despercebido — a reta continua
-# lindíssima, só a escala do mundo inteiro muda.
-LC_SLOPE_TOL_FRAC = 0.5
-
-
-def lc_load_calibration(path: str):
-    try:
-        with open(path, encoding='utf-8') as f:
-            d = json.load(f)
-        slope = float(d['slope'])
-        intercept = float(d.get('intercept', d.get('zero_voltage', 0.0)))
-    except Exception:
-        return None
-    if not slope:
-        return None
-    pontos = []
-    for item in (d.get('points') or []):
-        try:
-            m = float(item['mass_kg'])
-            v = float(item['v_sensor'])
-        except (TypeError, KeyError, ValueError):
-            continue
-        pontos.append((m, m * G_N_PER_KG, v))
-    pontos.sort()
-    return slope, intercept, pontos
-
-
-def lc_fit_slope(points, v_zero: float):
-
-    den = math.fsum(f * f for f, _v in points)
-    if den <= 0.0:
-        return None
-    slope = math.fsum((v - v_zero) * f for f, v in points) / den
-    if not slope:
-        return None
-    pior = max(abs(lc_force_n(v, slope, v_zero) - f) for f, v in points)
-    return slope, pior
-
-
-def lc_force_n(v_sensor: float, slope: float, intercept: float) -> float:
-
-    s = float(slope)
-    if not s:
-        return 0.0
-    return (float(v_sensor) - float(intercept)) / s
-
-
 FT_SERIAL_BAUD  = 1_000_000   # exemplar da bancada (manual §4.3 dá 115200 como
                               # default do caso geral)
 FT_FRAME_HEADER = b'\x53\x54'
@@ -229,6 +139,12 @@ FT_FRAME_LEN    = 28          # 2 (cabeçalho) + 6×float32 + 2 (CRC-16/MODBUS)
 # Ordem dos seis canais dentro do quadro — é ela que dá nome às colunas.
 FT_AXES = ('fx', 'fy', 'fz', 'mx', 'my', 'mz')
 
+# Taxa ENTREGUE ao host. O datasheet dá 250 Hz de fábrica e 500-1000 Hz
+# configuráveis (a unidade da bancada está em FT_SENSOR_RATE_HZ), mas o
+# exemplar só responde a poll, e cada transação paga o round-trip USB do CH343.
+# Medido: 397-399 Hz nos 12 runs de sensors/Data/{glass,silicon} (09/2026) e
+# 391 Hz ao vivo em 21/10/2026. É também a taxa assumida pelo filtro, pelo
+# explorer e pelo atraso do ILC até chegar a primeira medida (/load_cell/rate_hz).
 FT_NOMINAL_RATE_HZ = 400.0
 # Taxa que o SENSOR produz, que é outra coisa: é o que está gravado na unidade
 # (Send_Frequency) e o que a GUI pré-seleciona no combo "Set rate (Hz)" — esse
@@ -382,7 +298,7 @@ FT_STATS_WINDOW_DEFAULT = 1000  # amostras de Mean_Num / MAX_Num (~1 s @1 kHz)
 # os fluxos se misturam no mesmo receptor.
 TOUCH_SENSOR_UDP_PORT = 8081
 # Payload (little-endian, 8 bytes): uint32 seq + float valor. Espelhado no
-# plotter standalone (sensors/Touch_sensor).
+# plotter standalone (sensors/touch_<grade>/tools).
 TOUCH_PAYLOAD_FMT = '<If'
 # Broadcast do I_final reemitido pelo TouchSensorSource a cada TOTAL.
 TOUCH_UDP_BROADCAST_IP = '192.168.5.255'
@@ -395,11 +311,38 @@ SYNC_MAX_AGE_S = 0.25
 
 TOUCH_FRAME_TOPIC = '/touch_sensor/frame'
 TOUCH_EVENT_TOPIC = '/touch_sensor/spike_event'  # std_msgs/String: RA|SA|CN_MM|CN_RA|CN_SA
-# Grade PADRÃO do sensor em uso. O 5×5 é o que está montado na bancada; o
-# logger e a GUI derivam a grade do parâmetro `sensor` do launch, e este é o
-# valor quando ninguém passa nada.
-TOUCH_ROWS_DEFAULT = 5
-TOUCH_COLS_DEFAULT = 5
+
+
+class TouchSensorSpec(NamedTuple):
+    """O que distingue um sensor de toque do outro. Um sensor por vez na
+    bancada, escolhido pelo parâmetro `sensor` do launch ('4' | '5')."""
+    key: str
+    rows: int
+    cols: int
+    # True: o firmware manda TOTAL/POST (I_final do neurônio pós). False: o
+    # escalar publicado é a média das tensões de cada frame.
+    has_total: bool
+    label: str
+    folder: str         # firmware e ferramentas, relativo à raiz do repo
+
+
+TOUCH_SENSORS = {
+    '5': TouchSensorSpec('5', 5, 5, False, '5×5 — RA+SA',
+                         'sensors/touch_5x5'),
+    '4': TouchSensorSpec('4', 4, 4, True, '4×4 — RA+SA+CN, TOTAL/I_final',
+                         'sensors/touch_4x4'),
+}
+# O 5×5 é o padrão; valor desconhecido cai nele.
+TOUCH_SENSOR_DEFAULT = '5'
+
+
+def touch_sensor_spec(key) -> TouchSensorSpec:
+    return TOUCH_SENSORS.get(str(key).strip(),
+                             TOUCH_SENSORS[TOUCH_SENSOR_DEFAULT])
+
+
+TOUCH_ROWS_DEFAULT = TOUCH_SENSORS[TOUCH_SENSOR_DEFAULT].rows
+TOUCH_COLS_DEFAULT = TOUCH_SENSORS[TOUCH_SENSOR_DEFAULT].cols
 TOUCH_TAXELS_DEFAULT = TOUCH_ROWS_DEFAULT * TOUCH_COLS_DEFAULT
 TOUCH_EVENT_TYPES = ('RA', 'SA', 'CN_MM', 'CN_RA', 'CN_SA')
 
@@ -598,7 +541,7 @@ def tool_stamp_mismatch(data, *, what: str) -> str | None:
     if not isinstance(data, dict) or TOOL_STAMP_KEY not in data:
         return (f'{what} não traz carimbo de ferramenta — foi gravado antes '
                 f'deste campo existir e pode ter sido ensinado com a pilha da '
-                f'célula axial de 100 kg (TCP a 162,2 mm). A ferramenta atual '
+                f'pilha anterior (TCP a 162,2 mm). A ferramenta atual '
                 f'tem {agora:.1f} mm: confira a pose antes de descer.')
     try:
         antes = float(data[TOOL_STAMP_KEY])
@@ -673,49 +616,6 @@ def _resolve_latency_dir() -> str:
 
 
 LATENCY_DIR = _resolve_latency_dir()
-
-
-def _lc_share_calib() -> str | None:
-    """Cópia da calibração instalada com o pacote, ou None.
-
-    O import do ament é protegido porque `constants` é importado por testes
-    que não têm ROS nenhum — e ele não pode deixar de importar por isso.
-    """
-    try:
-        from ament_index_python.packages import get_package_share_directory
-        return os.path.join(get_package_share_directory('touch_pack'),
-                            'sensors', 'load_cell_calib.json')
-    except Exception:
-        return None
-
-
-def _resolve_lc_calib_file() -> tuple[str, str]:
-
-    repo = (os.path.join(_REPO_ROOT, 'sensors', 'load_cell_calib.json')
-            if _REPO_ROOT else None)
-    share = _lc_share_calib()
-    cfg = os.path.join(CONFIG_DIR, 'load_cell_calib.json')
-    for caminho, origem in ((repo, 'repo'), (share, 'share'), (cfg, 'config')):
-        if caminho and os.path.exists(caminho):
-            return caminho, origem
-    return (repo, 'repo') if repo else (cfg, 'config')
-
-
-LC_CALIB_FILE, LC_CALIB_SOURCE = _resolve_lc_calib_file()
-# Origens que se PROPAGAM para as outras máquinas. `config` não está aqui de
-# propósito: calibrar nela é calibrar só este computador, e o wizard avisa.
-LC_CALIB_SHARED_SOURCES = ('repo', 'share')
-
-
-def lc_calib_fingerprint(path: str = '') -> str:
-
-    cal = lc_load_calibration(path or LC_CALIB_FILE)
-    if cal is None:
-        return ''
-    slope, intercept, pontos = cal
-    corpo = ';'.join([repr(slope), repr(intercept)]
-                     + [f'{repr(m)},{repr(v)}' for m, _f, v in pontos])
-    return hashlib.sha256(corpo.encode('utf-8')).hexdigest()[:8]
 
 
 # ── MANUAL em DEGRAU (escada de força) ────────────────────────────────

@@ -1,0 +1,159 @@
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS * COLS)
+
+// ===== Variáveis UART =====
+extern UART_HandleTypeDef huart3;
+extern ADC_HandleTypeDef hadc1;
+
+// ===== Modelo de Izhikevich =====
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+float I[NUM_SENSORS];
+
+int spike_detected[NUM_SENSORS];
+
+// ===== Função para inicializar o modelo =====
+void Izhikevich_Init(void) {
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        v[i] = -65.0f;
+        u[i] = b * v[i];
+        I[i] = 0.0f;
+        spike_detected[i] = 0;
+    }
+}
+
+// ===== Função para processar o modelo =====
+void Izhikevich_Update(int idx, float input_current) {
+    v[idx] += 0.5f * (0.04f * v[idx] * v[idx] + 5.0f * v[idx] + 140.0f - u[idx] + input_current);
+    v[idx] += 0.5f * (0.04f * v[idx] * v[idx] + 5.0f * v[idx] + 140.0f - u[idx] + input_current);
+    u[idx] += a * (b * v[idx] - u[idx]);
+
+    if (v[idx] >= 30.0f) {
+        spike_detected[idx] = 1;
+        v[idx] = c;
+        u[idx] += d;
+    } else {
+        spike_detected[idx] = 0;
+    }
+}
+
+// ===== Função para enviar spikes via UART =====
+void SendSpikesUART(void) {
+    char buffer[128];
+    int len = sprintf(buffer, "Spikes:");
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        len += sprintf(buffer + len, " %d", spike_detected[i]);
+    }
+    sprintf(buffer + len, "\n");
+    HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
+
+// ===== Função para ler ADC (PA1) =====
+uint16_t Read_ADC(void) {
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    uint16_t val = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    return val;
+}
+
+int main(void) {
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART3_UART_Init();
+    MX_ADC1_Init();
+
+    Izhikevich_Init();
+
+    while (1) {
+        for (int row = 0; row < ROWS; row++) {
+            // Ativa linha correspondente
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, (row == 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, (row == 1) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3, (row == 2) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(GPIOF, GPIO_PIN_5, (row == 3) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+            HAL_Delay(1); // tempo para estabilizar
+
+            for (int col = 0; col < COLS; col++) {
+                int idx = row * COLS + col;
+                uint16_t adc_val = Read_ADC();
+
+                // Converte ADC para corrente de entrada
+                float voltage = (3.3f * adc_val) / 4095.0f;
+                float input_current = (1.65f - voltage) * 20.0f; // referência central em 1.65V
+                if (input_current < 0) input_current = 0;
+
+                Izhikevich_Update(idx, input_current);
+            }
+        }
+
+        SendSpikesUART();
+        HAL_Delay(10); // 100 Hz
+    }
+}
+
+// ===== Configurações geradas pelo CubeMX (resumidas) =====
+void SystemClock_Config(void) {
+    // Coloque aqui a configuração de clock gerada pelo CubeMX
+}
+
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+    // PC0, PC3, PF3, PF5 → Output
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+
+    GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_3;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_5;
+    HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+}
+
+static void MX_USART3_UART_Init(void) {
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart3);
+}
+
+static void MX_ADC1_Init(void) {
+    ADC_ChannelConfTypeDef sConfig = {0};
+    hadc1.Instance = ADC1;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    HAL_ADC_Init(&hadc1);
+
+    sConfig.Channel = ADC_CHANNEL_1; // PA1
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+}
+
+
+

@@ -1,0 +1,207 @@
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+
+#define ROWS 4
+#define COLS 4
+#define NUM_SENSORS (ROWS * COLS)
+
+// Parâmetros do modelo Izhikevich
+float a = 0.02f;
+float b = 0.2f;
+float c = -65.0f;
+float d = 8.0f;
+
+float v[NUM_SENSORS];
+float u[NUM_SENSORS];
+float I_in[NUM_SENSORS];
+
+// Configuração ADC
+#define VREF 3.3f
+#define ADC_RESOLUTION 4095.0f
+#define SENSOR_MAX_VOLTAGE 2.0f
+#define I_MAX 10.0f // ganho para o modelo
+
+ADC_HandleTypeDef hadc1;
+UART_HandleTypeDef huart3;
+
+// Mapeamento dos pinos das linhas (GPIO Output)
+GPIO_TypeDef* row_ports[ROWS] = {PC0_GPIO_Port, PC3_GPIO_Port, PF3_GPIO_Port, PF5_GPIO_Port};
+uint16_t row_pins[ROWS]       = {PC0_Pin,        PC3_Pin,        PF3_Pin,        PF5_Pin};
+
+// Canais ADC das colunas
+uint32_t adc_channels[COLS] = {ADC_CHANNEL_8, ADC_CHANNEL_12, ADC_CHANNEL_10, ADC_CHANNEL_0};
+
+// Função para ler um canal ADC
+uint32_t Read_ADC_Channel(uint32_t channel) {
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Channel = channel;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    uint32_t val = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    return val;
+}
+
+// Calibração simples ADC → corrente
+float Calibrate_Input(uint32_t adc_val) {
+    float voltage = (adc_val / ADC_RESOLUTION) * VREF;
+    if (voltage > SENSOR_MAX_VOLTAGE) voltage = SENSOR_MAX_VOLTAGE;
+    return (voltage / SENSOR_MAX_VOLTAGE) * I_MAX;
+}
+
+// Inicializa o modelo
+void Izhikevich_Init() {
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        v[i] = -65.0f;
+        u[i] = b * v[i];
+        I_in[i] = 0.0f;
+    }
+}
+
+// Processa um passo do modelo
+void Izhikevich_Step(int idx) {
+    v[idx] += 0.5f * (0.04f * v[idx] * v[idx] + 5 * v[idx] + 140 - u[idx] + I_in[idx]);
+    v[idx] += 0.5f * (0.04f * v[idx] * v[idx] + 5 * v[idx] + 140 - u[idx] + I_in[idx]);
+    u[idx] += a * (b * v[idx] - u[idx]);
+
+    if (v[idx] >= 30.0f) {
+        v[idx] = c;
+        u[idx] += d;
+        char msg[32];
+        snprintf(msg, sizeof(msg), "Spike no sensor %d\r\n", idx);
+        HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
+}
+
+int main(void) {
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_USART3_UART_Init();
+
+    Izhikevich_Init();
+
+    while (1) {
+        // Ativa somente a linha 0
+        for (int rr = 0; rr < ROWS; rr++) {
+            HAL_GPIO_WritePin(row_ports[rr], row_pins[rr],
+                              (rr == 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        }
+
+        HAL_Delay(2); // tempo para estabilizar sinal
+
+        // Lê as 4 colunas da linha 0
+        for (int c_idx = 0; c_idx < COLS; c_idx++) {
+            int idx = c_idx; // linha 0 → índices 0 a 3
+            uint32_t adc_val = Read_ADC_Channel(adc_channels[c_idx]);
+            I_in[idx] = Calibrate_Input(adc_val);
+            Izhikevich_Step(idx);
+        }
+
+        HAL_Delay(1); // taxa ~1 kHz
+    }
+}
+
+/* ===== Funções de inicialização geradas pelo Cube ===== */
+
+void SystemClock_Config(void) {
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    /** Configure the main internal regulator output voltage */
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    /** Initializes the RCC Oscillators */
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLM = 8;
+    RCC_OscInitStruct.PLL.PLLN = 168;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ = 4;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+        Error_Handler();
+    }
+
+    /** Initializes the CPU, AHB and APB buses clocks */
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                  | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+static void MX_ADC1_Init(void) {
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = DISABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.DiscontinuousConvMode = DISABLE;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = 1;
+    hadc1.Init.DMAContinuousRequests = DISABLE;
+    hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    if (HAL_ADC_Init(&hadc1) != HAL_OK) {
+        Error_Handler();
+    }
+
+    sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+}
+
+static void MX_USART3_UART_Init(void) {
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    if (HAL_UART_Init(&huart3) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE();
+
+    // Pinos das linhas como saída
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+    GPIO_InitStruct.Pin = PC0_Pin | PC3_Pin;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = PF3_Pin | PF5_Pin;
+    HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+}
+
+void Error_Handler(void) {
+    __disable_irq();
+    while (1) {}
+}
+
