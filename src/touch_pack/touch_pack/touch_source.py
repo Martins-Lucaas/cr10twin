@@ -74,6 +74,38 @@ HEAT_TEXT_PERIOD = 1.0 / 6.0
 RE_DATA = re.compile(r"idx=(\d+),adc=(\d+),t=(\d+)")
 RE_IDX_T = re.compile(r"idx=(\d+),adc=\d+,t=(\d+)")
 RE_POST = re.compile(r"t=(\d+)")
+
+
+class DataFrameAssembler:
+    """Junta as linhas `DATA,idx=i,adc=a,t=us` de UMA varredura do 4×4 numa
+    linha `ADC,v0,…,vN-1,t=us` — o protocolo de frame inteiro do 5×5. Assim o
+    TouchFrame, o adc.csv e o samples.csv seguem pelo caminho que já existe.
+
+    O firmware carimba as N linhas de uma varredura com o MESMO `t`. Frame só
+    sai completo: linha perdida ou `t` trocado no meio descarta a varredura,
+    porque emendar duas varreduras daria taxels de instantes diferentes."""
+
+    def __init__(self, n_taxels: int):
+        self.n = n_taxels
+        self._vals: list = [None] * n_taxels
+        self._t: int | None = None
+
+    def feed(self, line: str) -> str | None:
+        m = RE_DATA.search(line)
+        if not m:
+            return None
+        idx, adc, t = (int(g) for g in m.groups())
+        if not 0 <= idx < self.n:
+            return None
+        if idx == 0 or t != self._t:
+            self._vals = [None] * self.n
+            self._t = t
+        self._vals[idx] = adc
+        if idx == self.n - 1 and None not in self._vals:
+            return 'ADC,' + ','.join(map(str, self._vals)) + f',t={t}'
+        return None
+
+
 RE_TOTAL = re.compile(
     r"Iexc=([-+0-9.eE]+),Iinh=([-+0-9.eE]+),Ifinal=([-+0-9.eE]+)")
 
@@ -491,6 +523,17 @@ class TouchSensorSource:
         Usa voltage_frame (último frame completo) — sem tearing no CSV."""
         with self._lock:
             return self.voltage_frame.copy(), float(self.current_time)
+
+    def view_voltages(self) -> np.ndarray:
+        """Tensões (rows×cols) na orientação EXATA do heatmap da aba Sensores
+        (o `_VIEW_ROT180` do snapshot() + o rot90×2 do TouchFigure.update),
+        sem copiar os rasters. Para o mini-heatmap do Controle Manual não
+        mostrar o canto oposto ao da figura grande."""
+        with self._lock:
+            volt = self.voltage_frame.copy()
+        if _VIEW_ROT180 and (self.rows, self.cols) in TOUCH_ROT180_GRIDS:
+            volt = volt[::-1, ::-1]
+        return np.rot90(volt, 2)
 
     def snapshot(self) -> dict:
         """Retrato consistente do estado para renderização. As listas já vêm

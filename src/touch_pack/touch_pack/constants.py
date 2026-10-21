@@ -416,6 +416,27 @@ RUN_MATRIX_CSV   = 'matrix.csv'
 RUN_ADC_CSV      = 'adc.csv'
 RUN_SPIKES_CSV   = 'spikes.csv'
 RUN_CN_CSV       = 'cuneiformes.csv'
+
+# Run de APRENDIZADO: a home ainda não tem contato aprendido, a descida
+# inteira rasteja só para memorizar a profundidade, e o run não é dado de
+# ensaio. O explorer publica aqui o run_id dele (latched) e logger e GUI não
+# gravam — ou apagam o que já tinham aberto, se o aviso chegou depois do start.
+LEARNING_RUN_TOPIC = '/palpation/learning_run'
+
+
+def discard_run_files(run_dir: str, names) -> None:
+    """Apaga os arquivos `names` de `run_dir` e a pasta, se ficar vazia.
+    Logger e GUI gravam arquivos diferentes na MESMA pasta: cada um apaga os
+    seus, e quem terminar por último leva a pasta junto."""
+    for name in names:
+        try:
+            os.remove(os.path.join(run_dir, name))
+        except FileNotFoundError:
+            pass
+    try:
+        os.rmdir(run_dir)
+    except OSError:
+        pass   # ainda há arquivos do outro gravador — ele remove depois
 RUN_PARAMS_JSON  = 'params.json'
 RUN_SUMMARY_JSON = 'summary.json'
 RUN_PLOT_PNG     = 'plot.png'
@@ -451,8 +472,12 @@ def _safe_component(name: str) -> str:
 
 
 def run_dir(mode: str, run_id: str, *, base: str | None = None,
-            create: bool = True) -> str:
-    """Diretório do run: <base>/<MODO>/<run_id>, base = RUNS_DIR.
+            create: bool = True, sensor: str | None = None) -> str:
+    """Diretório do run: <base>/[touch_RxC/]<MODO>/<run_id>, base = RUNS_DIR.
+
+    Com `sensor` ('4' | '5') os runs de cada sensor de toque ficam separados
+    (touch_4x4/ e touch_5x5/, o mesmo nome da pasta de firmware em sensors/):
+    os dois têm grades e protocolos diferentes e não se agregam juntos.
 
     `mode` vazio (ou desconhecido) cai em REC_DIR_NAME — é o caso da
     gravação avulsa, que não pertence a modo nenhum. `run_id` vazio ou
@@ -462,7 +487,11 @@ def run_dir(mode: str, run_id: str, *, base: str | None = None,
     if m not in RUN_MODES:
         m = REC_DIR_NAME
     rid = _safe_component(run_id) or new_run_id()
-    path = os.path.join(base or RUNS_DIR, m, rid)
+    root = base or RUNS_DIR
+    if sensor is not None:
+        root = os.path.join(root,
+                            os.path.basename(touch_sensor_spec(sensor).folder))
+    path = os.path.join(root, m, rid)
     if create:
         os.makedirs(path, exist_ok=True)
     return path

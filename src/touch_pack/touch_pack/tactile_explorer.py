@@ -153,6 +153,8 @@ from .lc_filter import (   # noqa: F401 — _MEDIAN_N é reexportado
     ONE_EURO_MAXCUTOFF_HZ as _ONE_EURO_MAXCUTOFF_HZ,
 )
 from .constants import (   # noqa: F401 — alguns só são reexportados
+    LEARNING_RUN_TOPIC as _LEARNING_RUN_TOPIC,
+    run_id_from_msg as _run_id_from_msg,
     FT_NOMINAL_RATE_HZ as _FT_NOMINAL_RATE_HZ,
     SERVOJ_DEADBAND_RAD as _SERVOJ_DEADBAND_RAD,
     ARM_REACH_M as _ARM_REACH_M,
@@ -236,6 +238,7 @@ from .explorer_constants import (   # noqa: F401 — reexportação
     _FMOD_DEADBAND_MIN_RATIO,
     _FMOD_QUIET_FLOOR_M, _FORCE_STALE_S, _START_MAX_AGE_S, _CTRL_DT,
     _CTRL_LOOK, _CTRL_WIN, _SLIDE_WIN, _JAC_LAM, _ORI_GAIN,
+    _SLIDE_END_TOL_M, _SLIDE_LATE_S, _SLIDE_CATCHUP_STEPS, _PACE_MAX_PERIOD_S,
     _Z_CORR_GAIN, _HOME_MAX_RAD_S, _SETTLE_TICKS,
     _SETTLE_STILL_TOL_RAD_S, _SETTLE_STILL_MAX_TICKS,
     _MAX_JOINT_VEL_RAD_S, _FX_GAIN_MIN, _FX_GAIN_MAX,
@@ -537,6 +540,10 @@ class TactileExplorer(Node):
         self.create_subscription(JointState, '/joint_states',
                                   self._cb_joints, 50, callback_group=cb)
 
+        # Latched (o mesmo QoS do start): logger e GUI precisam do aviso
+        # mesmo que ele chegue antes do próprio /palpation/start.
+        self._learning_run_pub = self.create_publisher(
+            String, _LEARNING_RUN_TOPIC, _QOS_COMMAND)
         self._status_pub = self.create_publisher(
             PalpationStatus, '/palpation/status', 10)
         # Um registro por identação concluída do MATRIX_MAP. RELIABLE com fila
@@ -1058,6 +1065,17 @@ class TactileExplorer(Node):
         started = False
         try:
             started = self._start_from_msg(msg)
+            if started:
+                with self._params_lock:
+                    learning = self._learned_contact_m is None
+                if learning:
+                    # Home sem contato aprendido: este run só rasteja para
+                    # aprender a profundidade — não é dado de ensaio.
+                    rid = _run_id_from_msg(msg)
+                    self._learning_run_pub.publish(String(data=rid))
+                    self.get_logger().info(
+                        f'[APRENDIZADO] run {rid} é de aprendizado da home — '
+                        'não será gravado; o próximo run nesta home grava.')
         finally:
             # Só a thread do protocolo limpa o _busy quando ela existe; se o
             # parsing recusou o run (ou explodiu), libera aqui — senão o nó
@@ -3322,6 +3340,10 @@ class TactileExplorer(Node):
         # Posição COMANDADA acumulada da descida em ar livre. Ressincroniza
         # com a medida se divergir (pausa/JTC).
         q_cmd_free: np.ndarray | None = None
+        # Instante do último passo comandado em ar livre. O passo é v × o
+        # período REAL desde ele (não v·dt fixo): com o laço a ~16 Hz, 0,1
+        # mm/s viravam 0,05 mm/s (run SLIDE/20261021_113235).
+        t_cmd_free: float | None = None
         if learned_m is not None:
             _n_obs = len(self._contact_depths)
             _fonte = (f'dispersão medida em {_n_obs} contatos'
@@ -3353,6 +3375,8 @@ class TactileExplorer(Node):
                 self._stop_requested.clear()
                 self.get_logger().warn('[STOP] DESCENDING interrompido pelo usuário.')
                 return 'stop'
+            if self._pause_requested.is_set():
+                t_cmd_free = None   # a pausa não é crédito de deslocamento
             if not self._pause_gate():
                 return 'stop'
 
@@ -3395,6 +3419,7 @@ class TactileExplorer(Node):
                     # Ressincroniza o comandado com o medido: o _settle pode
                     # ter deixado o JTC alcançar a posição.
                     q_cmd_free = None
+                    t_cmd_free = None
                     continue
                 fz = fz_conf
                 if v_at_touch > _DESCEND_CONTACT_V_MAX_MS:
@@ -3463,7 +3488,10 @@ class TactileExplorer(Node):
                 descended_m, ramp_from_m, crawl_from_m,
                 v_fast_ms, v_slow_ms, v_unlearned_ms)
             v_at_touch = v_free
-            step_m = min(v_free * dt, depth_m - descended_m)
+            period = dt if t_cmd_free is None else \
+                min(max(t0 - t_cmd_free, dt), _PACE_MAX_PERIOD_S)
+            t_cmd_free = t0
+            step_m = min(v_free * period, depth_m - descended_m)
 
             tw = np.zeros(6)
             tw[:3] = approach_dir * step_m
@@ -3482,8 +3510,10 @@ class TactileExplorer(Node):
                 continue
 
             q_new = np.clip(q + dq, JOINT_MIN, JOINT_MAX)
-            vel   = np.clip((q_new - q) / dt, -v_lim, v_lim)
-            self._stream_q(q_new, dt, velocities=vel)
+            # O passo se espalha no MESMO período que o gerou: a velocidade
+            # instantânea fica v_free, e o pico de impacto do rastejo também.
+            vel   = np.clip((q_new - q) / period, -v_lim, v_lim)
+            self._stream_q(q_new, period, velocities=vel)
             q_cmd_free = q_new
             descended_m += step_m
 
@@ -5081,8 +5111,12 @@ class TactileExplorer(Node):
         v_lim = (self._speed_factor_pct / 100.0) * _MAX_JOINT_VEL_RAD_S
         dt = _CTRL_DT
 
-        dist_planned_m   = 0.0   # distância planejada acumulada (não depende de FK)
         step_m = speed_ms * dt   # deslocamento por tick no plano
+        # Referência ABSOLUTA pelo relógio: s(t) = v·(t − t_ref0). Cada janela
+        # mira onde o TCP deve estar em t+k·dt, não "medido + passo" — assim o
+        # atraso do /joint_states e a cadência do laço não roubam velocidade.
+        t_ref0 = time.time()
+        t_due = slide_lim_m / speed_ms + _SLIDE_LATE_S
 
         self.get_logger().info(
             f'SLIDING: speed={speed_ms*1e3:.1f} mm/s  '
@@ -5101,25 +5135,33 @@ class TactileExplorer(Node):
                 self._stop_requested.clear()
                 outcome = 'stop'
                 break
+            t_gate = time.time()
             if not self._pause_gate():
                 outcome = 'stop'
                 break
-
             t0 = time.time()
+            # Tempo parado na pausa não conta: sem isto a referência seguiria
+            # correndo e o braço sairia da pausa em arrancada de recuperação.
+            t_ref0 += t0 - t_gate
 
-            # Verificação 1: distância planejada acumulada (determinístico).
-            if dist_planned_m >= slide_lim_m:
-                self.get_logger().info(
-                    f'SLIDING: {slide_lim_m*1e3:.0f} mm planejados — parando.')
-                break
-
-            # Verificação 2: posição real via FK (segurança extra).
+            # Término pela posição MEDIDA (FK). O planejado não serve: era
+            # ele que encerrava o deslize com 25,9 de 40 mm percorridos.
             q = self._q_now()
             T_cur = forward_kinematics(q, T_end=T_TOUCH_TOOL_ATTACH)
             progress = float(np.dot(T_cur[:3, 3] - p_start, dir_world))
-            if progress >= slide_lim_m:
+            if progress >= slide_lim_m - _SLIDE_END_TOL_M:
                 self.get_logger().info(
-                    f'SLIDING: {slide_lim_m*1e3:.0f} mm (FK) atingidos.')
+                    f'SLIDING: {progress*1e3:.1f} mm (FK) de '
+                    f'{slide_lim_m*1e3:.0f} mm em {t0 - t_ref0:.2f} s '
+                    f'(média {progress / max(t0 - t_ref0, 1e-6) * 1e3:.2f} '
+                    f'mm/s, pedido {speed_ms*1e3:.2f}).')
+                break
+            if t0 - t_ref0 > t_due:
+                self.get_logger().warn(
+                    f'SLIDING: {progress*1e3:.1f} de {slide_lim_m*1e3:.0f} mm '
+                    f'após {t0 - t_ref0:.1f} s ({_SLIDE_LATE_S:.0f} s além do '
+                    'previsto) — o braço não acompanhou a referência; '
+                    'terminando o deslize.')
                 break
 
             # Verificação 3: afundamento máximo abaixo do PLANO. Medir ao
@@ -5170,11 +5212,16 @@ class TactileExplorer(Node):
             T_iter = T_cur
             singular = False
 
+            s_iter = progress   # progresso ao longo da reta do ponto k-1
             for k in range(1, _SLIDE_WIN + 1):
                 tw = np.zeros(6)
-                # Passo lateral — limita o último passo para não ultrapassar alvo
-                remaining = max(0.0, slide_lim_m - dist_planned_m - (k - 1) * step_m)
-                lateral   = min(step_m, remaining)
+                # Incremento até a referência em t0+k·dt, saturada no alvo. O
+                # 1º absorve o atraso da medida; o teto evita um salto se o
+                # braço ficou muito para trás (bloqueio, pausa).
+                s_ref = min(speed_ms * (t0 + k * dt - t_ref0), slide_lim_m)
+                lateral = min(max(0.0, s_ref - s_iter),
+                              _SLIDE_CATCHUP_STEPS * step_m)
+                s_iter += lateral
                 tw[:3] = dir_world * lateral
                 # Lock de orientação
                 tw[3:] = self._ori_twist(R0, T_iter)
@@ -5218,12 +5265,9 @@ class TactileExplorer(Node):
             if singular:
                 self.get_logger().warn('SLIDING: Jacobiano singular — passo descartado.')
             elif msg.points:
+                # Cada mensagem SUBSTITUI a anterior no JTC — só ~1 segmento
+                # executa antes da próxima.
                 self._arm_traj_pub.publish(msg)
-                # A janela desliza 1 passo por tick (cada mensagem SUBSTITUI
-                # a anterior no JTC — só ~1 segmento executa antes da
-                # próxima).
-                dist_planned_m += min(step_m,
-                                      max(0.0, slide_lim_m - dist_planned_m))
 
             elapsed = time.time() - t0
             if elapsed < dt:

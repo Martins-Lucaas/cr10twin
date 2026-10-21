@@ -333,25 +333,30 @@ Read over USB-CDC (115200 baud, ACM/USB port auto-detection). The parser accepts
 
 Everything goes to **`<repo_root>/sensors/Data/`** (override with the `TOUCH_PACK_DATA_DIR` environment variable). The directory is located automatically by walking up from the package until `sensors/` is found — this works both when running from `src/` and from `install/`.
 
-**One folder per mode, one per run** — every file of a sample lands together:
+**One folder per touch sensor, per mode, per run** — every file of a sample lands together. The 4×4 and the 5×5 have different grids and protocols, so their runs never mix (`sensor:=4|5` picks the folder):
 
 ```
 sensors/Data/
-├── MATRIX_MAP/
-│   └── 20260812_143012/     ← run_id: wall clock at Start, stamped by the GUI
-│       ├── samples.csv          sensors.csv      matrix.csv
-│       ├── adc.csv              spikes.csv       cuneiformes.csv
-│       └── params.json          summary.json     plot.png
-├── TOUCH/ · SLIDE/ · MANUAL/    same structure
-├── RECORDING/                   GUI Record button pressed outside a run
-└── latency/                     latency_probe captures
+├── touch_4x4/ · touch_5x5/
+│   ├── MATRIX_MAP/
+│   │   └── 20260812_143012/     ← run_id: wall clock at Start, stamped by the GUI
+│   │       ├── samples.csv          sensors.csv      matrix.csv
+│   │       ├── adc.csv              spikes.csv       cuneiformes.csv
+│   │       └── params.json          summary.json     plot.png
+│   ├── TOUCH/ · SLIDE/ · MANUAL/    same structure
+│   └── RECORDING/                   GUI Record button pressed outside a run
+└── latency/                         latency_probe captures
 ```
+
+Runs from before 21/10/2026 stay in `sensors/Data/<MODE>/` without the sensor level; `palpation_report` and `analyze_force_runs` read both.
+
+**A home-learning run is not recorded.** When the home has no learned contact yet, the whole descent crawls just to memorise the contact depth — it is not test data. The explorer announces that run's `run_id` on `/palpation/learning_run`; the logger skips it (or deletes it, if the notice arrives after the start) and the GUI drops its automatic recording. The next run at the same home records normally. A manual **Record data** recording is never touched.
 
 The `run_id` travels in the `PalpationStart` message so that the logger and the GUI — which write different files of the same run — agree on the folder. It is **wall-clock**, not the ROS clock: under `use_sim_time` the ROS clock restarts from zero on every launch, which used to name every run `19691231_*` and silently overwrite the previous session's data.
 
 | File | Source | Contents |
 |---|---|---|
-| `samples.csv` | `palpation_logger` | `t_rel_s, t_unix, cycle, phase, setpoint_n, force_net_n, q1..q6, tcp_x/y/z, wp_index, wp_x_mm, wp_y_mm, taxel_0..taxel_24, n_RA, n_SA, cn_mm, cn_ra, cn_sa` — one row per sample |
+| `samples.csv` | `palpation_logger` | `t_rel_s, t_unix, cycle, phase, setpoint_n, force_net_n, q1..q6, tcp_x/y/z, wp_index, wp_x_mm, wp_y_mm, taxel_0..taxel_N (16 for the 4×4, 25 for the 5×5), n_RA, n_SA, cn_mm, cn_ra, cn_sa` — one row per sample |
 | `matrix.csv` | `palpation_logger` | **MATRIX_MAP only** — one row per finished indentation (see below) |
 | `params.json` | `palpation_logger` | parameters from `/palpation/start`, including the `run_id` (read by `palpation_report`) |
 | `summary.json` · `plot.png` | `palpation_report` | post-run metrics per cycle/phase, and force×time coloured by phase |

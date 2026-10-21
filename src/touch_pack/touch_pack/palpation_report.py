@@ -558,6 +558,8 @@ def main(argv=None):
         # duas famílias não se comparam entre si.
         candidates = sorted(
             glob.glob(os.path.join(OUTPUT_DIR, '*', '*', RUN_SAMPLES_CSV))
+            # Layout por sensor: touch_4x4/<MODO>/<run_id>/.
+            + glob.glob(os.path.join(OUTPUT_DIR, '*', '*', '*', RUN_SAMPLES_CSV))
             + glob.glob(os.path.join(OUTPUT_DIR, '*__samples.csv')),
             key=os.path.getmtime)
         if not candidates:

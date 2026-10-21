@@ -772,6 +772,20 @@ _CTRL_DT    = 0.030   # período de cada passo (33 Hz)
 _CTRL_LOOK  = 0.10    # time_from_start do _settle (s)
 _CTRL_WIN   = 10      # waypoints por batch de streaming (10 × 30 ms = 300 ms)
 _SLIDE_WIN  = 3       # janela de lookahead do SLIDING (3 × 30 ms = 90 ms)
+# Avanço pelo RELÓGIO DE PAREDE (21/10/2026). O SLIDING somava um passo
+# `v·dt` por iteração a partir da posição MEDIDA: com o /joint_states ~17 ms
+# atrasado, cada janela comandava "medido + passo" e o braço só cobria ~64 % do
+# passo — o run SLIDE/20261021_113235 pediu 40 mm a 5 mm/s e andou 25,9 mm a
+# 3,2 mm/s, terminando quando o PLANEJADO (não o medido) chegou a 40 mm. A
+# descida tinha o mesmo vício por outro lado: um passo por iteração, e o laço
+# girou a ~16 Hz, então 0,1 mm/s viraram 0,05 mm/s.
+_SLIDE_END_TOL_M     = 0.0002  # o deslize termina com o MEDIDO a 0,2 mm do alvo
+_SLIDE_LATE_S        = 2.0     # folga além de dist/v antes de desistir do alvo
+_SLIDE_CATCHUP_STEPS = 3.0     # teto do incremento por ponto, em passos v·dt.
+                               # O 1º ponto pede 1 + atraso/dt (~1,6 com 17 ms);
+                               # 3 cobre até 60 ms de atraso e limita a
+                               # recuperação após um distúrbio a 3v.
+_PACE_MAX_PERIOD_S   = 0.10    # período máximo creditado a um tick da descida
 _JAC_LAM    = 0.01    # regularização DLS
 _ORI_GAIN   = 0.5     # ganho de correção de orientação
 _Z_CORR_GAIN = 0.5   # ganho de correção perpendicular durante sliding

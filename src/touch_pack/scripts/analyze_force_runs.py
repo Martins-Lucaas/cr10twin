@@ -44,13 +44,16 @@ def _find_data_dir() -> str:
 
 def _load_runs(data_dir: str) -> list[dict]:
     runs = []
-    # Dois layouts: pasta por run (<MODO>/[<sub>/]<run_id>/summary.json) e os
+    # Dois layouts: pasta por run ([touch_RxC/]<MODO>/[<sub>/]<run_id>/summary.json) e os
     # runs antigos soltos na raiz (<ts>__summary.json). A sub-pasta opcional é
     # como os runs TOUCH ficam agrupados por frequência (TOUCH/1hz/<run_id>);
     # sem ela no glob a agregação omitia em silêncio justamente os ensaios de
     # força modulada.
     paths = (glob.glob(os.path.join(data_dir, '*', '*', 'summary.json'))
              + glob.glob(os.path.join(data_dir, '*', '*', '*', 'summary.json'))
+             # touch_4x4/TOUCH/1hz/<run_id>: o nível do sensor por cima.
+             + glob.glob(os.path.join(data_dir, '*', '*', '*', '*',
+                                      'summary.json'))
              + glob.glob(os.path.join(data_dir, '*__summary.json')))
     for p in sorted(paths, key=os.path.getmtime):
         base = os.path.basename(p)

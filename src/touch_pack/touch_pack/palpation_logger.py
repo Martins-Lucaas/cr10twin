@@ -110,7 +110,8 @@ from .constants import (
     RUNS_DIR as OUTPUT_DIR,
     TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
     TOUCH_SENSOR_DEFAULT, touch_sensor_spec, TOUCH_EVENT_TYPES,
-    PHASE_CODES, run_dir, run_id_from_msg,
+    PHASE_CODES, run_dir, run_id_from_msg, LEARNING_RUN_TOPIC,
+    discard_run_files,
     RUN_SAMPLES_CSV, RUN_MATRIX_CSV, RUN_PARAMS_JSON,
     tool_tcp_mm,
 )
@@ -253,6 +254,7 @@ class PalpationLogger(Node):
             self.declare_parameter('sensor', TOUCH_SENSOR_DEFAULT).value)
         self._rows, self._cols = spec.rows, spec.cols
         self._n_taxels = self._rows * self._cols
+        self._sensor_key = spec.key   # pasta do run: touch_4x4/ | touch_5x5/
 
         self._lock = threading.Lock()
         self._csv_fh: IO | None = None
@@ -304,6 +306,10 @@ class PalpationLogger(Node):
 
         self.create_subscription(
             PalpationStart, '/palpation/start', self._cb_start, _QOS_COMMAND)
+        # Runs de aprendizado da home não são gravados (ver constants).
+        self._learning_runs: set[str] = set()
+        self.create_subscription(
+            String, LEARNING_RUN_TOPIC, self._cb_learning_run, _QOS_COMMAND)
         self.create_subscription(
             PalpationStatus, '/palpation/status', self._cb_status, 10)
         # Setpoint atualizado on-the-fly (modo MANUAL): atualiza a coluna
@@ -380,10 +386,15 @@ class PalpationLogger(Node):
             # mensagem justamente para os dois não dependerem de chamar
             # strftime no mesmo segundo.
             ts = run_id_from_msg(msg)
+            if ts in self._learning_runs:
+                self.get_logger().info(
+                    f'Run {ts} é de aprendizado da home — não gravado.')
+                return
             try:
                 # base=OUTPUT_DIR e não o default: é o alias de módulo que o
                 # teste redireciona para um tmpdir.
-                out_dir = run_dir(mode, ts, base=OUTPUT_DIR)
+                out_dir = run_dir(mode, ts, base=OUTPUT_DIR,
+                                  sensor=self._sensor_key)
             except OSError as exc:
                 self.get_logger().error(
                     f'Falha ao criar a pasta do run: {exc}')
@@ -433,6 +444,25 @@ class PalpationLogger(Node):
                 f'Run iniciado → {_rel(csv_path)} '
                 f'(setpoint={setpoint if setpoint is not None else "?"} N'
                 f'{extra}, grade {self._rows}×{self._cols})')
+
+    def _cb_learning_run(self, msg: String) -> None:
+        """O explorer avisou que o run `msg.data` é de aprendizado da home.
+        Chegando antes do start, o start o pula; chegando depois, o run já
+        aberto é descartado — arquivos apagados, sem relatório."""
+        rid = str(msg.data)
+        with self._lock:
+            self._learning_runs.add(rid)
+            if self._csv_fh is None or self._run_stamp != rid:
+                return
+            run_dir_ = self._run_dir
+            names = [RUN_SAMPLES_CSV, RUN_PARAMS_JSON]
+            if self._matrix_path:
+                names.append(os.path.basename(self._matrix_path))
+            self._close_run_locked('superseded')   # 'superseded' = sem relatório
+        if run_dir_:
+            discard_run_files(run_dir_, names)
+        self.get_logger().info(
+            f'Run {rid} é de aprendizado da home — descartado.')
 
     def _cb_set_force(self, msg: Float32) -> None:
         """Novo setpoint de força on-the-fly (modo MANUAL). Atualiza o valor

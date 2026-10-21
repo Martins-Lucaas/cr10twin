@@ -144,8 +144,8 @@ def _run_once(tmpdir, monkeypatch, mode, sensor='5', n_taxels=25,
     _spin(nodes)
 
     logger.close()
-    # Layout em disco: <tmpdir>/<MODO>/<run_id>/samples.csv.
-    found = glob.glob(os.path.join(tmpdir, '*', '*', RUN_SAMPLES_CSV))
+    # Layout em disco: <tmpdir>/touch_RxC/<MODO>/<run_id>/samples.csv.
+    found = glob.glob(os.path.join(tmpdir, '*', '*', '*', RUN_SAMPLES_CSV))
     assert found, f'nenhum {RUN_SAMPLES_CSV} foi criado em {tmpdir}'
     with open(found[0]) as fh:
         rows = list(csv.DictReader(fh))
@@ -266,7 +266,7 @@ def test_grade_4x4_nao_e_mais_descartada(ros, tmpdir_runs, monkeypatch):
 
 def _params_do_run(tmpdir):
     import json
-    achados = glob.glob(os.path.join(tmpdir, '*', '*', PL.RUN_PARAMS_JSON))
+    achados = glob.glob(os.path.join(tmpdir, '*', '*', '*', PL.RUN_PARAMS_JSON))
     assert achados, 'o run não gravou o params.json'
     with open(achados[-1], encoding='utf-8') as fh:
         return json.load(fh)

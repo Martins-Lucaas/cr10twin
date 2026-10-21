@@ -167,3 +167,75 @@ def test_logger_nao_completa_frame_curto_com_colunas_vazias():
     assert lg._adc_cols == [str(i) for i in range(N)]
     assert lg._adc_ts == ts_bom, 'frame ruim não pode rejuvenescer taxel_age_ms'
     assert stub.msgs, 'o run tem de registrar que perdeu frames'
+
+
+# ── 4×4: linhas DATA viram o frame ADC do 5×5 ─────────────────────────────
+
+def _data_lines(vals, t):
+    return [f'DATA,idx={i},adc={v},t={t}\r\n' for i, v in enumerate(vals)]
+
+
+def test_varredura_data_completa_vira_uma_linha_adc():
+    from touch_pack.touch_source import DataFrameAssembler
+    asm = DataFrameAssembler(16)
+    vals = list(range(100, 116))
+    out = [asm.feed(ln) for ln in _data_lines(vals, 777)]
+    assert out[:-1] == [None] * 15
+    assert out[-1] == 'ADC,' + ','.join(map(str, vals)) + ',t=777'
+
+
+def test_varredura_data_com_linha_perdida_e_descartada():
+    """Linha 7 perdida: o frame não pode sair com o taxel 7 da varredura
+    anterior — é descartado, e a varredura seguinte sai inteira."""
+    from touch_pack.touch_source import DataFrameAssembler
+    asm = DataFrameAssembler(16)
+    for ln in _data_lines(range(16), 1):
+        asm.feed(ln)
+    falha = _data_lines(range(200, 216), 2)
+    del falha[7]
+    assert [asm.feed(ln) for ln in falha][-1] is None
+    assert [asm.feed(ln) for ln in _data_lines(range(300, 316), 3)][-1] \
+        is not None
+
+
+def test_varredura_data_nao_emenda_instantes_diferentes():
+    from touch_pack.touch_source import DataFrameAssembler
+    asm = DataFrameAssembler(4)
+    asm.feed('DATA,idx=0,adc=1,t=10')
+    asm.feed('DATA,idx=1,adc=1,t=10')
+    asm.feed('DATA,idx=2,adc=1,t=20')   # t trocado no meio
+    assert asm.feed('DATA,idx=3,adc=1,t=20') is None
+
+
+def test_run_do_4x4_publica_frame_e_grava_adc_csv():
+    """O run SLIDE/20261021_113235 (sensor:=4) saiu com taxel_* e adc.csv
+    vazios: o caminho de gravação só conhecia a linha ADC do 5×5."""
+    pytest.importorskip('rclpy')
+    import csv
+    import io
+    from touch_pack.palpation_gui import PalpationGUI
+    from touch_pack.touch_source import DataFrameAssembler
+
+    gui = PalpationGUI.__new__(PalpationGUI)
+    gui._touch_taxels, gui._touch_rows, gui._touch_cols = 16, 4, 4
+    gui._adc_pub_ok = gui._adc_pub_bad = 0
+    gui._adc_bad_warn_t = 0.0
+    gui.get_logger = lambda: _StubLog()
+    gui._data_asm = DataFrameAssembler(16)
+    gui._experiment_active = lambda: True
+    pub = []
+    gui._touch_frame_pub = type('P', (), {'publish': lambda s, m: pub.append(m)})()
+    gui._touch_event_pub = type('P', (), {'publish': lambda s, m: None})()
+    import threading
+    gui._lock = threading.Lock()
+    buf = io.StringIO()
+    gui._ref_adc_writer = csv.writer(buf)
+    gui._ref_spike_writer = gui._ref_cn_writer = csv.writer(io.StringIO())
+
+    gui._on_raw_lines(_data_lines(range(2000, 2016), 5_000_000)
+                      + ['TOTAL,t=5000000,Iexc=0,Iinh=0,Ifinal=0\r\n'])
+    assert len(pub) == 1
+    assert list(pub[0].taxels) == list(range(2000, 2016))
+    assert pub[0].t_us == 5_000_000
+    row = buf.getvalue().strip().split(',')
+    assert row[0] == '5.0' and row[1:] == [str(v) for v in range(2000, 2016)]

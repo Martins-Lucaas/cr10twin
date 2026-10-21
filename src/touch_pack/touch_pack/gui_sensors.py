@@ -35,6 +35,7 @@ from .constants import (
     RUN_CN_CSV,
     RUN_SENSORS_CSV,
     RUN_SPIKES_CSV,
+    discard_run_files,
     new_run_id,
     run_dir,
     taxel_frame_to_physical,
@@ -58,6 +59,8 @@ from .ui_helpers import (
 )
 from std_msgs.msg import Float32, String
 from touch_pack_msgs.msg import TouchFrame
+
+from .touch_source import DataFrameAssembler
 
 
 # Figura do toque + matplotlib: import OPCIONAL. Numa máquina sem matplotlib a
@@ -500,7 +503,8 @@ class SensorsMixin:
         `auto` marca que quem abriu foi o início da palpação, e não o botão —
         só a gravação automática é fechada sozinha no fim do run."""
         try:
-            out_dir = run_dir(mode or '', run_id or new_run_id())
+            out_dir = run_dir(mode or '', run_id or new_run_id(),
+                              sensor=self._touch_spec.key)
             path = os.path.join(out_dir, RUN_SENSORS_CSV)
             fh = open(path, 'w', newline='')
             writer = csv.writer(fh)
@@ -518,6 +522,7 @@ class SensorsMixin:
             self._rec_t0 = time.time()
             self._rec_count = 0
             self._rec_auto = bool(auto)
+            self._rec_run_id = run_id if auto else None
             (self._ref_adc_fh, self._ref_adc_writer,
              self._ref_spike_fh, self._ref_spike_writer,
              self._ref_cn_fh, self._ref_cn_writer) = ref
@@ -525,6 +530,25 @@ class SensorsMixin:
         self._set_rec_status(f'recording → {_rel_run(path)}', OK)
         self._rec_after = self.root.after(
             self._REC_STATUS_MS, self._recording_status_tick)
+    def _cb_learning_run(self, msg) -> None:
+        """Thread do ROS: o explorer avisou que o run é de aprendizado da
+        home. O descarte mexe em widgets, então vai para a thread do Tk."""
+        self.root.after(0, self._discard_learning_recording, str(msg.data))
+
+    def _discard_learning_recording(self, run_id: str) -> None:
+        """Run de aprendizado não é gravado: fecha a gravação automática
+        dele e apaga os CSVs que a GUI abriu. Gravação MANUAL não é tocada."""
+        if not (self._rec_auto and self._rec_fh is not None
+                and getattr(self, '_rec_run_id', None) == run_id):
+            return
+        out_dir = os.path.dirname(self._rec_path)
+        self._stop_recording()
+        discard_run_files(out_dir, [RUN_SENSORS_CSV, RUN_ADC_CSV,
+                                    RUN_SPIKES_CSV, RUN_CN_CSV])
+        self._set_rec_status(
+            'home learning run — not recorded (the next run here records)',
+            TEXT_MUTED)
+
     def _record_row(self, i_final: float) -> None:
         """Grava UMA linha do stream força+toque. Chamado por _on_touch_sample
         (thread serial, ~1 kHz) — é isto que dá ao sensors.csv a taxa de 1 kHz.
@@ -592,6 +616,19 @@ class SensorsMixin:
         return (adc_fh, adc_w, spike_fh, spike_w, cn_fh, cn_w)
     def _on_raw_lines(self, lines: list) -> None:
         """Tap das linhas brutas do firmware (thread serial, ~1 kHz por chunk)."""
+        # 4×4: as linhas DATA de uma varredura viram UMA linha ADC (o
+        # protocolo do 5×5) antes de tudo — sem isto o run do 4×4 saía com
+        # taxel_* e adc.csv vazios (SLIDE/20261021_113235).
+        if any(ln.startswith('DATA') for ln in lines):
+            asm = self._data_asm
+            out = []
+            for ln in lines:
+                if ln.startswith('DATA'):
+                    ln = asm.feed(ln)
+                    if ln is None:
+                        continue
+                out.append(ln)
+            lines = out
         # Republica o tátil completo em ROS SÓ quando há
         # experimento/gravação (_experiment_active): é o que o
         # palpation_logger assina para juntar taxels+eventos no CSV do

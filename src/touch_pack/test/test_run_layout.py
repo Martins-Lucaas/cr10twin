@@ -131,10 +131,19 @@ def test_logger_writes_the_whole_run_into_one_folder(tmp_path, monkeypatch):
     finally:
         rclpy.shutdown()
 
-    d = tmp_path / 'MATRIX_MAP' / '20260812_143012'
+    # Sensor default do logger é o 5×5 → touch_5x5/.
+    d = tmp_path / 'touch_5x5' / 'MATRIX_MAP' / '20260812_143012'
     assert (d / RUN_SAMPLES_CSV).is_file()
     assert (d / RUN_PARAMS_JSON).is_file()
     # params.json carrega o run_id: um arquivo levado para fora da pasta
     # ainda se identifica.
     with open(d / RUN_PARAMS_JSON) as fh:
         assert json.load(fh)['run_id'] == '20260812_143012'
+
+
+def test_runs_de_cada_sensor_de_toque_ficam_separados(tmp_path):
+    """4×4 e 5×5 têm grade e protocolo diferentes: os runs não se misturam."""
+    d4 = run_dir('SLIDE', '20261021_120000', base=str(tmp_path), sensor='4')
+    d5 = run_dir('SLIDE', '20261021_120000', base=str(tmp_path), sensor='5')
+    assert d4 == str(tmp_path / 'touch_4x4' / 'SLIDE' / '20261021_120000')
+    assert d5 == str(tmp_path / 'touch_5x5' / 'SLIDE' / '20261021_120000')

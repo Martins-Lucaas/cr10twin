@@ -83,6 +83,7 @@ _PHASE_ENDED = ('IDLE', 'DONE', 'ABORTED', 'FROZEN')
 # Constantes compartilhadas (fonte única GUI ↔ explorer ↔ nós auxiliares).
 from .constants import (
     ARM_JOINTS, HAND_JOINTS, HAND_POINT_DEG, POINTING_SEED_DEG,
+    LEARNING_RUN_TOPIC,
     FORCE_ABORT_LIMIT_N as _FORCE_ABORT_LIMIT_N,
     CONTACT_ON_N as _CONTACT_ON_N,
     CONTACT_OFF_FRAC as _CONTACT_OFF_FRAC,
@@ -163,6 +164,7 @@ from .gui_ft_charts import FtChartsMixin
 from .gui_matrix import MatrixMixin
 from .lc_filter import QOS_SENSOR   # o mesmo perfil que os nós de sensor usam
 from .gui_sensors import SensorsMixin
+from .touch_source import DataFrameAssembler
 from .gui_poses import PosesMixin
 from .gui_robot import RobotMixin, SERVOJ_DEADBAND_RAD  # noqa: F401
 from .gui_hand import HandMixin
@@ -230,6 +232,7 @@ try:
     from .touch_source import (
         TouchSensorSource, TouchFigure,
         ROWS as TOUCH_ROWS, COLS as TOUCH_COLS, NUM_TAXELS as TOUCH_TAXELS,
+        VREF,
     )
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from matplotlib.animation import FuncAnimation
@@ -241,6 +244,7 @@ except Exception:  # pragma: no cover
     FuncAnimation: Any = None
     TOUCH_ROWS = TOUCH_COLS = 4
     TOUCH_TAXELS = 16
+    VREF = 3.3
     _TOUCH_PLOT_OK = False
 
 
@@ -389,6 +393,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # Comunicação ROS (palpation/wrench)
         self._start_pub = self.create_publisher(
             PalpationStart, '/palpation/start', QOS_COMMAND)
+        # Run de aprendizado da home: a gravação automática é descartada.
+        self.create_subscription(
+            String, LEARNING_RUN_TOPIC, self._cb_learning_run, QOS_COMMAND)
         self._stop_pub = self.create_publisher(
             String, '/palpation/stop', 10)
         self._pause_pub = self.create_publisher(
@@ -715,6 +722,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # o CSV precisa distinguir "não medi" de "medi errado".
         self._adc_pub_ok = 0
         self._adc_pub_bad = 0
+        self._data_asm = DataFrameAssembler(self._touch_taxels)
         self._adc_bad_warn_t = 0.0
         # `Any`: nascem None e só viram objeto quando a aba Sensores sobe
         # (e só se _TOUCH_PLOT_OK). Todo uso é guardado por essa flag ou por
@@ -766,6 +774,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # True quando a gravação foi aberta pelo início da palpação (e não
         # pelo botão): só essa é fechada sozinha em DONE/ABORTED.
         self._rec_auto: bool = False
+        self._rec_run_id: str | None = None   # run da gravação automática
         # CSVs "crus" gravados em paralelo ao sensors.csv, no MESMO instante
         # de início/fim e com o MESMO timestamp no nome: adc_*, spikes_*,
         # cuneiformes_* — idênticos ao plotter de coleta standalone. Alimentados
@@ -795,11 +804,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # palpation_logger spawnado pela GUI quando ela roda standalone
         # (fora do launch) — sem ele nenhum run é gravado em ~/touch_pack_runs.
         self._logger_proc: subprocess.Popen | None = None
-        # Mini-painel de leitura da célula na aba Controle Manual (modo
-        # touch_tool).
+        # Mini-painel de Fz da FA7155 na aba Controle Manual.
         self._mlc_force_lbl = None
-        self._mlc_normal_lbl = None
-        self._mlc_voltage_lbl = None
         self._mlc_status_lbl = None
 
         # Poses & Movimentos
@@ -866,6 +872,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._mirror_poll_thread.start()
 
         self.root.after(100, self._refresh_status_panel)
+        self.root.after(100, self._refresh_manual_fz)
         # Abre a serial do STM32 (best-effort) e dispara o loop de redesenho
         # da figura embutida na aba Sensores.
         self._start_touch_source()
@@ -1197,6 +1204,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # dezenas de widgets por tick com a aba escondida.
         self._palp_tab_frame = palp_parent
         self._lc_tab_frame = tab_lc
+        self._man_tab_frame = tab_man
         # Manipulação 3D: layout próprio (a viewport precisa da altura toda —
         # nada de _scrollable, que fixaria a altura do conteúdo).
         if tab_manip is not None:
@@ -1989,11 +1997,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
 
         # Coluna direita: adapta ao efetuador final
         #   hand       → controle da mão COVVI (sliders + presets + grips)
-        #   touch_tool → leitura ao vivo da célula de carga
+        #   ambos      → Fz ao vivo da FA7155 (abaixo, no modo hand)
         if self._end_effector == 'hand':
             self._build_manual_hand_controls(col_hand)
-        else:
-            self._build_manual_lc_panel(col_hand)
+        self._build_manual_lc_panel(col_hand)
 
     def _build_manual_hand_controls(self, col_hand: tk.Frame) -> None:
         """Coluna direita do Controle Manual no modo `hand`: sliders da mão
@@ -2064,50 +2071,88 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                  'Moves the sim (joints) + sends SetCurrentGrip to the real hand (ECI).')
 
     def _build_manual_lc_panel(self, col_hand: tk.Frame) -> None:
-        """Coluna direita do Controle Manual no modo `touch_tool`: leitura ao
-        vivo da célula de carga (espelha _refresh_lc_panel). É read-only — a
-        conexão do receptor, a zeragem (tare) e a calibração ficam na aba
-        dedicada "Célula de Carga" para manter este painel enxuto."""
-        card = self._card(col_hand, 'Load Cell — live reading')
+        """Leitura ao vivo do Fz da FA7155 no Controle Manual (read-only).
+        Mostra o mesmo valor da aba "6 Axes" (filtrado se o SG estiver
+        ligado lá); zeragem e os outros eixos ficam na aba "Load Cell"."""
+        card = self._card(col_hand, 'FA7155 — Fz (live)', expand=False)
 
-        row_f = tk.Frame(card, bg=PANEL); row_f.pack(fill='x', pady=(6, 2))
-        tk.Label(row_f, text='Total Force (calibration)', font=FONT_LBL,
-                 bg=PANEL, fg=TEXT_MUTED).pack(anchor='w')
         self._mlc_force_lbl = tk.Label(
-            row_f, text='—   N', font=FONT_BIG, bg=PANEL, fg=TEXT_DIM)
-        self._mlc_force_lbl.pack(anchor='w', pady=(2, 0))
+            card, text='—   N', font=FONT_BIG, bg=PANEL, fg=TEXT_DIM)
+        self._mlc_force_lbl.pack(anchor='w', pady=(6, 0))
 
-        tk.Frame(card, bg=BORDER, height=1).pack(fill='x', pady=6)
-
-        row_n = tk.Frame(card, bg=PANEL); row_n.pack(fill='x', pady=(2, 2))
-        tk.Label(row_n, text='Normal Force ⊥ table  (+compression / −tension)',
-                 font=FONT_LBL, bg=PANEL, fg=TEXT_MUTED).pack(anchor='w')
-        self._mlc_normal_lbl = tk.Label(
-            row_n, text='—   N', font=FONT_BIG, bg=PANEL, fg=TEXT_DIM)
-        self._mlc_normal_lbl.pack(anchor='w', pady=(2, 0))
-
-        tk.Frame(card, bg=BORDER, height=1).pack(fill='x', pady=6)
-
-        row_v = tk.Frame(card, bg=PANEL); row_v.pack(fill='x', pady=(2, 2))
-        tk.Label(row_v, text='Sensor Voltage', font=FONT_LBL,
-                 bg=PANEL, fg=TEXT_MUTED).pack(side='left')
-        self._mlc_voltage_lbl = tk.Label(
-            row_v, text='—  V', font=FONT_MONO, bg=PANEL, fg=TEXT_DIM)
-        self._mlc_voltage_lbl.pack(side='right')
-
-        row_s = tk.Frame(card, bg=PANEL); row_s.pack(fill='x', pady=(2, 2))
-        tk.Label(row_s, text='Board', font=FONT_LBL,
+        row_s = tk.Frame(card, bg=PANEL); row_s.pack(fill='x', pady=(4, 0))
+        tk.Label(row_s, text='Link', font=FONT_LBL,
                  bg=PANEL, fg=TEXT_MUTED).pack(side='left')
         self._mlc_status_lbl = tk.Label(
-            row_s, text='OFFLINE', font=FONT_LBL, bg=PANEL, fg=TEXT_DIM)
+            row_s, text='no data', font=FONT_LBL, bg=PANEL, fg=TEXT_DIM)
         self._mlc_status_lbl.pack(side='right')
 
-        tk.Label(card,
-                 text='Receiver connection and tare live in '
-                      'the “Load Cell” tab.',
-                 font=FONT_SMALL, bg=PANEL, fg=TEXT_MUTED, anchor='w',
-                 justify='left', wraplength=300
-                 ).pack(fill='x', pady=(8, 0))
+        # Mini-heatmap do toque: grade de retângulos num Canvas, e não a
+        # TouchFigure — a figura matplotlib custa 20–26 ms por frame (ver
+        # _retune_touch_anim) e aqui bastam rows×cols cores a 10 Hz.
+        if self._touch_source is None or not _TOUCH_PLOT_OK:
+            return
+        from matplotlib import colormaps, colors as mcolors
+        jet = colormaps['jet']
+        self._mlc_lut = [mcolors.to_hex(jet(i / 63)) for i in range(64)]
+        rows, cols = self._touch_rows, self._touch_cols
+        hcard = self._card(col_hand, f'Touch Sensor {rows}×{cols} — heatmap',
+                           expand=False)
+        cell = 34
+        cv = tk.Canvas(hcard, width=cols * cell, height=rows * cell,
+                       bg=PANEL, highlightthickness=0)
+        cv.pack(anchor='w', pady=(6, 0))
+        self._mlc_heat_cv = cv
+        self._mlc_heat_ids = [
+            [cv.create_rectangle(c * cell, r * cell, (c + 1) * cell - 2,
+                                 (r + 1) * cell - 2, fill=BORDER, width=0)
+             for c in range(cols)] for r in range(rows)]
+        self._mlc_heat_fill = [[BORDER] * cols for _ in range(rows)]
+        self._mlc_heat_lbl = tk.Label(
+            hcard, text=f'0 – {VREF:.1f} V (jet), same view as the Sensors tab',
+            font=FONT_SMALL, bg=PANEL, fg=TEXT_MUTED, anchor='w')
+        self._mlc_heat_lbl.pack(fill='x', pady=(4, 0))
+
+    def _paint_manual_heatmap(self) -> None:
+        """Pinta a grade com o último frame; cinza se o STM está mudo."""
+        src = self._touch_source
+        fresh = src.is_fresh()
+        volt = src.view_voltages() if fresh else None
+        n = len(self._mlc_lut) - 1
+        for r, ids in enumerate(self._mlc_heat_ids):
+            for c, iid in enumerate(ids):
+                if volt is None:
+                    col = BORDER
+                else:
+                    k = int(round(min(max(volt[r, c] / VREF, 0.0), 1.0) * n))
+                    col = self._mlc_lut[k]
+                # Só toca no item que mudou de cor: o Tk repinta por item.
+                if col != self._mlc_heat_fill[r][c]:
+                    self._mlc_heat_fill[r][c] = col
+                    self._mlc_heat_cv.itemconfig(iid, fill=col)
+
+    def _refresh_manual_fz(self) -> None:
+        """Repinta o Fz e o heatmap do Controle Manual a 10 Hz, só com a aba
+        à vista."""
+        try:
+            if (self._mlc_force_lbl is not None
+                    and self._tab_visible(getattr(self, '_man_tab_frame', None))):
+                if getattr(self, '_mlc_heat_cv', None) is not None:
+                    self._paint_manual_heatmap()
+                with self._lock:
+                    sg_on = getattr(self, '_ft_sg_on', False)
+                    fz = (self._ft_smooth if sg_on else self._ft_wrench)['fz']
+                    ts = self._ft_last_ts
+                age = (time.time() - ts) if ts > 0.0 else None
+                if age is not None and age < 1.0:
+                    self._mlc_force_lbl.config(text=f'{fz:+8.3f} N', fg=TEXT)
+                    self._mlc_status_lbl.config(text='live', fg=OK)
+                else:
+                    self._mlc_force_lbl.config(text='—   N', fg=TEXT_DIM)
+                    self._mlc_status_lbl.config(
+                        text='no data' if age is None else 'stale', fg=WARN)
+        finally:
+            self.root.after(100, self._refresh_manual_fz)
 
 
     def _joint_row(self, parent, *, label, unit, var,

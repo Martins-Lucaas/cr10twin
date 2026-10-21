@@ -148,3 +148,96 @@ def test_cabecalho_da_planilha_tem_os_seis_eixos():
         assert f'ft_{a}_nm' in cols
     assert cols.index('ft_age_ms') < cols.index('v00')
     assert len(cols) == 7 + 7 + 25
+
+
+# ── Fz no Controle Manual ─────────────────────────────────────────────────
+
+class _Lbl:
+    def __init__(self):
+        self.text = None
+
+    def config(self, text=None, fg=None):
+        self.text = text
+
+
+def _gui_fz():
+    import types
+    g = _gui()
+    g._mlc_force_lbl, g._mlc_status_lbl = _Lbl(), _Lbl()
+    g._tab_visible = lambda *_f: True
+    g.root = types.SimpleNamespace(after=lambda *_a: None)
+    return g
+
+
+def test_fz_do_controle_manual_acompanha_o_wrench():
+    """O painel existia mas ninguém o repintava — ficava em '—' com a célula
+    no ar. Aqui o Fz que chega no callback tem de aparecer no label."""
+    g = _gui_fz()
+    g._cb_ft_wrench(_wrench(1.0, 2.0, -4.25, 0, 0, 0))
+    g._refresh_manual_fz()
+    assert g._mlc_force_lbl.text.strip() == '-4.250 N'
+    assert g._mlc_status_lbl.text == 'live'
+
+
+def test_fz_do_controle_manual_nao_mostra_valor_velho():
+    import time
+    g = _gui_fz()
+    g._refresh_manual_fz()
+    assert g._mlc_status_lbl.text == 'no data'
+    g._cb_ft_wrench(_wrench(0, 0, 3.0, 0, 0, 0))
+    g._ft_last_ts = time.time() - 5.0
+    g._refresh_manual_fz()
+    assert g._mlc_force_lbl.text.startswith('—')
+    assert g._mlc_status_lbl.text == 'stale'
+
+
+# ── Heatmap do toque no Controle Manual ───────────────────────────────────
+
+@pytest.mark.parametrize('n', [4, 5])
+def test_heatmap_do_manual_tem_a_orientacao_da_aba_sensores(n):
+    """O 5×5 tem o _VIEW_ROT180 e o 4×4 não: o mini-heatmap tem de mostrar o
+    mesmo canto que o TouchFigure (snapshot + rot90×2) nos dois."""
+    import numpy as np
+    from touch_pack.touch_source import TouchSensorSource
+    src = TouchSensorSource(rows=n, cols=n, udp_broadcast=False)
+    src.voltage_frame = np.arange(n * n, dtype=float).reshape(n, n)
+    np.testing.assert_array_equal(src.view_voltages(),
+                                  np.rot90(src.snapshot()['volt'], 2))
+
+
+class _Canvas:
+    def __init__(self):
+        self.fill = {}
+
+    def itemconfig(self, iid, fill=None):
+        self.fill[iid] = fill
+
+
+def _gui_heat(volt, fresh):
+    import types
+    import numpy as np
+    from touch_pack.palpation_gui import BORDER
+    g = _gui()
+    g._touch_source = types.SimpleNamespace(
+        is_fresh=lambda: fresh, view_voltages=lambda: np.asarray(volt))
+    g._mlc_lut = ['#lo', '#mid', '#hi']
+    g._mlc_heat_cv = _Canvas()
+    g._mlc_heat_ids = [[0, 1], [2, 3]]
+    g._mlc_heat_fill = [[BORDER] * 2 for _ in range(2)]
+    return g
+
+
+def test_heatmap_do_manual_pinta_pela_tensao():
+    g = _gui_heat([[0.0, 3.3], [1.65, 9.9]], fresh=True)
+    g._paint_manual_heatmap()
+    # 9,9 V satura no topo da escala em vez de estourar o índice da LUT.
+    assert g._mlc_heat_cv.fill == {0: '#lo', 1: '#hi', 2: '#mid', 3: '#hi'}
+
+
+def test_heatmap_do_manual_apaga_com_o_stm_mudo():
+    from touch_pack.palpation_gui import BORDER
+    g = _gui_heat([[3.3, 3.3], [3.3, 3.3]], fresh=True)
+    g._paint_manual_heatmap()
+    g._touch_source.is_fresh = lambda: False
+    g._paint_manual_heatmap()
+    assert set(g._mlc_heat_cv.fill.values()) == {BORDER}
