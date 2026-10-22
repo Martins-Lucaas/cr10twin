@@ -135,3 +135,24 @@ def test_driver_novo_recebe_a_trava_de_volta():
     i_reimpoe = corpo.find('emergency_stop()')
     assert i_atribui < i_reimpoe, (
         'a trava tem de ser reimposta depois de o driver entrar em serviço')
+
+
+# ── E-Stop vindo do CONTROLADOR (botão físico) ────────────────────────
+
+def test_alarme_do_controlador_trava_a_gui_e_ignora_leitura_velha():
+    """RobotMode 9 visto pelo heartbeat trava a GUI sozinha; um 9 lido antes
+    de um rearme que terminou depois NÃO pode re-travar o braço liberado."""
+    from types import SimpleNamespace
+    engajou = []
+    gui = SimpleNamespace(_estop_latched=False, _estop_released_at=10.0,
+                          _set_status=lambda *a: None)
+    gui._estop_engage = lambda: (engajou.append(1),
+                                 setattr(gui, '_estop_latched', True))
+    alarme = gui_robot.RobotMixin._on_controller_alarm
+
+    alarme(gui, 9.0)                    # lido antes do rearme: velho
+    assert not engajou and not gui._estop_latched
+    alarme(gui, 11.0)                   # lido depois: trava
+    assert engajou == [1] and gui._estop_latched
+    alarme(gui, 12.0)                   # já travada: não reengata
+    assert engajou == [1]

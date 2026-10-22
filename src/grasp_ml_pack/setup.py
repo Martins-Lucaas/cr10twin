@@ -27,7 +27,6 @@ setup(
     maintainer_email='lucaspmartins14@gmail.com',
     description='Conveyor cell pick-and-sort system — CR10 + COVVI Hand',
     license='MIT',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'object_detector      = grasp_ml_pack.object_detector:main',

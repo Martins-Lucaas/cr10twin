@@ -74,7 +74,7 @@ class ManualExtrasMixin:
         card = self._card(parent, 'Cartesian jog — TCP', expand=False)
 
         self.jog_step_mm = tk.DoubleVar(value=1.0)
-        self.jog_frame_var = tk.StringVar(value='tool')
+        self.jog_frame_var = tk.StringVar(value='base')
 
         row = tk.Frame(card, bg=PANEL)
         row.pack(fill='x', pady=(0, 8))

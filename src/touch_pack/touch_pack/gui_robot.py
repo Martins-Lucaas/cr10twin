@@ -432,8 +432,17 @@ class RobotMixin:
 
             log.info('[ROBOT] Executando sequência de enable '
                      '(ClearError → EnableRobot → SpeedFactor → SetCollisionLevel → PayLoad)…')
-            drv.enable()
-            log.info('[ROBOT] Enable concluído')
+            try:
+                drv.enable()
+                log.info('[ROBOT] Enable concluído')
+            except CR10RealDriverError:
+                # Em ALARME (modo 9, ex.: E-Stop físico apertado) o enable não
+                # passa — mas a conexão sim. Entrega o driver mesmo assim: o
+                # heartbeat vê o 9 e trava a GUI, e o RECONECTAR rearma depois.
+                if not re.search(r'\{9\}', drv.robot_mode() or ''):
+                    raise
+                log.warning('[ROBOT] Controlador em ALARME — conectado sem '
+                            'enable; a GUI vai travar o E-STOP.')
 
             # Aguarda o firmware completar EnableRobot antes de ler o modo.
             log.info('[ROBOT] Aguardando firmware (1.5 s)…')
@@ -659,6 +668,13 @@ class RobotMixin:
                         return
                     continue
                 failures = 0
+                # Modo 9 = ERROR: E-Stop físico, chave de software de outra
+                # sessão ou outro alarme. Sem isto a GUI seguia mostrando
+                # E-STOP livre e o operador tinha de travar para depois soltar.
+                if re.search(r'\{9\}', resp) and \
+                        not getattr(self, '_estop_latched', False):
+                    self.root.after(0, lambda t=time.monotonic():
+                                    self._on_controller_alarm(t))
 
             # Detecção de drag por movimento de juntas
             try:
@@ -948,10 +964,25 @@ class RobotMixin:
                 self._refresh_estop_button()
                 return
         self._estop_latched = False
+        self._estop_released_at = time.monotonic()
         self._refresh_estop_button()
         self._set_status(
             'E-STOP released — robot re-enabled. Experiments can start again.',
             OK)
+    def _on_controller_alarm(self, t_read: float) -> None:
+        """Heartbeat viu RobotMode 9: trava a GUI como se o E-STOP fosse
+        pressionado aqui, para que um toque só rearme o braço.
+
+        `t_read` descarta leitura velha: um 9 lido ANTES de um rearme que
+        terminou depois re-travaria o braço recém-liberado."""
+        if getattr(self, '_estop_latched', False) or \
+                t_read < getattr(self, '_estop_released_at', 0.0):
+            return
+        self._estop_engage()
+        self._set_status(
+            'Controller in ALARM (RobotMode 9) — physical E-Stop or another '
+            'alarm. Release the physical button, then press RECONECTAR.',
+            DANGER)
     def _refresh_estop_button(self) -> None:
         """Rótulo/cor do botão dizem em qual metade do ciclo ele está.
 

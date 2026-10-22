@@ -233,7 +233,7 @@ class MirrorNode(Node):
             return   # palpação ativa → ServoJ loop assume
         if not msg.points:
             return
-        target = list(msg.points[-1].positions)
+        target = list(list(msg.points)[-1].positions)
         if len(target) < 6:
             return
         with self._movj_lock:
