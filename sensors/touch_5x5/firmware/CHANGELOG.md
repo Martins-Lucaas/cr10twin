@@ -216,6 +216,23 @@ ser diagnosticado.
 
 ---
 
+## [13] Linhas 3/4 e colunas 0/1 do frame trocadas
+
+Visto na bancada em 23/10/2026, no heatmap da GUI (numeração física, que é o
+frame rodado 180° por `taxel_frame_to_physical`): linha física 0↔1 e coluna
+física 3↔4, ou seja, linha 3↔4 e coluna 0↔1 do frame. Correção na origem:
+os pinos dos bits 3 e 4 da máscara (PC3/PC0) e os ranks 1 e 2 do scan do
+ADC (canais 0/3) foram cruzados. **Gravações anteriores a esta data têm esses
+taxels trocados.**
+
+## [14] Ganhos: G_SA 40 → 20, G_RA 1000 → 2000
+
+Escolha de bancada em 23/10/2026. Limiares resultantes no modelo: SA dispara
+com ADC < ~3322 (antes ~3709); RA com variação de ~198 counts em 25 ms
+(antes ~396). G_SA = 20 é o mesmo valor do firmware 4×4.
+
+---
+
 ## NÃO corrigido, de propósito
 
 ### `select_row()` ignora o parâmetro `row`

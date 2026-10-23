@@ -27,14 +27,14 @@ static uint8_t row_mask = 0x1E;
 #define B_RA 0.2f
 #define C_RA -65.0f
 #define D_RA 2.0f
-#define G_RA 1000.0f
+#define G_RA 2000.0f
 
 /* Adap lenta */
 #define A_SA 0.02f
 #define B_SA 0.2f
 #define C_SA -65.0f
 #define D_SA 8.0f
-#define G_SA 40.0f
+#define G_SA 20.0f
 
 //* Cuneate Neuron MM
 #define A_CN 0.02f
@@ -569,8 +569,10 @@ void select_row(uint8_t row)
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_10, (row_mask & (1<<0)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_5,  (row_mask & (1<<1)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3,  (row_mask & (1<<2)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3,  (row_mask & (1<<3)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0,  (row_mask & (1<<4)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    // Bits 3/4 cruzados de propósito: na bancada (23/10/2026) as linhas
+    // físicas 0 e 1 do heatmap vinham trocadas = linhas 3/4 do frame.
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0,  (row_mask & (1<<3)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3,  (row_mask & (1<<4)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     row_mask = row5(row_mask);
 }
 
@@ -1176,9 +1178,11 @@ void MX_ADC1_Init(void)
     hadc1.Init.DMAContinuousRequests = ENABLE;
     HAL_ADC_Init(&hadc1);
 
+    // 0 e 3 cruzados de propósito: na bancada (23/10/2026) as colunas
+    // físicas 3 e 4 do heatmap vinham trocadas = colunas 0/1 do frame.
     uint32_t ch[COLS] = {
-        ADC_CHANNEL_0,
         ADC_CHANNEL_3,
+        ADC_CHANNEL_0,
         ADC_CHANNEL_4,
         ADC_CHANNEL_6,
         ADC_CHANNEL_9,
