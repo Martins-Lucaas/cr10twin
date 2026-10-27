@@ -1,6 +1,6 @@
 ################################################################################
 # Automatically-generated file. Do not edit!
-# Toolchain: GNU Tools for STM32 (13.3.rel1)
+# Toolchain: GNU Tools for STM32 (14.3.rel1)
 ################################################################################
 
 -include ../makefile.init
@@ -64,8 +64,8 @@ all: main-build
 main-build: Modelo\ Neuromorfico.elf secondary-outputs
 
 # Tool invocations
-Modelo\ Neuromorfico.elf Modelo\ Neuromorfico.map: $(OBJS) $(USER_OBJS) C:\Users\Gabi\OneDrive\Documentos\gabi\Desktop\Neuronio\Modelo\ Neuromorfico\STM32F767ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Users\Gabi\OneDrive\Documentos\gabi\Desktop\Neuronio\Modelo Neuromorfico\STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Modelo\ Neuromorfico.elf Modelo\ Neuromorfico.map: $(OBJS) $(USER_OBJS) /home/biolabrobo2/cr10twin/sensors/touch_5x5/cbeb/Modelo\ Neuromorfico/STM32F767ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Modelo Neuromorfico.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"/home/biolabrobo2/cr10twin/sensors/touch_5x5/cbeb/Modelo Neuromorfico/STM32F767ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Modelo Neuromorfico.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
