@@ -39,6 +39,7 @@ def node(_ros):
     # Pose de HOME do banco: TCP exatamente na vertical para baixo.
     n._q_now = lambda: np.deg2rad([0, 0, -90, 0, 90, 0]).astype(float)
     n._stream_q = lambda *a, **k: None
+    n._tare_here = lambda *a, **k: True
     n._settle = lambda *a, **k: None
     n._speed_factor_pct = 10.0
     yield n

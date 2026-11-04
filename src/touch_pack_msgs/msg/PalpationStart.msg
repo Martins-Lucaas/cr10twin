@@ -113,13 +113,20 @@ float32 step_dwell_s        # medição em CADA patamar (s); 0 = default 5 s
 # explorer cair nos PARÂMETROS ROS probe_align_* — mesmo contrato de
 # force_mod_shape acima, e é o que mantém o fluxo sem GUI funcionando.
 # Os numéricos em 0 significam "usar o default do explorer".
-string probe_align                # '' = usar parâmetros ROS | 'OFF' | 'ON'
+string probe_align                # '' = usar parâmetros ROS | 'OFF' | 'ON' | 'MANUAL'
 int32 probe_align_points          # toques de sonda (mín. 3, recomendado 4+)
 float32 probe_align_radius_mm     # raio do polígono de sondagem
 float32 probe_align_force_n       # setpoint dos toques; nunca excede force_n
 float32 probe_align_retract_mm    # retração linear antes de girar o punho
 float32 probe_align_tilt_max_deg  # desvio máximo aceito (teto duro 30°);
                                   # acima disso a calibração ABORTA o run
+
+# 'MANUAL' = ângulo de ataque ESCOLHIDO, para estudar contato oblíquo: um toque
+# vertical localiza o alvo e a aproximação volta a ele pelo eixo pedido. Só em
+# TOUCH e MANUAL: SLIDE e MATRIX_MAP tomam o eixo de ataque como normal da peça.
+# Reusa probe_align_force_n e, como folga até a peça, probe_align_retract_mm.
+float32 probe_align_manual_tilt_deg     # inclinação da vertical, 0 a 30° (fora = run recusado)
+float32 probe_align_manual_azimuth_deg  # rumo da ferramenta no XY do mundo; 0° = +X, 90° = +Y
 
 # ── Identidade do run no disco ────────────────────────────────────────
 # <AAAAMMDD_HHMMSS> do relógio de PAREDE, carimbado pela GUI. O logger e a
