@@ -306,6 +306,8 @@ class PalpationLogger(Node):
 
         self.create_subscription(
             PalpationStart, '/palpation/start', self._cb_start, _QOS_COMMAND)
+        self.create_subscription(
+            String, '/palpation/attack_ref', self._cb_attack_ref, 10)
         # Runs de aprendizado da home não são gravados (ver constants).
         self._learning_runs: set[str] = set()
         self.create_subscription(
@@ -343,6 +345,18 @@ class PalpationLogger(Node):
             f'palpation_logger ativo — gravando em {OUTPUT_DIR}/')
 
     # Callbacks
+    def _cb_attack_ref(self, msg: String) -> None:
+        """Alvo, partida e eixo do ângulo manual: só existem depois do toque,
+        então não cabem no params.json gravado no início do run."""
+        run_dir_ = self._run_dir
+        if run_dir_ is None:
+            return
+        try:
+            with open(os.path.join(run_dir_, 'attack_ref.json'), 'w') as fh:
+                fh.write(msg.data)
+        except OSError as exc:
+            self.get_logger().error(f'Falha ao gravar attack_ref: {exc}')
+
     def _cb_start(self, msg: PalpationStart) -> None:
         """Início de um novo run: cria CSV e dump dos parâmetros em JSON.
         O msg tipado vira dict (mesmas chaves dos campos) para o

@@ -27,6 +27,8 @@ API pública:
     angle_between_deg(a, b)             → float
     validate_fit(fit, ...)              → (ok, motivo)
     slope_along_deg(normal, dir_xy)     → float
+    attack_dir_from_tilt_azimuth(t, a)  → (3,) unitário
+    approach_start(target, attack, …)   → (ponto de partida, curso em m)
 """
 from __future__ import annotations
 
@@ -405,3 +407,29 @@ def validate_fit(fit: PlaneFit, *,
             f'{float(rms_max_m) * 1e3:.3f} mm — a superfície sondada não é '
             f'plana (curvatura, borda ou sujeira num dos toques)')
     return True, ''
+
+
+def attack_dir_from_tilt_azimuth(tilt_deg: float,
+                                 azimuth_deg: float) -> np.ndarray:
+    """Eixo de ataque pedido à mão: `tilt_deg` a partir da vertical para baixo,
+    com a ponta avançando no rumo `azimuth_deg` do XY do mundo (0° = +X)."""
+    t, a = math.radians(tilt_deg), math.radians(azimuth_deg)
+    return np.array([math.sin(t) * math.cos(a),
+                     math.sin(t) * math.sin(a),
+                     -math.cos(t)])
+
+
+def approach_start(target: np.ndarray, attack: np.ndarray, gap_m: float,
+                   tip_half_m: float) -> tuple[np.ndarray, float]:
+    """Partida da aproximação oblíqua: sobre a reta que passa por `target`,
+    alta o bastante para a aresta mais baixa da ponteira ficar `gap_m` acima
+    do alvo. Devolve (ponto, curso até o alvo em m).
+
+    Inclinar uma face de meia-diagonal `tip_half_m` abaixa a aresta em
+    tip_half·sen(θ); a folga vale a partir dela, não do centro da face.
+    """
+    attack = np.asarray(attack, dtype=float)
+    cos_t = -float(attack[2])
+    sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+    travel_m = (float(gap_m) + float(tip_half_m) * sin_t) / cos_t
+    return np.asarray(target, dtype=float) - travel_m * attack, travel_m

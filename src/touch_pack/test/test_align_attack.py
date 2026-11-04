@@ -23,6 +23,7 @@ def node(_ros):
     n = TactileExplorer()
     n._q_now = lambda: np.deg2rad([0, 0, -90, 0, 90, 0]).astype(float)
     n._stream_q = lambda *a, **k: None
+    n._tare_here = lambda *a, **k: True
     n._speed_factor_pct = 10.0
     with n._params_lock:
         n._target_force_n = 2.0

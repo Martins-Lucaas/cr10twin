@@ -1543,6 +1543,12 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # os modos, por isso mora nos avançados e não num grupo por modo.
         self.align_on_var      = tk.BooleanVar(
             value=bool(sv.get('probe_align_on', False)))
+        self.align_manual_var  = tk.BooleanVar(
+            value=bool(sv.get('probe_align_manual', False)))
+        self.align_manual_tilt_var = tk.DoubleVar(
+            value=_f('probe_align_manual_tilt_deg', 0.0))
+        self.align_manual_az_var = tk.DoubleVar(
+            value=_f('probe_align_manual_azimuth_deg', 0.0))
         self.align_points_var  = tk.IntVar(
             value=int(_f('probe_align_points', PROBE_ALIGN_POINTS_DEFAULT)))
         self.align_radius_var  = tk.DoubleVar(
@@ -1754,6 +1760,32 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                               f'Hard-capped at {PROBE_ALIGN_TILT_HARD_MAX_DEG:.0f}° — '
                               'beyond that J5 runs out of useful range and '
                               'the rotation would sweep the part.')
+        _manual_chk = tk.Checkbutton(
+            self._align_group, text='Manual attack angle (oblique contact)',
+            variable=self.align_manual_var,
+            bg=PANEL, fg=TEXT, activebackground=PANEL, activeforeground=TEXT,
+            selectcolor=PANEL, font=FONT_LBL, anchor='w', relief='flat',
+            bd=0, highlightthickness=0, cursor='hand2')
+        _manual_chk.pack(fill='x', pady=(6, 2))
+        _Tooltip(_manual_chk,
+                 'Touch and Manual modes only. One vertical touch finds the '
+                 'target, then the tool comes back to it along the angle set '
+                 'below. Replaces the surface probing, so Probe Points and '
+                 'Radius are ignored. The setpoint is the force along the '
+                 'tool axis, not the surface normal. Retract sets the '
+                 'clearance, and Max Descent Depth must cover the longer '
+                 'tilted approach. A flat tip touches on an edge, about half '
+                 'its width away from the target.')
+        self._param_row(self._align_group, label='Manual — Tilt',
+                         unit='°', var=self.align_manual_tilt_var,
+                         vmin=0.0, vmax=PROBE_ALIGN_TILT_HARD_MAX_DEG,
+                         step=1.0,
+                         hint='Tool angle away from vertical.')
+        self._param_row(self._align_group, label='Manual — Azimuth',
+                         unit='°', var=self.align_manual_az_var,
+                         vmin=-180.0, vmax=180.0, step=5.0,
+                         hint='Heading of the tip in the world XY plane as it '
+                              'approaches: 0° = +X, 90° = +Y.')
         self._on_align_toggle()
 
         # Coluna direita: botão de início (fixado no fundo) + feedback FT
@@ -4163,6 +4195,22 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 f'{align_radius:.1f} mm, recuo de {align_retract:.1f} mm '
                 f'antes de girar o punho, desvio máximo {align_tilt:.1f}°. '
                 f'Custa {align_points} descidas extras antes da medição.')
+        align_manual = align_on and bool(self.align_manual_var.get())
+        if align_manual and self.mode_var.get() not in ('TOUCH', 'MANUAL'):
+            self._starting_palpation = False
+            self._set_status(
+                'Manual attack angle runs only in Touch and Manual modes.',
+                DANGER)
+            return
+        manual_tilt = manual_az = 0.0
+        if align_manual:
+            try:
+                manual_tilt = float(self.align_manual_tilt_var.get())
+                manual_az = float(self.align_manual_az_var.get())
+            except (ValueError, tk.TclError):
+                self._starting_palpation = False
+                self._set_status('Manual attack angle is not a number.', DANGER)
+                return
 
         # ── MATRIX_MAP: gera e valida a grade ANTES de publicar ──────
         # Uma grade inválida tem de parar aqui, com o braço parado: depois
@@ -4227,6 +4275,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             'step_max_n': float(step_max),
             'step_dwell_s': float(step_dwell),
             'probe_align_on': bool(align_on),
+            'probe_align_manual': bool(self.align_manual_var.get()),
+            'probe_align_manual_tilt_deg': manual_tilt,
+            'probe_align_manual_azimuth_deg': manual_az,
             'probe_align_points': int(align_points),
             'probe_align_radius_mm': float(align_radius),
             'probe_align_force_n': float(align_force),
@@ -4266,7 +4317,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             # Calibração do ângulo de ataque. 'ON'/'OFF' explícitos: com o
             # campo preenchido o explorer IGNORA os parâmetros ROS
             # probe_align_* e obedece a GUI, que é a fonte visível ao usuário.
-            'probe_align':            'ON' if align_on else 'OFF',
+            'probe_align':            ('MANUAL' if align_manual
+                                       else 'ON' if align_on else 'OFF'),
+            'probe_align_manual_tilt_deg': manual_tilt,
+            'probe_align_manual_azimuth_deg': manual_az,
             'probe_align_points':     int(align_points),
             'probe_align_radius_mm':  float(align_radius),
             'probe_align_force_n':    float(align_force),
@@ -4395,6 +4449,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             payload.get('probe_align_retract_mm', 0.0))
         msg.probe_align_tilt_max_deg = float(
             payload.get('probe_align_tilt_max_deg', 0.0))
+        msg.probe_align_manual_tilt_deg = float(
+            payload.get('probe_align_manual_tilt_deg', 0.0))
+        msg.probe_align_manual_azimuth_deg = float(
+            payload.get('probe_align_manual_azimuth_deg', 0.0))
         # Carimbo de emissão: o tópico é TRANSIENT_LOCAL (o logger sobe depois
         # do publish e precisa do latch), então o explorer usa esta idade para
         # não confundir o latch de uma sessão anterior com um pedido novo.

@@ -30,7 +30,7 @@ import math
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32
+from std_msgs.msg import Empty, Float32, String
 from geometry_msgs.msg import WrenchStamped
 
 from .lc_filter import QOS_SENSOR   # BEST_EFFORT/KEEP_LAST(1), mesmo do receiver real
@@ -58,6 +58,10 @@ class SimForceBridge(Node):
             Float32, '/load_cell/force_net', QOS_SENSOR)
         self.create_subscription(
             WrenchStamped, '/sim/load_cell/wrench', self._on_wrench, QOS_SENSOR)
+        # Mesmo contrato do ft_receiver: o explorer para o run sem resposta.
+        self._tare_result_pub = self.create_publisher(
+            String, '/load_cell/tare_result', 10)
+        self.create_subscription(Empty, '/load_cell/tare', self._on_tare, 10)
         self.create_timer(1.0 / max(1.0, rate_hz), self._tick)
 
         self.get_logger().info(
@@ -68,6 +72,13 @@ class SimForceBridge(Node):
     def _on_wrench(self, msg: WrenchStamped) -> None:
         self._raw = self._sign * float(msg.wrench.force.z) - self._offset
         self._raw_ts = self.get_clock().now()
+
+    def _on_tare(self, _msg: Empty) -> None:
+        if self._raw is None:
+            self._tare_result_pub.publish(String(data='err;no_data;0'))
+            return
+        self._offset += self._raw
+        self._tare_result_pub.publish(String(data=f'ok;{self._offset!r};0.0'))
 
     def _tick(self) -> None:
         if self._raw is None or self._raw_ts is None:

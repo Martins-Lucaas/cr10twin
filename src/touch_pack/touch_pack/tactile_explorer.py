@@ -137,6 +137,7 @@ from .kinematics import (
     JOINT_MIN, JOINT_MAX, MIMIC_LIST as _MIMIC_LIST,
     T_TOUCH_TOOL_ATTACH,
 )
+from .explorer_attack import AttackMixin
 from .plane_probe import (
     angle_between_deg as _angle_between_deg,
     attack_dir_from_normal as _attack_dir_from_normal,
@@ -224,6 +225,7 @@ from .explorer_constants import (   # noqa: F401 — reexportação
     _QS_STEP_GROWTH, _QS_DX_FLOOR_M, _QS_FREE_RESET_TICKS,
     _QS_ARRIVE_S, _QS_TIMEOUT_S, _QS_RAMP_V_MS, _QS_RAMP_DF_CAP_N,
     _HOLD_STABLE_S, _HOLD_TIMEOUT_S, _HOLD_DWELL_S, _ALIGN_ORI_TOL_DEG,
+    _TIP_HALF_DIAG_M, _TARE_SETTLE_S, _TARE_TIMEOUT_S, _TARE_FREE_AIR_MAX_N,
     _ALIGN_TRANSIT_MS, _ALIGN_ZONE_EXTRA_M, _STEP_START_DEFAULT_N,
     _STEP_DWELL_DEFAULT_S, _FMOD_SHAPES, _FMOD_MIN_PTS_PER_CYCLE,
     _FMOD_DT_MIN_S, _SERVOJ_T_MIN_S, _FMOD_K_ADAPT_ALPHA,
@@ -254,7 +256,7 @@ from .stiffness import (            # noqa: F401 — reexportação
 )
 
 
-class TactileExplorer(Node):
+class TactileExplorer(AttackMixin, Node):
 
     def __init__(self):
         super().__init__('tactile_explorer')
@@ -439,6 +441,16 @@ class TactileExplorer(Node):
         # sempre. Zerado no início de cada experimento: a amostra pode ter
         # sido trocada, e um plano medido no run anterior não vale para ela.
         self._attack_dir: np.ndarray | None = None
+        # Ângulo manual: partida da aproximação oblíqua, e se a ferramenta
+        # está nessa reta (a saída tem de ser por ela, ver
+        # _withdraw_along_attack).
+        self._attack_start: np.ndarray | None = None
+        self._attack_engaged: bool = False
+        # True enquanto o zero da célula for o de uma pose inclinada. Sobrevive
+        # ao fim do run de propósito: quem desfaz é a próxima chegada à HOME.
+        self._tare_tilted: bool = False
+        self._tare_done = threading.Event()
+        self._tare_reply: str = ''
         # Configuração da calibração vinda da ÚLTIMA PalpationStart.
         # _align_from_msg=False mantém o caminho dos parâmetros ROS (fluxo
         # sem GUI); _cb_start o liga quando a mensagem traz probe_align.
@@ -520,6 +532,11 @@ class TactileExplorer(Node):
 
         cb = ReentrantCallbackGroup()
 
+        self._tare_pub = self.create_publisher(Empty, '/load_cell/tare', 10)
+        self._attack_ref_pub = self.create_publisher(
+            String, '/palpation/attack_ref', 10)
+        self.create_subscription(String, '/load_cell/tare_result',
+                                  self._cb_tare_result, 10, callback_group=cb)
         self.create_subscription(PalpationStart, '/palpation/start',
                                   self._cb_start, _QOS_COMMAND, callback_group=cb)
         self.create_subscription(String, '/palpation/stop',
@@ -1067,7 +1084,9 @@ class TactileExplorer(Node):
             started = self._start_from_msg(msg)
             if started:
                 with self._params_lock:
-                    learning = self._learned_contact_m is None
+                    # O ângulo manual não aprende a home: o run é o ensaio.
+                    learning = (self._learned_contact_m is None
+                                and not self._align_msg.get('manual', False))
                 if learning:
                     # Home sem contato aprendido: este run só rasteja para
                     # aprender a profundidade — não é dado de ensaio.
@@ -1177,8 +1196,8 @@ class TactileExplorer(Node):
             # ROS probe_align_*. Os numéricos em 0 = default do explorer,
             # resolvido em _align_params.
             _align = str(getattr(msg, 'probe_align', '') or '').upper().strip()
-            self._align_from_msg = _align in ('ON', 'OFF')
-            self._align_on = (_align == 'ON')
+            self._align_from_msg = _align in ('ON', 'OFF', 'MANUAL')
+            self._align_on = _align in ('ON', 'MANUAL')
             if self._align_from_msg:
                 self._align_msg = {
                     'points': int(getattr(msg, 'probe_align_points', 0) or 0),
@@ -1190,6 +1209,11 @@ class TactileExplorer(Node):
                         getattr(msg, 'probe_align_retract_mm', 0.0) or 0.0),
                     'tilt_max_deg': float(
                         getattr(msg, 'probe_align_tilt_max_deg', 0.0) or 0.0),
+                    'manual': _align == 'MANUAL',
+                    'manual_tilt_deg': float(getattr(
+                        msg, 'probe_align_manual_tilt_deg', 0.0) or 0.0),
+                    'manual_azimuth_deg': float(getattr(
+                        msg, 'probe_align_manual_azimuth_deg', 0.0) or 0.0),
                 }
             if msg.approach_speed_mms > 0.0:
                 # Slider "Descent Speed" da GUI (mm/s) = velocidade do estágio
@@ -2426,6 +2450,7 @@ class TactileExplorer(Node):
     # Fases
     def _phase_goto_home(self) -> bool:
         """HOME — trajectória batch ao JTC (S-curve interna) a ≤ 0.3 rad/s."""
+        self._withdraw_along_attack()
         self._set_phase('HOME')
         self._send_hand_pose(_HAND_POINTING_RAD)
 
@@ -2455,6 +2480,13 @@ class TactileExplorer(Node):
         else:
             self.get_logger().info(
                 f'HOME: orientação OK — tcp_z_world[2]={tcp_z_world[2]:.2f}')
+
+        # O zero da pose inclinada fica no ft_receiver depois do run; sem
+        # refazê-lo aqui, o próximo ensaio vertical o herdaria.
+        if self._tare_tilted:
+            if not self._tare_here('HOME'):
+                return False
+            self._tare_tilted = False
 
         # NÃO sobrescrever _current_q: _cb_joints já mantém o valor correto
         # a partir de /joint_states.
@@ -2555,6 +2587,12 @@ class TactileExplorer(Node):
             'tilt_max_deg': float(np.clip(
                 _or_default('tilt_max_deg', _ALIGN_TILT_MAX_DEG),
                 1.0, _ALIGN_TILT_HARD_MAX_DEG)),
+            # Sem saturação: o ângulo É a variável do ensaio, e trocá-lo em
+            # silêncio geraria dados de outro experimento. Ver
+            # _manual_attack_refusal.
+            'manual': bool(raw.get('manual', False)),
+            'manual_tilt_deg': float(raw.get('manual_tilt_deg', 0.0)),
+            'manual_azimuth_deg': float(raw.get('manual_azimuth_deg', 0.0)),
         }
 
     def _align_offsets(self, cfg: dict) -> tuple[np.ndarray, str, bool]:
@@ -2780,6 +2818,10 @@ class TactileExplorer(Node):
         attack = self._attack_dir
         if attack is None:
             return True
+        if self._attack_start is not None:
+            # Ângulo manual: girar na home desceria por outra reta, que não
+            # passa pelo alvo.
+            return self._goto_attack_start() == 'ok'
         out = self._rotate_to_attack(attack, label='ALIGN-REAPPLY')
         if out != 'ok':
             self.get_logger().error(
@@ -2789,7 +2831,7 @@ class TactileExplorer(Node):
         self.get_logger().info(
             f'[ALIGN] ângulo de ataque reaplicado após a HOME — eixo '
             f'({attack[0]:+.4f}, {attack[1]:+.4f}, {attack[2]:+.4f}).')
-        return True
+        return self._tare_tilted_pose('ALIGN-REAPPLY')
 
     def _align_reorient(self, attack_dir: np.ndarray, retract_m: float,
                         p_ref: np.ndarray) -> str:
@@ -2838,15 +2880,26 @@ class TactileExplorer(Node):
         cfg = self._align_params()
         if cfg is None:
             return 'ok'
+        if cfg['manual']:
+            motivo = self._manual_attack_refusal(cfg)
+            if motivo is not None:
+                self.get_logger().error(f'[ATTACK] run RECUSADO: {motivo}.')
+                return 'error'
 
         # A sondagem tem de acontecer na VERTICAL: é ela que mede a
         # inclinação, então não pode partir de uma correção anterior.
         self._attack_dir = None
+        self._attack_start = None
+        self._attack_engaged = False
 
         self._set_phase('CALIBRATING')
         self._settle()
         p_ref = self._tcp_now()
-        offsets, padrao, tem_centro = self._align_offsets(cfg)
+        if cfg['manual']:
+            offsets, padrao, tem_centro = (
+                np.zeros((1, 2)), 'toque único de localização', False)
+        else:
+            offsets, padrao, tem_centro = self._align_offsets(cfg)
         with self._params_lock:
             # A sonda nunca é mais pesada que o próprio ensaio: com setpoint
             # de 0,5 N, sondar a 1 N marcaria a amostra antes da medição.
@@ -2883,6 +2936,8 @@ class TactileExplorer(Node):
                 f'[ALIGN] palpação interrompida em {len(pts)}/{len(offsets)} '
                 f'pontos ({out}) — sem plano, sem correção de ataque.')
             return out
+        if cfg['manual']:
+            return self._manual_attack(np.asarray(pts[0], dtype=float), cfg)
 
         # O CENTRO não entra no ajuste da normal — está no centroide e não
         # acrescenta braço de alavanca. Ele serve para a única coisa que o
@@ -3029,6 +3084,8 @@ class TactileExplorer(Node):
             f'({unc_txt.replace("± ", "")}) mais o da pose entregue. '
             'A descida de trabalho, a regulação de força e o alívio de '
             'emergência passam a correr sobre este eixo.')
+        if not self._tare_tilted_pose('ALIGN'):
+            return 'error'
         return self._verify_attack_plane(p_ref, offsets, cfg)
 
     def _verify_attack_plane(self, p_ref: np.ndarray, offsets: np.ndarray,
