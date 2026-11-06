@@ -51,6 +51,14 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 log = logging.getLogger('touch_pack.palpation_gui')   # mesmo canal do host
 
+# Processo vivo não prova conexão: sem rota até a caixa ECI, a thread de socket
+# da lib `eci` morre e `eci.start()` fica preso para sempre, com o driver de pé.
+# Esta linha só sai depois de conectar e energizar a mão.
+HAND_READY_LINE = 'Spinning...'
+# 3 tentativas × 10 s da lib `eci` + ~7 s do setHandPowerOn, com folga.
+HAND_READY_TIMEOUT_S = 40.0
+HAND_READY_POLL_MS = 250
+
 
 class HandMixin:
     """gui_hand.py — a mão COVVI real: conexão, energia, espelho e watchdog."""
@@ -300,6 +308,7 @@ class HandMixin:
                    f'source "{covvi_ws}" >/dev/null 2>&1 && exec "$@"',
                    'covvi-env'] + cmd
         log.warning('[DBG] _connect_real_hand: cmd=%s', cmd)
+        ready = threading.Event()
         try:
             self._hand_proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE,
@@ -310,6 +319,8 @@ class HandMixin:
                 for raw in proc.stdout:
                     line = raw.decode('utf-8', errors='replace').rstrip()
                     log.warning('[HAND-PROC] %s', line)
+                    if HAND_READY_LINE in line:
+                        ready.set()
             threading.Thread(target=_pipe_hand_log, daemon=True,
                              name='hand-proc-log').start()
         except FileNotFoundError:
@@ -318,17 +329,27 @@ class HandMixin:
             self._hand_proc = None
             return
         self._hand_should_be_alive = True
-        self._start_hand_watchdog()
-        self._set_status(f'covvi_hand_driver server {ip} starting…', PRIMARY)
-        self.root.after(2200, self._post_connect_real_hand)
-    def _post_connect_real_hand(self) -> None:
-        proc = self._hand_proc
-        if proc is None or proc.poll() is not None:
-            self._set_status(
-                'Hand driver failed to start — check the IP / ECI box.',
-                DANGER)
-            self._hand_proc = None
+        self._hand_connect_btn.set_state('…', 'Connecting…', BTN_NEUTRAL, TEXT)
+        self._set_status(f'Connecting to COVVI hand at {ip}…', PRIMARY)
+        self._post_connect_real_hand(
+            self._hand_proc, ready, time.monotonic() + HAND_READY_TIMEOUT_S)
+    def _post_connect_real_hand(self, proc: subprocess.Popen,
+                                ready: threading.Event,
+                                deadline: float) -> None:
+        """Espera o driver confirmar a conexão com a mão; sem isso, aborta."""
+        if proc is not self._hand_proc or not self._hand_should_be_alive:
+            return   # operador desconectou durante a espera
+        if not ready.is_set():
+            if proc.poll() is None and time.monotonic() < deadline:
+                self.root.after(
+                    HAND_READY_POLL_MS,
+                    lambda: self._post_connect_real_hand(proc, ready, deadline))
+                return
+            self._disconnect_real_hand(
+                failure='Hand not responding — check the IP / ECI box.')
             return
+        # Só agora: antes disso, driver morto é falha de conexão, não queda.
+        self._start_hand_watchdog()
         self._hand_connect_btn.set_state('⚡', 'Disconnect', OK, 'white')
         # Conexão deu certo — persistir o IP para reusar no próximo boot.
         self._save_robot_config()
@@ -338,8 +359,9 @@ class HandMixin:
             self._toggle_eci()
         self._set_status(
             f'Hand driver active ({self._eci_prefix}) — power ON soon…', OK)
-    def _disconnect_real_hand(self) -> None:
-        """Inicia desconexão limpa da mão COVVI."""
+    def _disconnect_real_hand(self, failure: str | None = None) -> None:
+        """Inicia desconexão limpa da mão COVVI. `failure` é o erro a exibir
+        no fim, quando a desconexão vem de uma conexão que não vingou."""
         self._hand_should_be_alive = False
         self._stop_hand_watchdog()
 
@@ -354,8 +376,9 @@ class HandMixin:
 
         threading.Thread(
             target=self._disconnect_hand_worker,
-            args=(eci_was_enabled,), daemon=True).start()
-    def _disconnect_hand_worker(self, eci_was_enabled: bool) -> None:
+            args=(eci_was_enabled, failure), daemon=True).start()
+    def _disconnect_hand_worker(self, eci_was_enabled: bool,
+                                failure: str | None = None) -> None:
         """Thread daemon: PowerOff síncrono → SIGINT/SIGTERM → wait → pausa — não bloqueia a GUI."""
         if eci_was_enabled:
             self._send_hand_poweroff_blocking(timeout_s=3.0)
@@ -368,11 +391,14 @@ class HandMixin:
             self.root.after(0, lambda r=remaining: self._set_status(
                 f'Waiting for ECI box reset — {r} s left…', TEXT_DIM))
             time.sleep(1.0)
-        self.root.after(0, self._finish_hand_disconnect)
-    def _finish_hand_disconnect(self) -> None:
+        self.root.after(0, lambda: self._finish_hand_disconnect(failure))
+    def _finish_hand_disconnect(self, failure: str | None = None) -> None:
         """Callback Tkinter: atualiza botão após o worker de desconexão concluir."""
         self._hand_connect_btn.set_state('⚡', 'Connect', PRIMARY, 'white')
-        self._set_status('Hand driver disconnected — LED off.', TEXT_DIM)
+        if failure:
+            self._set_status(failure, DANGER)
+        else:
+            self._set_status('Hand driver disconnected — LED off.', TEXT_DIM)
     # Watchdog + re-spawn automático (mão COVVI)
     def _start_hand_watchdog(self) -> None:
         thr = self._hand_watchdog_thread

@@ -589,6 +589,7 @@ def tool_stamp_mismatch(data, *, what: str) -> str | None:
 # Arquivos de configuração persistente (~/.config/touch_pack/).
 CONFIG_DIR            = os.path.expanduser('~/.config/touch_pack')
 HOME_POSE_FILE        = os.path.join(CONFIG_DIR, 'home_pose.json')
+HOME_POSE_HAND_FILE   = os.path.join(CONFIG_DIR, 'home_pose_hand.json')
 ROBOT_CONFIG_FILE     = os.path.join(CONFIG_DIR, 'robot.json')
 POSES_FILE            = os.path.join(CONFIG_DIR, 'poses.json')
 PALPATION_PARAMS_FILE = os.path.join(CONFIG_DIR, 'palpation_params.json')

@@ -42,6 +42,7 @@ from .constants import (
     taxel_index_to_physical,
 )
 from .ui_helpers import (
+    _hdr_btn,
     BG,
     BORDER,
     BTN_NEUTRAL,
@@ -223,6 +224,9 @@ class SensorsMixin:
         tk.Label(hdr, text=f'Touch Sensor {spec.rows}×{spec.cols} (STM32) — '
                            'Izhikevich',
                  font=FONT_HEAD, bg=BG, fg=TEXT).pack(side='left')
+        self._sens_detach_btn = _hdr_btn(
+            hdr, '⧉', 'Detach', self._toggle_sensors_detach)
+        self._sens_detach_btn.pack(side='right', padx=(8, 0))
         self._sens_touch_status_lbl = tk.Label(
             hdr, text='', font=FONT_SMALL, bg=BG, fg=TEXT_DIM)
         self._sens_touch_status_lbl.pack(side='right')
@@ -315,6 +319,34 @@ class SensorsMixin:
             card, height=80, bg=PANEL, highlightthickness=1,
             highlightbackground=BORDER)
         self._sens_force_spark.pack(fill='x', pady=(4, 2))
+    def _toggle_sensors_detach(self) -> None:
+        """Aba Sensores ↔ janela própria. `wm manage` promove o MESMO frame a
+        janela: nada é reconstruído, então figura, animação e gráficos seguem
+        vivos. O X da janela devolve a aba em vez de destruí-la."""
+        nb, frame, tcl = self._nb, self._sensors_tab_frame, self.root.tk
+        if self._sensors_detached_at is None:
+            pos = nb.index(frame)
+            width, height = frame.winfo_width(), frame.winfo_height()
+            # Sem isto o notebook cai na aba seguinte, que pode ser a 3D e
+            # dispara a carga da cena só por ter destacado os sensores.
+            nb.select(pos - 1)
+            nb.forget(frame)
+            self.root.wm_manage(frame)
+            tcl.call('wm', 'title', frame, 'Sensors')
+            tcl.call('wm', 'geometry', frame, f'{width}x{height}')
+            tcl.call('wm', 'protocol', frame, 'WM_DELETE_WINDOW',
+                     self.root.register(self._toggle_sensors_detach))
+            self._sensors_detached_at = pos
+            self._sens_detach_btn.set_state('⧉', 'Attach', BTN_NEUTRAL, TEXT)
+        else:
+            tcl.call('wm', 'forget', frame)
+            # Sendo a última aba, o índice guardado já não existe para o Tk.
+            pos = self._sensors_detached_at
+            nb.insert(pos if pos < nb.index('end') else 'end',
+                      frame, text='Sensors')
+            nb.select(frame)
+            self._sensors_detached_at = None
+            self._sens_detach_btn.set_state('⧉', 'Detach', BTN_NEUTRAL, TEXT)
     def _refresh_sensors_tab(self) -> None:
         """Loop da aba Sensores. A figura do toque é desenhada pela
         FuncAnimation (blit); aqui só a pausamos/retomamos conforme a aba
@@ -322,8 +354,9 @@ class SensorsMixin:
         try:
             nb = getattr(self, '_nb', None)
             frame = self._sensors_tab_frame
-            visible = (nb is not None and frame is not None
-                       and str(nb.select()) == str(frame))
+            visible = (self._sensors_detached_at is not None
+                       or (nb is not None and frame is not None
+                           and str(nb.select()) == str(frame)))
             # Anima sempre que a aba estiver à vista — INCLUSIVE durante a
             # coleta, que é justamente quando se quer olhar o sinal. O
             # `not self._experiment_active()` que havia aqui datava de quando

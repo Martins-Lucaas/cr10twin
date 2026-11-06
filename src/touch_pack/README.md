@@ -229,6 +229,7 @@ own weight.
 ### Sensors tab
 A dashboard for the **touch sensor (STM32, Izhikevich)** with 4 embedded matplotlib plots:
 **voltage heatmap (4×4)** · **RA/SA raster** (5 s sliding window) · **I_final** · **postsynaptic neuron**, alongside the live load-cell reading.
+**Detach** moves the whole tab into its own window, so it stays visible while you use the other tabs; **Attach** or closing that window puts it back.
 Rendered with **blitting** (`FuncAnimation` @ 20 Hz) — only the artists that change are redrawn, and it pauses when the tab is not visible (no freezing, the raster scrolls smoothly).
 
 <p align="center">
@@ -737,7 +738,8 @@ away the unfiltered value, which is the whole reason those fields exist.
 | Path | Contents |
 |---|---|
 | `~/.config/touch_pack/robot.json` | IPs (hand/arm) + last mode (SIM_ONLY/MIRROR) |
-| `~/.config/touch_pack/home_pose.json` | custom arm home |
+| `~/.config/touch_pack/home_pose.json` | custom arm home (`touch_tool`) |
+| `~/.config/touch_pack/home_pose_hand.json` | custom arm home (`hand`) |
 | `~/.config/touch_pack/palpation_params.json` | last palpation parameters (including the mode) |
 | `~/.config/touch_pack/poses.json` | recorded poses and motions |
 | `<repo>/sensors/Data/` | palpation data and the force+touch stream |

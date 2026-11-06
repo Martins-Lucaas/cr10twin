@@ -11,6 +11,7 @@ GUI, porque `_load_home_pose` filtra por ARM_JOINTS ao ler o arquivo.
 Testa os dois métodos sobre um hospedeiro de mentira: nada de Tk, nada de ROS.
 """
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -46,6 +47,8 @@ class _FakeGUI:
         self._suppress = lambda: PalpationGUI._suppress(self)
         self.status = None
         self._home_file = str(tmp_path / 'home_pose.json')
+        self._hand_home_file = str(tmp_path / 'home_pose_hand.json')
+        self._end_effector = 'touch_tool'
         self.published = 0
 
     def _set_status(self, msg, *_a, **_kw):
@@ -60,6 +63,8 @@ def gui(tmp_path, monkeypatch):
     g = _FakeGUI(tmp_path)
     monkeypatch.setattr('touch_pack.palpation_gui.HOME_POSE_FILE',
                         g._home_file, raising=False)
+    monkeypatch.setattr('touch_pack.palpation_gui.HOME_POSE_HAND_FILE',
+                        g._hand_home_file, raising=False)
     return g
 
 
@@ -94,3 +99,25 @@ def test_apply_home_after_save_does_not_raise(gui):
         assert gui.arm_sliders[j].get() == pytest.approx(
             gui._arm_home_deg[j])
     assert gui.published == 1
+
+
+def test_hand_and_touch_tool_homes_are_independent(gui):
+    """Salvar com um efetuador não muda a home do outro."""
+    gui.get_logger = MagicMock
+    PalpationGUI._save_home_pose(gui)                  # touch_tool: 10..15
+
+    gui._end_effector = 'hand'
+    for var in gui.arm_sliders.values():
+        var.set(42.0)
+    PalpationGUI._save_home_pose(gui)
+
+    with open(gui._hand_home_file) as fh:
+        assert TOOL_STAMP_KEY not in json.load(fh)     # carimbo é da ponteira
+
+    gui._end_effector = 'touch_tool'
+    PalpationGUI._load_home_pose(gui)
+    assert gui._arm_home_deg['joint1'] == pytest.approx(10.0)
+
+    gui._end_effector = 'hand'
+    PalpationGUI._load_home_pose(gui)
+    assert gui._arm_home_deg['joint1'] == pytest.approx(42.0)

@@ -4,6 +4,7 @@ A geometria roda sem ROS; o resto confere o que o nó decide: quando recusa,
 por onde passa a ferramenta e quando o zero da célula é refeito.
 """
 import math
+import threading
 
 import numpy as np
 import pytest
@@ -161,6 +162,60 @@ def test_recuo_pelo_eixo_acontece_uma_vez(node):
     node._withdraw_along_attack()
     assert [e[0] for e in log] == ['ATTACK-WITHDRAW']
     assert pos['p'] == pytest.approx(node._attack_start)
+
+
+# ── FREEZE ────────────────────────────────────────────────────────────
+
+@pytest.fixture()
+def frozen_node(node):
+    """Trajetórias reais, com o FREEZE chegando no meio delas."""
+    node._busy.set()
+    node._force_stale_abort = lambda *a, **k: False
+    node._send_hand_pose = lambda *a, **k: None
+    node._unload_before_home = lambda: None
+    node._joint_batch_to = lambda q: pytest.fail('foi à HOME')
+    threading.Timer(0.2, node._cb_freeze, args=(None,)).start()
+    yield node
+    node._busy.clear()
+
+
+def test_freeze_no_recuo_nao_vai_a_home(frozen_node):
+    n = frozen_node
+    n._attack_engaged = True
+    n._attack_start = n._tcp_now() + np.array([-0.015, 0.0, 0.03])
+    assert n._retreat_and_home('DONE') is True
+    assert n._phase == 'FROZEN'
+
+
+def test_freeze_na_repeticao_nao_vai_a_home(frozen_node):
+    n = frozen_node
+    n._attack_dir = attack_dir_from_tilt_azimuth(20, 0)
+    n._attack_start = n._tcp_now() + np.array([0.0, 0.0, -0.05])
+    n._rotate_to_attack = lambda a, label='': 'ok'
+    assert n._reapply_attack_orientation() is False
+    n._abort_to_home()
+    assert n._phase == 'FROZEN'
+
+
+def test_abort_com_freeze_pendente_nao_mexe_o_braco(node):
+    node._unload_before_home = lambda: pytest.fail('moveu o braço')
+    node._freeze_requested.set()
+    node._abort_to_home()
+    assert node._phase == 'FROZEN'
+
+
+def test_run_novo_esquece_o_recuo_do_run_congelado(node):
+    vistos = []
+    node._attack_engaged = True
+    node._attack_start = np.array([0.4, -0.1, 0.25])
+
+    def home():
+        vistos.append((node._attack_engaged, node._attack_start))
+        return False
+    node._phase_goto_home = home
+    node._retreat_and_home = lambda fp: None
+    node._run_protocol()
+    assert vistos == [(False, None)]
 
 
 def test_home_refaz_o_zero_da_pose_inclinada(node):

@@ -95,7 +95,7 @@ from .constants import (
     hold_tol_n as _hold_tol_n_for,
     FORCE_SETPOINT_MAX_N,
     FT_NOMINAL_RATE_HZ,
-    HOME_POSE_FILE, tool_stamp, tool_stamp_mismatch,
+    HOME_POSE_FILE, HOME_POSE_HAND_FILE, tool_stamp, tool_stamp_mismatch,
     TOUCH_SENSOR_DEFAULT, touch_sensor_spec,
     PALPATION_PARAMS_FILE, new_run_id,
     TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
@@ -364,8 +364,14 @@ def fmod_max_freq_hz(servoj_period_s: float = FMOD_CTRL_DT_S) -> float:
 import math as _math   # alias para evitar sombrear `math` global do escopo
 
 # Home default (= POINTING_SEED_DEG do constants.py). Sobrescrita em
-# runtime por HOME_POSE_FILE quando existe ("✔ Salvar Home").
+# runtime pelo arquivo de home do efetuador quando existe ("✔ Salvar Home").
 ARM_HOME_DEG = dict(POINTING_SEED_DEG)
+
+
+def home_pose_file(end_effector: str) -> str:
+    """Arquivo de home do efetuador: mão e touch_tool não compartilham home."""
+    return HOME_POSE_HAND_FILE if end_effector == 'hand' else HOME_POSE_FILE
+
 
 HAND_OPEN_DEG  = {j: 0 for j in HAND_JOINTS}
 HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
@@ -377,6 +383,18 @@ HAND_CLOSE_DEG = {'Thumb': 70, 'Index': 80, 'Middle': 80,
 
 
 # Nó ROS + GUI
+def _saved_attack_modes(sv: dict) -> tuple[bool, bool]:
+    """(probe_on, manual_on) das preferências; nunca os dois ligados.
+
+    O manual era sub-opção do probe: `probe_align_manual` sem `probe_align_on`
+    não fazia nada, e não pode passar a armar um ataque oblíquo sozinho.
+    """
+    probe_on = bool(sv.get('probe_align_on', False))
+    manual_on = bool(sv.get(
+        'probe_manual_on', probe_on and sv.get('probe_align_manual', False)))
+    return probe_on and not manual_on, manual_on
+
+
 class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMixin, FtArrowMixin,
                    ManualExtrasMixin, TrajRecMixin,
                    MatrixMixin, CameraMixin, Manip3DTabMixin, HandMixin,
@@ -641,7 +659,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._reconcile_touch_echo_sub()
 
         # Home pose customizável Default (ARM_HOME_DEG) é sobrescrito se
-        # ~/.config/touch_pack/ home_pose.json existir.
+        # o arquivo do efetuador (home_pose_file) existir.
         self._arm_home_deg: dict[str, float] = dict(ARM_HOME_DEG)
         self._load_home_pose()
         # Parâmetros da palpação persistidos do último start — usados como
@@ -739,6 +757,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._touch_frame_ema = None   # média exponencial do custo
         self._touch_serial_ok = False
         self._sensors_tab_frame: tk.Frame | None = None
+        # Índice da aba enquanto ela está destacada em janela; None = na aba.
+        self._sensors_detached_at: int | None = None
         self._sensors_after: str | None = None
 
         # Aba "3D Manipulation" — arrasto do TCP com IK diferencial.
@@ -1541,14 +1561,21 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # Desligada por padrão: ligá-la muda a aproximação de TODO run, e a
         # sondagem custa N descidas extras antes da medição. Válida em todos
         # os modos, por isso mora nos avançados e não num grupo por modo.
-        self.align_on_var      = tk.BooleanVar(
-            value=bool(sv.get('probe_align_on', False)))
-        self.align_manual_var  = tk.BooleanVar(
-            value=bool(sv.get('probe_align_manual', False)))
+        probe_on, manual_on = _saved_attack_modes(sv)
+        self.align_on_var      = tk.BooleanVar(value=probe_on)
+        self.align_manual_var  = tk.BooleanVar(value=manual_on)
         self.align_manual_tilt_var = tk.DoubleVar(
             value=_f('probe_align_manual_tilt_deg', 0.0))
         self.align_manual_az_var = tk.DoubleVar(
             value=_f('probe_align_manual_azimuth_deg', 0.0))
+        # Próprios do manual: herdam o valor do probe só na primeira vez.
+        self.align_manual_force_var = tk.DoubleVar(
+            value=_f('probe_manual_force_n',
+                     _f('probe_align_force_n', PROBE_ALIGN_FORCE_N_DEFAULT)))
+        self.align_manual_retract_var = tk.DoubleVar(
+            value=_f('probe_manual_retract_mm',
+                     _f('probe_align_retract_mm',
+                        PROBE_ALIGN_RETRACT_MM_DEFAULT)))
         self.align_points_var  = tk.IntVar(
             value=int(_f('probe_align_points', PROBE_ALIGN_POINTS_DEFAULT)))
         self.align_radius_var  = tk.DoubleVar(
@@ -1663,7 +1690,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # ── Calibração do ângulo de ataque ───────────────────────────
         self._align_chk = tk.Checkbutton(
             adv, text='Probe surface & align attack angle',
-            variable=self.align_on_var, command=self._on_align_toggle,
+            variable=self.align_on_var,
+            command=lambda: self._on_align_toggle(self.align_manual_var),
             bg=PANEL, fg=TEXT, activebackground=PANEL, activeforeground=TEXT,
             selectcolor=PANEL, font=FONT_LBL, anchor='w', relief='flat',
             bd=0, highlightthickness=0, cursor='hand2')
@@ -1678,7 +1706,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                  '(not per repeat). It ABORTS the run if the fitted plane is '
                  'not trustworthy: tilt over the limit, near-collinear '
                  'contacts, or a residual too large to be a plane. In Slide '
-                 'mode it also overrides Slide Slope with the measured ramp.')
+                 'mode it also overrides Slide Slope with the measured ramp. '
+                 'Turning it on turns Manual attack angle off: a run uses '
+                 'one or the other.')
         # Grupo dos ajustes — só faz sentido com a calibração ligada, então
         # aparece junto com ela (mesmo padrão dos grupos por modo).
         self._align_group = tk.Frame(adv, bg=PANEL)
@@ -1761,31 +1791,48 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                               'beyond that J5 runs out of useful range and '
                               'the rotation would sweep the part.')
         _manual_chk = tk.Checkbutton(
-            self._align_group, text='Manual attack angle (oblique contact)',
+            adv, text='Manual attack angle (oblique contact)',
             variable=self.align_manual_var,
+            command=lambda: self._on_align_toggle(self.align_on_var),
             bg=PANEL, fg=TEXT, activebackground=PANEL, activeforeground=TEXT,
             selectcolor=PANEL, font=FONT_LBL, anchor='w', relief='flat',
             bd=0, highlightthickness=0, cursor='hand2')
         _manual_chk.pack(fill='x', pady=(6, 2))
+        self._manual_chk = _manual_chk
         _Tooltip(_manual_chk,
                  'Touch and Manual modes only. One vertical touch finds the '
                  'target, then the tool comes back to it along the angle set '
-                 'below. Replaces the surface probing, so Probe Points and '
-                 'Radius are ignored. The setpoint is the force along the '
-                 'tool axis, not the surface normal. Retract sets the '
-                 'clearance, and Max Descent Depth must cover the longer '
-                 'tilted approach. A flat tip touches on an edge, about half '
-                 'its width away from the target.')
-        self._param_row(self._align_group, label='Manual — Tilt',
+                 'below. Independent of Probe surface & align attack angle: '
+                 'turning it on turns that one off, and none of its settings '
+                 'apply here. The setpoint is the force along the tool axis, '
+                 'not the surface normal. Max Descent Depth must cover the '
+                 'longer tilted approach. A flat tip touches on an edge, '
+                 'about half its width away from the target.')
+        self._manual_group = tk.Frame(adv, bg=PANEL)
+        self._param_row(self._manual_group, label='Manual — Tilt',
                          unit='°', var=self.align_manual_tilt_var,
                          vmin=0.0, vmax=PROBE_ALIGN_TILT_HARD_MAX_DEG,
                          step=1.0,
                          hint='Tool angle away from vertical.')
-        self._param_row(self._align_group, label='Manual — Azimuth',
+        self._param_row(self._manual_group, label='Manual — Azimuth',
                          unit='°', var=self.align_manual_az_var,
                          vmin=-180.0, vmax=180.0, step=5.0,
                          hint='Heading of the tip in the world XY plane as it '
                               'approaches: 0° = +X, 90° = +Y.')
+        self._param_row(self._manual_group, label='Manual — Touch Force',
+                         unit='N', var=self.align_manual_force_var,
+                         vmin=FORCE_SP_MIN, vmax=FORCE_SETPOINT_MAX_N,
+                         step=0.1, snap=0.1,
+                         hint='Setpoint of the vertical touch that locates '
+                              'the target. Never exceeds Target Force, and '
+                              'the explorer raises it to at least 0.33 N.')
+        self._param_row(self._manual_group, label='Manual — Clearance',
+                         unit='mm', var=self.align_manual_retract_var,
+                         vmin=PROBE_ALIGN_RETRACT_MM_MIN,
+                         vmax=PROBE_ALIGN_RETRACT_MM_MAX, step=1.0,
+                         hint='Gap to the target where the tilted approach '
+                              'starts. The wrist turns at this height, so '
+                              'increase it for a larger tilt.')
         self._on_align_toggle()
 
         # Coluna direita: botão de início (fixado no fundo) + feedback FT
@@ -2012,14 +2059,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                    ).pack(side='left', fill='x', expand=True, padx=(0, 4))
         # ⊥ = solver de pulso: ajusta joint4/joint5 para o TCP ficar
         # exatamente perpendicular à mesa, mantendo joint1-3 e joint6.
-        tk.Button(btns_arm2, text='⊥  TCP ⊥ Table',
-                   command=self._solve_tcp_perpendicular,
-                   bg=_shade(OK, 0.25), fg=OK,
-                   activebackground=_shade(OK, 0.15),
-                   activeforeground=OK,
-                   font=FONT_LBL, relief='flat', bd=0, padx=14, pady=6,
-                   cursor='hand2'
-                   ).pack(side='left', fill='x', expand=True, padx=(4, 0))
+        # Não existe com a mão acoplada.
+        if self._end_effector != 'hand':
+            tk.Button(btns_arm2, text='⊥  TCP ⊥ Table',
+                       command=self._solve_tcp_perpendicular,
+                       bg=_shade(OK, 0.25), fg=OK,
+                       activebackground=_shade(OK, 0.15),
+                       activeforeground=OK,
+                       font=FONT_LBL, relief='flat', bd=0, padx=14, pady=6,
+                       cursor='hand2'
+                       ).pack(side='left', fill='x', expand=True, padx=(4, 0))
 
         # Jog cartesiano e freios — o que o DobotStudio
         # Pro tem no painel de controle e aqui só existia como slider.
@@ -2689,9 +2738,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
     # Home customizada — load / save em ~/.config/touch_pack/
     def _load_home_pose(self) -> None:
         """Carrega home salvo (sobrescreve `self._arm_home_deg`)."""
+        home_file = home_pose_file(self._end_effector)
         try:
-            if os.path.exists(HOME_POSE_FILE):
-                with open(HOME_POSE_FILE) as fh:
+            if os.path.exists(home_file):
+                with open(home_file) as fh:
                     data = json.load(fh)
                 if isinstance(data, dict):
                     for j in ARM_JOINTS:
@@ -2702,30 +2752,33 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                                 self._arm_home_deg[j] = max(lo, min(hi, v))
                             except (TypeError, ValueError):
                                 pass
-                aviso = tool_stamp_mismatch(data, what='o home salvo')
-                if aviso:
-                    self.get_logger().warn(f'[FERRAMENTA] {aviso}')
-                self.get_logger().info(
-                    f'Home carregada de {HOME_POSE_FILE}')
+                # O carimbo mede a ponteira; não se aplica à home da mão.
+                if self._end_effector != 'hand':
+                    aviso = tool_stamp_mismatch(data, what='o home salvo')
+                    if aviso:
+                        self.get_logger().warn(f'[FERRAMENTA] {aviso}')
+                self.get_logger().info(f'Home carregada de {home_file}')
         except Exception as exc:    # pragma: no cover
             self.get_logger().warn(f'Falha ao ler home pose: {exc}')
 
     def _save_home_pose(self) -> None:
         """Captura os ângulos dos sliders do braço como nova Home e
-        persiste em ~/.config/touch_pack/home_pose.json.
+        persiste no arquivo do efetuador (home_pose_file).
         O botão `⌂ Home` passa a usar esses valores."""
         try:
             new_home = {
                 j: float(self.arm_sliders[j].get()) for j in ARM_JOINTS
             }
             # Com que ferramenta esta home foi ensinada (ver tool_stamp).
-            new_home.update(tool_stamp())
+            if self._end_effector != 'hand':
+                new_home.update(tool_stamp())
         except (ValueError, tk.TclError):
             self._set_status('Invalid sliders.', DANGER)
             return
+        home_file = home_pose_file(self._end_effector)
         try:
-            os.makedirs(os.path.dirname(HOME_POSE_FILE), exist_ok=True)
-            with open(HOME_POSE_FILE, 'w') as fh:
+            os.makedirs(os.path.dirname(home_file), exist_ok=True)
+            with open(home_file, 'w') as fh:
                 json.dump(new_home, fh, indent=2, sort_keys=True)
         except Exception as exc:    # pragma: no cover
             self._set_status(f'Failed to save home: {exc}', DANGER)
@@ -2769,10 +2822,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 lo, hi = ARM_LIMITS_DEG[j]
                 clamped = max(lo, min(hi, new_home[j]))
                 self.arm_sliders[j].set(clamped)
-        # Persiste em home_pose.json.
+        # Persiste no arquivo de home do efetuador.
+        home_file = home_pose_file(self._end_effector)
         try:
-            os.makedirs(os.path.dirname(HOME_POSE_FILE), exist_ok=True)
-            with open(HOME_POSE_FILE, 'w') as fh:
+            os.makedirs(os.path.dirname(home_file), exist_ok=True)
+            with open(home_file, 'w') as fh:
                 json.dump(new_home, fh, indent=2, sort_keys=True)
         except Exception as exc:
             self._set_status(f'Failed to save captured home: {exc}', DANGER)
@@ -2832,16 +2886,22 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         finally:
             self._home_known_suppress = False
 
-    def _on_align_toggle(self) -> None:
-        """Mostra/oculta os ajustes da calibração conforme o checkbox — os
-        números só interessam quando ela está ligada."""
+    def _on_align_toggle(self, other: tk.BooleanVar | None = None) -> None:
+        """Mostra só os ajustes do modo de ataque ligado. Probe e manual são
+        excludentes: o clique num desliga o `other` (se foi para desligar, ele
+        já estava desligado)."""
         grp = getattr(self, '_align_group', None)
         if grp is None:
             return
-        if self.align_on_var.get():
-            grp.pack(fill='x')
-        else:
-            grp.pack_forget()
+        if other is not None:
+            other.set(False)
+        for var, group, chk in (
+                (self.align_on_var, grp, self._align_chk),
+                (self.align_manual_var, self._manual_group, self._manual_chk)):
+            if var.get():
+                group.pack(fill='x', after=chk)
+            else:
+                group.pack_forget()
         # O preview da grade desenha o anel de sondagem, que só existe com a
         # calibração ligada.
         self._redraw_matrix_preview()
@@ -4079,6 +4139,13 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             align_tilt    = self._clamp_var(
                 self.align_tilt_var, 1.0, PROBE_ALIGN_TILT_HARD_MAX_DEG,
                 default=PROBE_ALIGN_TILT_MAX_DEG_DEFAULT)
+            manual_force = self._clamp_var(
+                self.align_manual_force_var, FORCE_SP_MIN,
+                FORCE_SETPOINT_MAX_N, default=PROBE_ALIGN_FORCE_N_DEFAULT)
+            manual_retract = self._clamp_var(
+                self.align_manual_retract_var, PROBE_ALIGN_RETRACT_MM_MIN,
+                PROBE_ALIGN_RETRACT_MM_MAX,
+                default=PROBE_ALIGN_RETRACT_MM_DEFAULT)
         # `is None` um a um, e não `None in (…)`: a tupla esconde a checagem
         # de qualquer análise estática, e as ~55 conversões `float(...)` daqui
         # até o fim do método passavam a ser lidas como `float(float | None)`.
@@ -4182,6 +4249,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                               else PROBE_ALIGN_RETRACT_MM_DEFAULT)
         align_tilt    = float(align_tilt if align_tilt is not None
                               else PROBE_ALIGN_TILT_MAX_DEG_DEFAULT)
+        manual_force  = float(manual_force if manual_force is not None
+                              else PROBE_ALIGN_FORCE_N_DEFAULT)
+        manual_retract = float(manual_retract if manual_retract is not None
+                               else PROBE_ALIGN_RETRACT_MM_DEFAULT)
         if align_on:
             # O explorer satura a sonda no setpoint do ensaio; avisar aqui
             # evita a surpresa de pedir 2 N de sonda e ver 0,8 N no log.
@@ -4195,7 +4266,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 f'{align_radius:.1f} mm, recuo de {align_retract:.1f} mm '
                 f'antes de girar o punho, desvio máximo {align_tilt:.1f}°. '
                 f'Custa {align_points} descidas extras antes da medição.')
-        align_manual = align_on and bool(self.align_manual_var.get())
+        align_manual = bool(self.align_manual_var.get())
         if align_manual and self.mode_var.get() not in ('TOUCH', 'MANUAL'):
             self._starting_palpation = False
             self._set_status(
@@ -4211,6 +4282,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 self._starting_palpation = False
                 self._set_status('Manual attack angle is not a number.', DANGER)
                 return
+            if manual_force > float(force_sp):
+                self._set_status(
+                    f'Touch force capped at the {float(force_sp):.1f} N '
+                    'setpoint — the touch is never heavier than the run.', WARN)
 
         # ── MATRIX_MAP: gera e valida a grade ANTES de publicar ──────
         # Uma grade inválida tem de parar aqui, com o braço parado: depois
@@ -4275,7 +4350,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             'step_max_n': float(step_max),
             'step_dwell_s': float(step_dwell),
             'probe_align_on': bool(align_on),
-            'probe_align_manual': bool(self.align_manual_var.get()),
+            'probe_manual_on': align_manual,
+            'probe_manual_force_n': manual_force,
+            'probe_manual_retract_mm': manual_retract,
             'probe_align_manual_tilt_deg': manual_tilt,
             'probe_align_manual_azimuth_deg': manual_az,
             'probe_align_points': int(align_points),
@@ -4323,8 +4400,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             'probe_align_manual_azimuth_deg': manual_az,
             'probe_align_points':     int(align_points),
             'probe_align_radius_mm':  float(align_radius),
-            'probe_align_force_n':    float(align_force),
-            'probe_align_retract_mm': float(align_retract),
+            # A mensagem tem um campo só para os dois modos: vai o do ligado.
+            'probe_align_force_n':    (manual_force if align_manual
+                                       else float(align_force)),
+            'probe_align_retract_mm': (manual_retract if align_manual
+                                       else float(align_retract)),
             'probe_align_tilt_max_deg': float(align_tilt),
             # Home customizada: explorer leva o braço PARA CÁ antes de
             # descer.

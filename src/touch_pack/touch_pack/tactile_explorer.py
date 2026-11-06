@@ -2451,6 +2451,10 @@ class TactileExplorer(AttackMixin, Node):
     def _phase_goto_home(self) -> bool:
         """HOME — trajectória batch ao JTC (S-curve interna) a ≤ 0.3 rad/s."""
         self._withdraw_along_attack()
+        # O recuo consome o _stop_requested: sem isto a HOME sairia por cima
+        # de um FREEZE recebido no meio dele.
+        if self._freeze_requested.is_set():
+            return False
         self._set_phase('HOME')
         self._send_hand_pose(_HAND_POINTING_RAD)
 
@@ -5379,36 +5383,44 @@ class TactileExplorer(AttackMixin, Node):
                 f'[HOME] descarregamento falhou ({exc}) — retorno à home '
                 'segue mesmo assim.')
 
-    def _retreat_and_home(self, final_phase: str) -> None:
-        """Término com SUCESSO: retorna DIRETO à home lentamente, sem RETRACT."""
+    def _retreat_and_home(self, final_phase: str) -> bool:
+        """Término com SUCESSO: retorna DIRETO à home lentamente, sem RETRACT.
+        Devolve True se um FREEZE interrompeu o retorno."""
         self._unload_before_home()
         self._phase_goto_home()
+        if self._freeze_in_place():
+            return True
         self._set_phase(final_phase)
+        return False
 
     def _abort_to_home(self) -> None:
         """Falha do experimento (qualquer motivo): sem RETRACT — retorna
         direto à home lentamente (≤ home_speed_rad_s por junta) e marca
-        ABORTED."""
-        self._unload_before_home()
-        self._phase_goto_home()
-        self._set_phase('ABORTED')
+        ABORTED. FREEZE vence: um STOP consumido no caminho faz a falha chegar
+        aqui com o FREEZE ainda pendente."""
+        self._finalize_interrupt('ABORTED')
 
     def _hold_current_position(self) -> None:
         """FREEZE: segura a posição atual NO LUGAR (sem ir à HOME) — re-publica
         q_now com velocidade zero e o JTC mantém a última pose comandada."""
         self._settle()
 
+    def _freeze_in_place(self) -> bool:
+        """Atende um FREEZE pendente: congela e marca FROZEN. True se havia."""
+        if not self._freeze_requested.is_set():
+            return False
+        self._freeze_requested.clear()
+        self._hold_current_position()
+        self._set_phase('FROZEN')
+        return True
+
     def _finalize_interrupt(self, graceful_phase: str) -> bool:
         """Encerramento por interrupção do usuário. FREEZE congela no lugar
         (fase FROZEN, sem homing); STOP normal recua à HOME (Regra de Ouro) e
         marca `graceful_phase`. Devolve True se congelou."""
-        if self._freeze_requested.is_set():
-            self._freeze_requested.clear()
-            self._hold_current_position()
-            self._set_phase('FROZEN')
+        if self._freeze_in_place():
             return True
-        self._retreat_and_home(graceful_phase)
-        return False
+        return bool(self._retreat_and_home(graceful_phase))
 
     # ══════════════════════════════════════════════════════════════════
     # MATRIX_MAP — mapeamento tátil em grade
@@ -5909,7 +5921,8 @@ class TactileExplorer(AttackMixin, Node):
                f'até {max(levels):.2f} N.' if levels
                else f' a {target_f:.2f} N.'))
         self._wp_index = 0
-        self._retreat_and_home('DONE')
+        if self._retreat_and_home('DONE'):
+            return
         time.sleep(0.5)
         self._set_phase('IDLE')
 
@@ -5920,6 +5933,10 @@ class TactileExplorer(AttackMixin, Node):
         # trocada, e uma medição do run anterior não vale para ela. Se a
         # calibração estiver ligada, ela remede.
         self._attack_dir = None
+        # Um FROZEN deixa o recuo pendente, e a reta valeria para uma pose que
+        # o jog e a troca de peça já invalidaram.
+        self._attack_start = None
+        self._attack_engaged = False
         with self._params_lock:
             self._slide_plane_n = None
         # Snapshot do modo MovL para TODO o experimento — não muda no meio
@@ -6121,7 +6138,8 @@ class TactileExplorer(AttackMixin, Node):
                         self._stop_requested.clear()
                         self._set_phase('ABORTED'); return
 
-            self._retreat_and_home('DONE')
+            if self._retreat_and_home('DONE'):
+                return
             time.sleep(0.5)
             self._set_phase('IDLE')
         except BaseException as exc:
