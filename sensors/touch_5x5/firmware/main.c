@@ -27,14 +27,14 @@ static uint8_t row_mask = 0x1E;
 #define B_RA 0.2f
 #define C_RA -65.0f
 #define D_RA 2.0f
-#define G_RA 2000.0f
+#define G_RA 16000.0f   // CHANGELOG [16]
 
 /* Adap lenta */
 #define A_SA 0.02f
 #define B_SA 0.2f
 #define C_SA -65.0f
 #define D_SA 8.0f
-#define G_SA 20.0f
+#define G_SA 120.0f     // CHANGELOG [16]
 
 //* Cuneate Neuron MM
 #define A_CN 0.02f
@@ -72,14 +72,15 @@ static uint8_t row_mask = 0x1E;
 // bancada CONTRA o passo errado: precisam de nova calibração.
 #define DT 0.20f
 
-// Período de um frame 5x5 completo, em milissegundos: 5 linhas x 200 us.
-// É o intervalo real entre duas visitas à MESMA linha, e é isso que separa
-// duas amostras consecutivas de I_buffer.
+// Período NOMINAL de um frame 5x5 completo, em milissegundos: 5 linhas x
+// 200 us. Só semeia `frame_period_ms`, que é o MEDIDO: na bancada o frame
+// saiu a 1,2 ms (833 Hz, run 20261109_103523) e o dI usava 1 ms, 20% alto.
 #define FRAME_PERIOD_MS 1.0f
 
+// Frames de medição do repouso de cada taxel logo após o boot (~0,6 s).
+#define BASELINE_FRAMES 512
+
 #define VTH 30.0f
-#define V_MIN 0.0f
-#define V_MAX 3.2f
 
 // ── USB ───────────────────────────────────────────────────────────────
 // USB_PACKET_SIZE é o wMaxPacketSize do endpoint bulk em Full Speed: 64 B.
@@ -157,6 +158,17 @@ volatile uint16_t last_adc[NUM_TAXELS] = {0};
 
 float I_buffer[NUM_TAXELS][DIFF_BUFFER] = {0}; // corrente excitatória
 uint8_t I_index[NUM_TAXELS] = {0};
+
+// Repouso de cada taxel (contagens ADC), medido nos BASELINE_FRAMES primeiros
+// frames. Sem ele, taxel que repousa abaixo de 4095 injetava corrente SA
+// constante e disparava ~1 Hz sem estímulo (idx 2 e 15 no run
+// 20261109_103523). Re-zerar = reset da placa SEM nada encostado no sensor.
+float adc_base_sum[NUM_TAXELS] = {0};
+float adc_base[NUM_TAXELS] = {0};
+uint16_t base_frames = 0;           // < BASELINE_FRAMES: ainda medindo
+
+float frame_period_ms = FRAME_PERIOD_MS;   // medido pelo TIM2, ver dI
+uint64_t last_frame_ts = 0;
 
 uint8_t usb_tx_buffer[USB_TX_BUFFER_SIZE];
 volatile uint16_t usb_head = 0;
@@ -612,10 +624,21 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
         // ADC -> CORRENTE
         // =====================================================
 
-        float V = adc[i] * (V_MAX / 4095.0f);
+        if (base_frames < BASELINE_FRAMES)
+        {
+            // Medindo o repouso: neurônios parados, frame segue para o PC.
+            adc_base_sum[global_idx] += (float)adc[i];
+            last_adc[global_idx] = adc[i];
+            continue;
+        }
 
-        float Vn =
-            (V_MAX - V) / (V_MAX - V_MIN);
+        // Pressão relativa ao repouso DESTE taxel. Para um taxel que repousa
+        // em 4095 é a mesma escala de antes (1 - adc/4095).
+        float base = adc_base[global_idx];
+        float Vn = (base - (float)adc[i]) / base;
+
+        if (Vn < 0.0f)
+            Vn = 0.0f;
 
         float I_raw = Vn;
 
@@ -630,12 +653,12 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
             (idx + 1) % DIFF_BUFFER;
 
         // I_old é a amostra de DIFF_BUFFER FRAMES atrás, e um frame dura
-        // FRAME_PERIOD_MS (1 ms) — a linha só é revisitada a cada 5 disparos
-        // de 200 us. Dividir por (DIFF_BUFFER * DT) supunha 2,5 ms em vez de
-        // 25 ms e inflava dI — e portanto I_RA — em 10x.
+        // frame_period_ms (medido; nominal 1 ms) — a linha só é revisitada a
+        // cada 5 disparos de 200 us. Dividir por (DIFF_BUFFER * DT) supunha
+        // 2,5 ms em vez de 25 ms e inflava dI — e portanto I_RA — em 10x.
         float dI =
             fabsf(I_raw - I_old) /
-            (DIFF_BUFFER * FRAME_PERIOD_MS);
+            (DIFF_BUFFER * frame_period_ms);
 
         // Dead-band de ruído. O limiar acompanhou a correção da escala acima
         // (0,01 -> 0,001) para continuar cortando exatamente a mesma variação
@@ -756,6 +779,25 @@ void update_taxels(Taxel *t, uint16_t *adc, uint8_t row_idx)
     if (row_idx == (ROWS - 1))
     {
         uint64_t tstamp = micros64();
+
+        // Período real do frame, filtrado (o jitter de ±1 us não mexe no dI).
+        // Intervalo acima de 10 ms é buraco ou wrap do relógio: ignorado.
+        uint64_t dt_us = tstamp - last_frame_ts;
+        if (last_frame_ts != 0 && dt_us < 10000U)
+        {
+            frame_period_ms +=
+                0.01f * ((float)dt_us * 0.001f - frame_period_ms);
+        }
+        last_frame_ts = tstamp;
+
+        if (base_frames < BASELINE_FRAMES && ++base_frames == BASELINE_FRAMES)
+        {
+            for (int k = 0; k < NUM_TAXELS; k++)
+            {
+                // Piso de 1 contagem: taxel em curto não divide por zero.
+                adc_base[k] = fmaxf(adc_base_sum[k] / BASELINE_FRAMES, 1.0f);
+            }
+        }
 
         // =====================================================
         // NORMALIZAÇÃO
@@ -1169,6 +1211,9 @@ void MX_ADC1_Init(void)
     ADC_ChannelConfTypeDef c = {0};
 
     hadc1.Instance = ADC1;
+    // PCLK2/4 = 21 MHz. Sem isto valia o default DIV2 = 42 MHz, acima dos
+    // 36 MHz do F767.
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
     hadc1.Init.Resolution = ADC_RESOLUTION_12B;
     hadc1.Init.ScanConvMode = ENABLE;
     hadc1.Init.ContinuousConvMode = DISABLE;
@@ -1192,7 +1237,10 @@ void MX_ADC1_Init(void)
     {
         c.Channel = ch[i];
         c.Rank = i + 1;
-        c.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+        // Taxel resistivo é fonte de alta impedância: 15 ciclos não carregam
+        // o capacitor de amostragem. 144 ciclos a 21 MHz = 7,4 us por canal,
+        // 37 us pela linha, folgado dentro dos 200 us entre disparos.
+        c.SamplingTime = ADC_SAMPLETIME_144CYCLES;
         HAL_ADC_ConfigChannel(&hadc1, &c);
     }
 }

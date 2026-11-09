@@ -292,3 +292,48 @@ três estados possíveis do `CYCCNT`** (parado, normal, congelado no meio) e
 USB e a taxa de frames medida pelo PC só se verificam com o hardware ligado —
 o número a acompanhar é `frames_ok` vs `frames_bad` no `touch_source.py`, ao
 lado do `STAT,drop=`.
+
+## [15] Repouso por taxel, frame medido e ADC dentro da especificação
+
+Run SLIDE `20261109_103523` (2026-11-09):
+
+- **Repouso por taxel.** `Vn = 1 − adc/4095` não descontava o repouso. Os
+  taxels idx 2 e 15 repousam em ~3560 e disparavam SA a ~1 Hz sem estímulo,
+  arrastando CN_SA/CN_MM a 10–14 Hz em repouso. Agora os 512 primeiros frames
+  após o boot medem `adc_base[]` (neurônios parados nesse intervalo) e
+  `Vn = max(0, (base − adc)/base)`. Para taxel que repousa em 4095 a escala é
+  a mesma. **Re-zerar = reset da placa sem nada encostado no sensor.**
+- **Período do frame medido.** O frame sai a 1,2 ms (833 Hz) e o `dI` dividia
+  por 1 ms. `frame_period_ms` agora é medido pelo TIM2 (média móvel); causa
+  dos 1,2 ms ainda não confirmada (ver PB8 no osciloscópio; o build Debug é
+  `-O0`).
+- **ADC.** `ClockPrescaler` DIV4 (21 MHz; antes o default DIV2 = 42 MHz, acima
+  dos 36 MHz do F767) e `SamplingTime` 15 → 144 ciclos (taxel resistivo é
+  fonte de alta impedância). 37 µs por linha, dentro dos 200 µs.
+
+## [16] Ganhos: G_SA 20 → 120, G_RA 2000 → 16000
+
+Ajustados offline no run SLIDE `20261109_112741` (6 N, 20 mm/s), com um
+simulador float32 do `update_taxels` + cuneiformes validado contra o próprio
+firmware no mesmo run (`tools/sim_neuronios.py`; SA idx 12/14: 108/181 simulados contra 108/178 reais;
+CN_SA no HOLD 50,4 contra 51,2 Hz).
+
+- **G_SA = 120.** Limiar do SA (reobase I ≈ 3,7) em Vn = 0,031, ~110 LSB. O
+  teto seguro é ~128: o resíduo após o contato (Vn 0,022 nos idx 6 e 15, até
+  2 s depois do RETRACT) somado à deriva de repouso (até 29 LSB no idx 8 em
+  13 ciclos) chega a Vn 0,029. Com 150 o repouso começa a disparar.
+- **G_RA = 16000.** A zona morta (dI 0,001) continua sendo o limiar real:
+  ruído e fluência do HOLD ficam abaixo dela (HOLD p99,9 = 0,00057). O ganho
+  só escala o que passa: dI no deslize vai de 0,001 a 0,0056, e 16000 leva o
+  máximo a I ≈ 90 (~180 Hz), abaixo da saturação de 1 kHz.
+
+Simulado (Hz, população): SA HOLD 5,1 → 46,5, SLIDE 0,4 → 9,8; RA SLIDE
+1,0 → 18,7; repouso 0 nos dois. Correlação SA × força 0,19 → 0,40. Validação
+fora da amostra (ciclos 8–13): mesmos números, repouso 0.
+
+**Efeito colateral:** com G_CN* = 1e5 cada spike aferente gera ~6 spikes do
+cuneiforme. CN_SA no HOLD vai de ~50 para ~290 Hz e CN_RA no deslize de ~11
+para ~105 Hz. Os G_CN* não foram tocados.
+
+Drift: o repouso é medido no boot. Em sessão longa, reset sem contato antes
+do run mantém a margem do G_SA.

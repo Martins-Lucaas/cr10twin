@@ -342,7 +342,11 @@ class TouchSensorSource:
         """Registra o timestamp do firmware (só p/ o CSV) e PODA a janela por
         TEMPO REAL de chegada. Chamado SEMPRE sob ``self._lock``.
         """
-        if t > self.current_time:
+        # Recuo de mais de 1 s é relógio NOVO: o wrap de 2^32 µs de um
+        # firmware de 32 bits ou o reset da placa. Antes isso congelava o
+        # touch_t_stm_s até o fim do run (run 20261109_103523, aos 127,6 s).
+        # Recuos curtos (spike carimbado antes do último frame) seguem fora.
+        if t > self.current_time or t < self.current_time - 1.0:
             self.current_time = t
         # Poda no máximo a ~50 Hz, por tempo real de chegada.
         now = time.monotonic()

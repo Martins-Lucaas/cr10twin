@@ -239,3 +239,14 @@ def test_run_do_4x4_publica_frame_e_grava_adc_csv():
     assert pub[0].t_us == 5_000_000
     row = buf.getvalue().strip().split(',')
     assert row[0] == '5.0' and row[1:] == [str(v) for v in range(2000, 2016)]
+
+
+def test_relogio_do_firmware_volta_e_e_aceito():
+    """Wrap de 2^32 µs (ou reset da placa) não pode congelar current_time."""
+    src = _src()
+    src._parse_line('ADC,' + ','.join(['4000'] * N) + ',t=4294967000', [])
+    src._parse_line('ADC,' + ','.join(['4000'] * N) + ',t=159', [])
+    assert src.current_time == pytest.approx(159e-6)
+    # Recuo curto (spike carimbado antes do último frame) é ignorado.
+    src._note_time(100e-6)
+    assert src.current_time == pytest.approx(159e-6)
