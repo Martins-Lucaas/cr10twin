@@ -1328,6 +1328,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                                                     APPROACH_DEFAULT))
         self.slide_dir_var  = tk.StringVar(
             value=str(sv.get('slide_dir', '+Y')))
+        self.slide_returns_var = tk.IntVar(
+            value=int(sv.get('slide_returns', 0)))
         self.repeats_var    = tk.IntVar(value=int(_f('repeats',
                                                      REPEAT_DEFAULT)))
         # Modo de palpação: 'SLIDE' (deslizamento) | 'TOUCH' (toque) |
@@ -1545,6 +1547,12 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                          hint='Length of the lateral path. '
                               'Safety maximum: 300 mm.')
         self._build_slide_dir_selector(self._slide_group)
+        self._param_row(self._slide_group, label='Return Slides',
+                         unit='×', var=self.slide_returns_var,
+                         vmin=0, vmax=50, step=1, integer=True,
+                         hint='Back-and-forth strokes on the same contact '
+                              '(same measured distance and speed) before the '
+                              'next cycle. 0 = one-way slide only.')
 
         # Configurador visual da grade (MATRIX_MAP) — mesma mecânica do bloco
         # de deslizamento: um Frame mostrado/ocultado como unidade por modo.
@@ -4078,6 +4086,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             repeats    = self._clamp_var(self.repeats_var,
                                           REPEAT_MIN, REPEAT_MAX,
                                           default=REPEAT_DEFAULT)
+            slide_returns = self._clamp_var(self.slide_returns_var, 0, 50,
+                                            default=0)
             # Piso e default vêm da MESMA lei do explorer (constants):
             # nada de número próprio aqui, que era o que fazia o retune de
             # 19/08/2026 nunca valer num run lançado pela tela.
@@ -4324,6 +4334,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             'force_sp': float(force_sp), 'repeats': int(repeats),
             'slide_dist': float(slide_dist), 'approach': float(approach),
             'slide_dir': self.slide_dir_var.get(),
+            'slide_returns': int(slide_returns),
             'hold_tol': float(hold_tol), 'hold_stable': float(hold_stable),
             'hold_timeout': float(hold_timeout),
             'slide_slope_deg': float(slide_slope),
@@ -4368,6 +4379,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             'slide_dist_mm':      float(slide_dist),
             'approach_speed_mms': float(approach),
             'slide_dir':          self.slide_dir_var.get(),
+            'slide_returns':      int(slide_returns),
             'repeats':            int(repeats if repeats is not None
                                       else REPEAT_DEFAULT),
             'speed_factor_pct':   float(sf_pct if sf_pct is not None
@@ -4496,6 +4508,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         msg.slide_dist_mm      = float(payload['slide_dist_mm'])
         msg.approach_speed_mms = float(payload['approach_speed_mms'])
         msg.slide_dir          = str(payload['slide_dir'])
+        msg.slide_returns      = int(payload.get('slide_returns', 0))
         msg.repeats            = int(payload['repeats'])
         msg.speed_factor_pct   = float(payload['speed_factor_pct'])
         msg.home_deg           = [float(v) for v in payload['home_deg']]
@@ -4603,7 +4616,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 f'v={payload["speed_mms"]:.1f} mm/s, '
                 f'F={payload["force_n"]:.2f} '
                 f'± {payload["hold_tol_n"]:.2f} N, '
-                f'dir={payload["slide_dir"]} | '
+                f'dir={payload["slide_dir"]}'
+                f' ida+volta×{payload.get("slide_returns", 0)} | '
                 f'joint vel {payload["speed_factor_pct"]:.0f}%.',
                 OK)
 

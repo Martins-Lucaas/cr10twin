@@ -163,6 +163,31 @@ def test_protocol_stop_mid_cycle_aborts_rest(node):
     assert 'retreat→DONE' not in calls
 
 
+def test_slide_returns_n_idas_e_voltas_pelo_curso_medido(node):
+    # (N, saída da 1ª ida) → chamadas (reverse, dist_m) de _phase_sliding
+    d = 0.0373   # curso MEDIDO da 1ª ida ≠ nominal 50 mm
+    for n, ida_out, esperado in [
+            (0, 'ok', [(False, None)]),
+            (1, 'ok', [(False, None), (True, d)]),
+            (3, 'ok', [(False, None)] + [(True, d), (False, d)] * 2
+                      + [(True, d)]),
+            (2, 'stop', [(False, None)]),
+            (2, 'sink', [(False, None)])]:   # afundou: sem volta
+        calls, slides = [], []
+        _stub_protocol(node, calls)
+
+        def sliding(reverse=False, dist_m=None, ida_out=ida_out):
+            slides.append((reverse, dist_m))
+            node._last_slide_m = d if dist_m is None else 0.99 * dist_m
+            return ida_out if dist_m is None else 'ok'
+        node._phase_sliding = sliding
+        node._cb_start(_default_start(slide_returns=n))
+        node._protocol_thread.join(timeout=10)
+        assert slides == esperado, (n, ida_out)
+        if ida_out == 'sink':   # termina como ciclo normal, não ABORTED
+            assert 'retreat→DONE' in calls, calls
+
+
 def test_start_clamps_repeats(node):
     calls: list = []
     _stub_protocol(node, calls)

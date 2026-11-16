@@ -361,6 +361,8 @@ class TactileExplorer(AttackMixin, Node):
         # — ver _flush_learned.
         self._flush_lock = threading.Lock()
         self._target_slide_mm: float = 50.0
+        self._last_slide_m: float = 0.0   # curso medido (FK) do último SLIDING
+        # Ida e volta: volta pelo curso MEDIDO da ida (FK), mesma velocidade.
         self._slide_speed_mms: float = 10.0
         # Inclinação da superfície ao longo da direção do deslize (graus, +
         # = sobe no sentido da marcha).
@@ -1144,6 +1146,7 @@ class TactileExplorer(AttackMixin, Node):
                 float(msg.force_n), _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
             self._target_slide_mm = float(msg.slide_dist_mm)
             self._slide_speed_mms = float(msg.speed_mms)
+            self._slide_returns = min(50, int(getattr(msg, 'slide_returns', 0)))
             # Campo novo (06/08/2026): mensagens antigas não o têm, e ausente
             # significa 0° — exatamente o comportamento anterior.
             self._slide_slope_deg = float(np.clip(
@@ -5137,12 +5140,13 @@ class TactileExplorer(AttackMixin, Node):
             f'"Slide Slope" para o SLIDING acompanhar o plano.')
 
 
-    def _phase_sliding(self) -> str:
+    def _phase_sliding(self, reverse: bool = False,
+                       dist_m: float | None = None) -> str:
         """SLIDING — percorre uma RETA CONTIDA NO PLANO da amostra, travada
         em posição (ver o bloco "Plano do deslize" nas constantes).
 
-        Retorna: 'ok' | 'force' (> 15 N) | 'stale' | 'stop' (usuário)
-                 | 'error'.
+        reverse=True: sentido oposto. dist_m: curso (padrão = alvo da GUI).
+        Retorna: 'ok' | 'sink' | 'force' (> 15 N) | 'stale' | 'stop' | 'error'.
         """
         self._set_phase('SLIDING')
         self._settle()
@@ -5150,14 +5154,17 @@ class TactileExplorer(AttackMixin, Node):
         with self._params_lock:
             speed_ms   = max(0.001, self._slide_speed_mms * 1e-3)
             dir_xy     = self._slide_dir_vec.copy()
-            slide_lim_m = min(float(self._target_slide_mm) / 1000.0,
+            slide_lim_m = min(dist_m if dist_m is not None else
+                              float(self._target_slide_mm) / 1000.0,
                               _SLIDING_SAFETY_M)
             target_f   = float(self._target_force_n)
+        tag = 'SLIDING (volta)' if reverse else 'SLIDING'
 
-        frame = self._slide_frame(dir_xy)
+        frame = self._slide_frame(dir_xy)   # -dir_xy inverteria a rampa
         if frame is None:
             return 'error'
         dir_world, perp_dir, plane_n, plane_src = frame
+        dir_world = -dir_world if reverse else dir_world
         # A profundidade é medida ao longo da normal: o ataque efetivo do
         # deslize é perpendicular ao plano, por construção. É o que
         # _relieve_contact recebe para recuar na direção certa.
@@ -5180,7 +5187,7 @@ class TactileExplorer(AttackMixin, Node):
         t_due = slide_lim_m / speed_ms + _SLIDE_LATE_S
 
         self.get_logger().info(
-            f'SLIDING: speed={speed_ms*1e3:.1f} mm/s  '
+            f'{tag}: speed={speed_ms*1e3:.1f} mm/s  '
             f'alvo={slide_lim_m*1e3:.0f} mm sobre a superfície  '
             f'reta=({dir_world[0]:+.3f},{dir_world[1]:+.3f},'
             f'{dir_world[2]:+.3f}) no plano [{plane_src}]  '
@@ -5191,6 +5198,7 @@ class TactileExplorer(AttackMixin, Node):
                                    _SLIDE_CONTACT_MIN_FRAC)
         lost_reported = False
         outcome = 'ok'
+        progress = 0.0
         while True:
             if self._stop_requested.is_set():
                 self._stop_requested.clear()
@@ -5212,7 +5220,7 @@ class TactileExplorer(AttackMixin, Node):
             progress = float(np.dot(T_cur[:3, 3] - p_start, dir_world))
             if progress >= slide_lim_m - _SLIDE_END_TOL_M:
                 self.get_logger().info(
-                    f'SLIDING: {progress*1e3:.1f} mm (FK) de '
+                    f'{tag}: {progress*1e3:.1f} mm (FK) de '
                     f'{slide_lim_m*1e3:.0f} mm em {t0 - t_ref0:.2f} s '
                     f'(média {progress / max(t0 - t_ref0, 1e-6) * 1e3:.2f} '
                     f'mm/s, pedido {speed_ms*1e3:.2f}).')
@@ -5236,6 +5244,7 @@ class TactileExplorer(AttackMixin, Node):
                     f'(> {_SLIDE_MAX_SINK_M*1e3:.0f} mm) abaixo do plano '
                     f'inicial após {progress*1e3:.1f} mm — terminando o '
                     'deslize.')
+                outcome = 'sink'   # termina como 'ok', mas sem volta
                 break
 
             # Força só como SEGURANÇA: sem célula fresca não há monitor
@@ -5334,6 +5343,7 @@ class TactileExplorer(AttackMixin, Node):
             if elapsed < dt:
                 time.sleep(dt - elapsed)
 
+        self._last_slide_m = max(0.0, progress)
         self._settle()
         return outcome
 
@@ -6122,6 +6132,11 @@ class TactileExplorer(AttackMixin, Node):
                 # + HOLD) e recua — sem deslizamento lateral.
                 if mode != 'TOUCH':
                     out = self._phase_sliding()
+                    d = self._last_slide_m   # curso medido da 1ª ida
+                    for k in range(2 * self._slide_returns - 1):  # volta, ida…
+                        if out != 'ok': break
+                        out = self._phase_sliding(reverse=k % 2 == 0, dist_m=d)
+                    if out == 'sink': out = 'ok'   # afundou: sem volta
                     if out in ('force', 'error', 'stale', 'contact_lost', 'target_lost'):
                         self._abort_to_home(); return
                     if out != 'ok':   # STOP → HOME (Regra de Ouro) · FREEZE → congela

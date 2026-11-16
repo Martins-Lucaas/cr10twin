@@ -153,3 +153,9 @@ string run_id
 # antigo, ou `ros2 topic pub` sem o campo) = aceita, como os demais campos
 # novos.
 builtin_interfaces/Time stamp
+
+# ── Idas e voltas (modo SLIDE) ────────────────────────────────────────
+# Após o SLIDING 'ok', N idas e voltas no MESMO contato (sem nova descida),
+# na mesma reta e velocidade, pelo curso MEDIDO da 1ª ida (FK). Depois segue
+# o protocolo (HOME → próximo ciclo). 0 (ou campo ausente) = só a ida.
+uint16 slide_returns  # SLIDE: nº de idas e voltas por ciclo

@@ -233,6 +233,7 @@ def test_slide_grava_a_geometria_do_deslize(ros, tmpdir_runs, monkeypatch):
     assert r['mode'] == 'SLIDE'
     assert r['slide_dir'] == '+Y'
     assert float(r['slide_dist_mm']) == pytest.approx(50.0)
+    assert r['slide_returns'] == '0'
 
 
 def test_default_do_parametro_sensor(ros, tmpdir_runs, monkeypatch):

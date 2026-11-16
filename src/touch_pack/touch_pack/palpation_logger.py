@@ -53,7 +53,7 @@ Saída — uma pasta por RUN, dentro da pasta do MODO (ver constants.run_dir):
                  setpoint_n, force_net_n, lc_seq, lc_t_us, lc_voltage_raw_v,
                  q1..q6, tcp_x/y/z, pose_age_ms, taxel_0..taxel_N,
                  touch_t_us, taxel_age_ms, n_RA, n_SA, cn_mm, cn_ra, cn_sa
-        SLIDE    slide_dir, slide_dist_mm, slide_slope_deg, speed_mms
+        SLIDE    slide_dir, slide_dist_mm, slide_slope_deg, speed_mms, slide_returns
         TOUCH    mod_shape, mod_min_n, mod_max_n, mod_hz, mod_cycles
                  (só com modulação vinda da GUI; sem ela o bloco não existe)
         MANUAL   step_start_n, step_size_n, step_max_n, step_dwell_s
@@ -189,10 +189,13 @@ def _mode_columns(mode: str, msg) -> tuple[list[str], list[str]]:
         return ([], [])
 
     # SLIDE (default): a geometria do deslize é o que define o ensaio.
-    return (['slide_dir', 'slide_dist_mm', 'slide_slope_deg', 'speed_mms'],
+    # slide_returns via getattr: msg antiga (sem o campo) grava 0.
+    return (['slide_dir', 'slide_dist_mm', 'slide_slope_deg', 'speed_mms',
+             'slide_returns'],
             [str(getattr(msg, 'slide_dir', '') or ''),
              f'{f("slide_dist_mm"):.3f}', f'{f("slide_slope_deg"):.3f}',
-             f'{f("speed_mms"):.3f}'])
+             f'{f("speed_mms"):.3f}',
+             str(int(getattr(msg, 'slide_returns', 0) or 0))])
 
 
 def _build_header(n_taxels: int, mode_cols: list[str]) -> list[str]:
