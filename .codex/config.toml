@@ -1,3 +1,0 @@
-[mcp_servers.code-review-graph]
-command = "/home/biolabrobo2/.local/bin/code-review-graph"
-args = ["serve"]

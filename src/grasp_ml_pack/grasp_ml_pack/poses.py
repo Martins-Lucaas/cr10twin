@@ -48,7 +48,7 @@ ARM_PRESETS_BASE = {
 #     +Y — usado pelo frasco/ampola (palma sobrepõe o topo do objeto).
 #   Lateral-Claw: palma normal para +Y, dedos para −Z, de modo que ao
 #     fechar cruzam o eixo do cilindro vertical e o abraçam pelo lado —
-#     usado pelo tubo (ver images/claw.png).
+#     usado pelo tubo (ver images/simulacao/claw.png).
 def _Rtcp_palm_down(finger_dir: tuple = (0.0, 1.0, 0.0)):
     """R_tcp com palma normal = −Z mundo e dedos em `finger_dir`.
     Retorna numpy.array 3x3.

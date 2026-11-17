@@ -2,7 +2,7 @@
 <!--
   touch_tool_tcp.urdf
   TCP de palpação do Touch Pack (Gazebo Classic) — pilha que o CR10 carrega no
-  flange (Link6), montada a partir de `cad/step/MONTAGEM_FA7155_stack.step`:
+  flange (Link6), montada a partir de `cad/montagens/MONTAGEM_FA7155_stack.step`:
 
       flange fixo FA7155 → célula FA7155 de 6 eixos → acoplador hot-swap
           → ponteira F retangular 15 × 17
@@ -88,7 +88,7 @@
   </material>
 
   <!-- ══════════════════════════════════════════════════════════════════
-       FLANGE FIXO DO FA7155 — cad/step/FA7155 固定端法兰（需另购）.STEP
+       FLANGE FIXO DO FA7155 — cad/celula_carga/FA7155 固定端法兰（需另购）.STEP
        Disco de alumínio ⌀75 × 6 mm que parafusa DIRETO na face do flange do
        CR10 (manual §2.1: quatro M6 + pino Φ6), sem acoplador intermediário.
   ══════════════════════════════════════════════════════════════════ -->
@@ -120,7 +120,7 @@
   </joint>
 
   <!-- ══════════════════════════════════════════════════════════════════
-       CÉLULA FA7155 DE 6 EIXOS — cad/step/FA7155D_20Nm.step
+       CÉLULA FA7155 DE 6 EIXOS — cad/celula_carga/FA7155D_20Nm.step
        Corpo de alumínio ⌀75 × 36,5 mm que mede as SEIS componentes do wrench
        (Fx Fy Fz Mx My Mz) e as entrega por RS485 — nada aqui converte sinal,
        ver ft_serial.py. A massa é a do CATÁLOGO (300 g) e não a integrada da
@@ -158,7 +158,7 @@
   </joint>
 
   <!-- ══════════════════════════════════════════════════════════════════
-       ACOPLADOR HOT-SWAP — cad/step/acoplador_celula_hotswap.step
+       ACOPLADOR HOT-SWAP — cad/acopladores/acoplador_celula_hotswap.step
        Disco impresso ⌀66 × 10 mm na face móvel da célula, seguido de uma
        haste ⌀15 × 12 mm onde a ponteira encaixa. É o par do `acoplador_tool`
        da pilha antiga, mas MUITO mais curto: é aqui e no corpo do touch_tool
@@ -197,7 +197,7 @@
   </joint>
 
   <!-- ══════════════════════════════════════════════════════════════════
-       PONTEIRA F — cad/step/ponteira_F_retangular_15x17.step
+       PONTEIRA F — cad/ponteiras/ponteira_F_retangular_15x17.step
        Corpo 20 × 20 mm com um soquete interno que desce sobre a haste do
        acoplador, afinando no topo até a FACE DE CONTATO de 15 × 17 mm. É a
        peça hot-swap: trocar de ponteira muda a altura do TCP.

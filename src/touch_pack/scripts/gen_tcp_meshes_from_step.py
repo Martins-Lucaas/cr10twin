@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera os meshes STL do TCP de palpação a partir do CAD em `cad/step/`.
+"""Gera os meshes STL do TCP de palpação a partir do CAD em `cad/montagens/`.
 
 A pilha vem de UMA montagem em vez de STEPs soltos: os sólidos já estão
 posicionados uns em relação aos outros, então as alturas saem do arquivo em vez
@@ -150,7 +150,7 @@ def main() -> int:
 
     here = os.path.dirname(os.path.abspath(__file__))
     repo = os.path.normpath(os.path.join(here, '..', '..', '..'))
-    step_dir = os.path.join(repo, 'cad', 'step')
+    step_dir = os.path.join(repo, 'cad', 'montagens')
     mesh_dir = os.path.normpath(os.path.join(here, '..', 'meshes'))
 
     if not os.path.isdir(step_dir):

@@ -3,8 +3,8 @@
 Main package of the **biomedical manufacturing cell**. It integrates computer-vision object detection, CR10 arm kinematics, COVVI hand control and orchestration of the pick-and-place cycle in Gazebo — with an optional channel to the physical COVVI hand over ECI.
 
 <p align="center">
-  <img src="../../images/conveyor_cell_gazebo_full_scene.png" width="48%" alt="Manufacturing cell in Gazebo — conveyor, CR10 with COVVI hand and destination bins"/>
-  <img src="../../images/conveyor_cell_gui_arm_picking.png" width="48%" alt="Cell GUI during a grasp — camera, detection and pick-and-place cycle control"/>
+  <img src="../../images/simulacao/conveyor_cell_gazebo_full_scene.png" width="48%" alt="Manufacturing cell in Gazebo — conveyor, CR10 with COVVI hand and destination bins"/>
+  <img src="../../images/gui/conveyor_cell_gui_arm_picking.png" width="48%" alt="Cell GUI during a grasp — camera, detection and pick-and-place cycle control"/>
 </p>
 <p align="center"><em>Left: the full cell in Gazebo (conveyor → pick station → bins). Right: the operation GUI during a grasp cycle.</em></p>
 
@@ -19,14 +19,14 @@ Main package of the **biomedical manufacturing cell**. It integrates computer-vi
 | **Ampoule** (`ampola`) | Bright green (`H=38-85, S>110, V>80`) | Fingertip Grip | Box 3 — blue |
 
 <p align="center">
-  <img src="../../images/palmGrip.png" width="32%" alt="Palm Grip — vial grasp"/>
-  <img src="../../images/claw.png" width="32%" alt="Claw Grip — tube grasp"/>
-  <img src="../../images/fingertip.png" width="32%" alt="Fingertip Grip — ampoule grasp"/>
+  <img src="../../images/simulacao/palmGrip.png" width="32%" alt="Palm Grip — vial grasp"/>
+  <img src="../../images/simulacao/claw.png" width="32%" alt="Claw Grip — tube grasp"/>
+  <img src="../../images/simulacao/fingertip.png" width="32%" alt="Fingertip Grip — ampoule grasp"/>
 </p>
 <p align="center"><em>COVVI hand grasp types: <strong>Palm Grip</strong> (vial) · <strong>Claw Grip</strong> (tube) · <strong>Fingertip Grip</strong> (ampoule).</em></p>
 
 <p align="center">
-  <img src="../../images/conveyor_cell_gazebo_closeup_bins.png" width="72%" alt="Gazebo close-up of the cell: conveyor with the pick station and the three destination bins in red, green and blue"/>
+  <img src="../../images/simulacao/conveyor_cell_gazebo_closeup_bins.png" width="72%" alt="Gazebo close-up of the cell: conveyor with the pick station and the three destination bins in red, green and blue"/>
 </p>
 <p align="center"><em>The three destination bins in Gazebo — <strong>red</strong> (vial) · <strong>green</strong> (tube) · <strong>blue</strong> (ampoule) — beside the conveyor and its pick station.</em></p>
 
@@ -54,7 +54,7 @@ RGB camera (Gazebo)
 ```
 
 <p align="center">
-  <img src="../../images/gui_cell_tab_with_pick_camera.png" width="92%" alt="manual_control Cell tab beside Gazebo, with the Pick Station camera window showing the tube detected and labelled with its confidence score"/>
+  <img src="../../images/gui/gui_cell_tab_with_pick_camera.png" width="92%" alt="manual_control Cell tab beside Gazebo, with the Pick Station camera window showing the tube detected and labelled with its confidence score"/>
 </p>
 <p align="center"><em>The <strong>Cell</strong> tab of <code>manual_control</code> next to Gazebo. The <em>Pick Station</em> camera window shows the live detection — here the <code>tubo</code> bounded and scored — while the cell monitor reports what the conveyor holds and what the camera sees.</em></p>
 
@@ -153,8 +153,8 @@ qs,ok=inverse_kinematics(T[:3,3],T[:3,2],q_seed=q); print('ok',ok)"
 | F7 | Return HOME | Cartesian |
 
 <p align="center">
-  <img src="../../images/gazebo_arm_above_pick_station.png" width="47%" alt="Gazebo: the CR10 with the COVVI hand positioned above the pick station before descending"/>
-  <img src="../../images/gazebo_arm_descending_to_object.png" width="47%" alt="Gazebo: the arm descending toward the object with the hand already pre-shaped"/>
+  <img src="../../images/simulacao/gazebo_arm_above_pick_station.png" width="47%" alt="Gazebo: the CR10 with the COVVI hand positioned above the pick station before descending"/>
+  <img src="../../images/simulacao/gazebo_arm_descending_to_object.png" width="47%" alt="Gazebo: the arm descending toward the object with the hand already pre-shaped"/>
 </p>
 <p align="center"><em><strong>F1</strong> — APPROACH, 60 mm above the pick with the hand open (left) → <strong>F1.6</strong> — descent to PICK with the hand already pre-shaped (right).</em></p>
 
@@ -185,8 +185,8 @@ known-good cached pose instead of executing a bad IK branch.
 > normally.
 
 <p align="center">
-  <img src="../../images/gazebo_hand_lateral_approach_a.png" width="47%" alt="Gazebo close-up of the COVVI hand approaching the conveyor from the side"/>
-  <img src="../../images/gazebo_hand_lateral_approach_b.png" width="47%" alt="Second view of the hand in the lateral approach, near the conveyor frame"/>
+  <img src="../../images/simulacao/gazebo_hand_lateral_approach_a.png" width="47%" alt="Gazebo close-up of the COVVI hand approaching the conveyor from the side"/>
+  <img src="../../images/simulacao/gazebo_hand_lateral_approach_b.png" width="47%" alt="Second view of the hand in the lateral approach, near the conveyor frame"/>
 </p>
 <p align="center"><em>The <strong>lateral approach</strong> used for the tube. It is this branch that brings the flange within ~2 mm of <code>belt_frame</code>, which is why the tube runs on the cached fallback pose.</em></p>
 
@@ -257,8 +257,8 @@ python src/grasp_ml_pack/scripts/tune_rotate.py       # wrist orientation tuning
 - **Real Hand** toggle — enables sending commands to the physical hand over ECI
 
 <p align="center">
-  <img src="../../images/gui_jog_tab_full.png" width="47%" alt="manual_control Arm Jog tab: six joint sliders in degrees with URDF limits, and the precomputed pose buttons"/>
-  <img src="../../images/gui_hand_tab_full.png" width="47%" alt="manual_control COVVI Hand tab: six digit sliders, the three project grasp buttons and the 14 built-in ECI grips"/>
+  <img src="../../images/gui/gui_jog_tab_full.png" width="47%" alt="manual_control Arm Jog tab: six joint sliders in degrees with URDF limits, and the precomputed pose buttons"/>
+  <img src="../../images/gui/gui_hand_tab_full.png" width="47%" alt="manual_control COVVI Hand tab: six digit sliders, the three project grasp buttons and the 14 built-in ECI grips"/>
 </p>
 <p align="center"><em>Left: the <strong>Arm Jog</strong> tab (<code>Jog (Braço)</code>) — per-joint sliders with the URDF limits shown, plus Home/Vertical/Extended poses. Right: the <strong>COVVI Hand</strong> tab (<code>Mão COVVI</code>) — the six digits (0 = open, 200 = closed), the three project grasps and the 14 built-in ECI grips. The GUI labels are in Portuguese.</em></p>
 
@@ -293,8 +293,8 @@ ros2 run grasp_ml_pack manual_control --ros-args -p eci_prefix:=/my/hand
 ## Connecting the real COVVI hand
 
 <p align="center">
-  <img src="../../images/covvi_hand_power_grasp_bottle.jpg" width="42%" alt="The real COVVI hand on the CR10 flange, closed around a bottle in a power grasp"/>
-  <img src="../../images/covvi_hand_pinch_grasp_cube.jpg" width="42%" alt="The real COVVI hand pinching a small 3D-printed cube between thumb and index finger"/>
+  <img src="../../images/fotos/covvi_hand_power_grasp_bottle.jpg" width="42%" alt="The real COVVI hand on the CR10 flange, closed around a bottle in a power grasp"/>
+  <img src="../../images/fotos/covvi_hand_pinch_grasp_cube.jpg" width="42%" alt="The real COVVI hand pinching a small 3D-printed cube between thumb and index finger"/>
 </p>
 <p align="center"><em>The physical hand executing a <strong>power grasp</strong> on a bottle and a <strong>pinch</strong> on a printed cube, driven over ECI from the same GUI that drives the simulation.</em></p>
 

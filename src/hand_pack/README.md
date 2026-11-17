@@ -3,15 +3,15 @@
 Support package for the **COVVI Hand** — it holds the combined CR10 + COVVI URDF, launch helpers, URDF post-processing functions and auxiliary GUIs for controlling the hand in isolation.
 
 <p align="center">
-  <img src="../../images/covvi_hand_rviz_joints_open.png" width="32%" alt="COVVI hand in RViz — fingers open"/>
-  <img src="../../images/covvi_hand_rviz_joints_closed.png" width="32%" alt="COVVI hand in RViz — fingers closed"/>
-  <img src="../../images/gui_hand_tab_with_rviz.png" width="32%" alt="COVVI hand control GUI next to RViz"/>
+  <img src="../../images/simulacao/covvi_hand_rviz_joints_open.png" width="32%" alt="COVVI hand in RViz — fingers open"/>
+  <img src="../../images/simulacao/covvi_hand_rviz_joints_closed.png" width="32%" alt="COVVI hand in RViz — fingers closed"/>
+  <img src="../../images/gui/gui_hand_tab_with_rviz.png" width="32%" alt="COVVI hand control GUI next to RViz"/>
 </p>
 <p align="center"><em>Combined CR10 + COVVI URDF (31 joints: 6 primary + 25 <em>mimic</em>) in RViz — fingers open and closed — and the hand control GUI.</em></p>
 
 <p align="center">
-  <img src="../../images/covvi_hand_product_photo.jpg" width="38%" alt="Product photo of the COVVI Hand prosthetic hand"/>
-  <img src="../../images/covvi_hand_3d_design_internal.png" width="55%" alt="RViz view of the hand mesh with the internal finger linkages and actuators visible"/>
+  <img src="../../images/fotos/covvi_hand_product_photo.jpg" width="38%" alt="Product photo of the COVVI Hand prosthetic hand"/>
+  <img src="../../images/simulacao/covvi_hand_3d_design_internal.png" width="55%" alt="RViz view of the hand mesh with the internal finger linkages and actuators visible"/>
 </p>
 <p align="center"><em>The real <strong>COVVI Hand</strong> (left) and the URDF visual mesh in RViz (right), which carries the internal finger linkage geometry the mimic joints reproduce.</em></p>
 
@@ -71,8 +71,8 @@ ros2 launch hand_pack spawn_hand.launch.xml
 ```
 
 <p align="center">
-  <img src="../../images/covvi_hand_rviz_collision_mesh.png" width="47%" alt="RViz showing the combined CR10 + COVVI model driven by the joint_state_publisher_gui sliders"/>
-  <img src="../../images/covvi_hand_blender_collision_scene.png" width="47%" alt="Gazebo factory.world with the CR10 and the COVVI hand above crates and a cylinder"/>
+  <img src="../../images/simulacao/covvi_hand_rviz_collision_mesh.png" width="47%" alt="RViz showing the combined CR10 + COVVI model driven by the joint_state_publisher_gui sliders"/>
+  <img src="../../images/simulacao/covvi_hand_blender_collision_scene.png" width="47%" alt="Gazebo factory.world with the CR10 and the COVVI hand above crates and a cylinder"/>
 </p>
 <p align="center"><em>Left: <code>cr10_covvi_rviz.launch.py</code> — the combined model driven straight from <code>joint_state_publisher_gui</code>. Right: <code>hand_gazebo.launch.py</code> in <code>worlds/factory.world</code>.</em></p>
 
@@ -87,8 +87,8 @@ ros2 run hand_pack combined_gui
 ```
 
 <p align="center">
-  <img src="../../images/covvi_hand_cad_fingers_extended.png" width="47%" alt="RViz showing the COVVI hand URDF on its own with every joint slider at zero"/>
-  <img src="../../images/covvi_hand_blender_constraints.png" width="47%" alt="Gazebo running the hand alone with the hand_gui panel exposing both driver joints and the mimic distal joints"/>
+  <img src="../../images/simulacao/covvi_hand_cad_fingers_extended.png" width="47%" alt="RViz showing the COVVI hand URDF on its own with every joint slider at zero"/>
+  <img src="../../images/simulacao/covvi_hand_blender_constraints.png" width="47%" alt="Gazebo running the hand alone with the hand_gui panel exposing both driver joints and the mimic distal joints"/>
 </p>
 <p align="center"><em>Left: the hand URDF alone with every joint at 0 (rest pose). Right: <code>hand_gui</code> over Gazebo — the panel exposes the 6 driver joints <em>and</em> the derived <code>*_distal_j01</code> mimic joints, which is what <code>clamp_hand_joint_limits</code> re-limits.</em></p>
 

@@ -5,8 +5,8 @@
 It also includes a **neuromorphic touch sensor (STM32, 4×4 array + Izhikevich model)**, **synchronized force + touch recording**, and two **operating modes**: **Touch** (presses with controlled force and returns) and **Slide** (full cycle with a lateral drag).
 
 <p align="center">
-  <img src="../../images/touch_pack_gazebo_tactile_cell.png" width="48%" alt="Tactile palpation cell in Gazebo — CR10 with the TouchTool tip above the palpation table"/>
-  <img src="../../images/touch_pack_gui_palpation_slide.png" width="48%" alt="Palpation GUI — Palpation tab in Slide mode with the live load-cell panel"/>
+  <img src="../../images/simulacao/touch_pack_gazebo_tactile_cell.png" width="48%" alt="Tactile palpation cell in Gazebo — CR10 with the TouchTool tip above the palpation table"/>
+  <img src="../../images/gui/touch_pack_gui_palpation_slide.png" width="48%" alt="Palpation GUI — Palpation tab in Slide mode with the live load-cell panel"/>
 </p>
 <p align="center"><em>Left: the palpation scene in Gazebo Classic. Right: the <code>palpation_gui</code> — <strong>Palpation</strong> tab (Slide mode) with live readings from the load cell and the touch sensor.</em></p>
 
@@ -120,7 +120,7 @@ ros2 launch touch_pack tactile_cell.launch.py control_mode:=mirror no_gui:=true
 ```
 
 <p align="center">
-  <img src="../../images/touch_pack_gazebo_touch_tool_closeup.png" width="66%" alt="Gazebo close-up of the CR10 carrying the touch tool above the palpation table in the research_lab world"/>
+  <img src="../../images/simulacao/touch_pack_gazebo_touch_tool_closeup.png" width="66%" alt="Gazebo close-up of the CR10 carrying the touch tool above the palpation table in the research_lab world"/>
 </p>
 <p align="center"><em><code>end_effector:=touch_tool</code> in <code>worlds/research_lab.world</code> — the arm carries the contact tip instead of the COVVI hand, which is what unlocks the Palpation tab.</em></p>
 
@@ -202,7 +202,7 @@ the phantom. Hold the joint before releasing its brake — it drops under its
 own weight.
 
 <p align="center">
-  <img src="../../images/touch_pack_gui_manual_gazebo.png" width="92%" alt="Manual Control tab side by side with Gazebo — CR10 joint sliders and load-cell reading"/>
+  <img src="../../images/gui/touch_pack_gui_manual_gazebo.png" width="92%" alt="Manual Control tab side by side with Gazebo — CR10 joint sliders and load-cell reading"/>
 </p>
 <p align="center"><em><strong>Manual Control</strong> tab next to Gazebo: jogging the 6 CR10 joints with the load cell read live (jog uses <code>MovJ</code> when in MIRROR).</em></p>
 
@@ -233,7 +233,7 @@ A dashboard for the **touch sensor (STM32, Izhikevich)** with 4 embedded matplot
 Rendered with **blitting** (`FuncAnimation` @ 20 Hz) — only the artists that change are redrawn, and it pauses when the tab is not visible (no freezing, the raster scrolls smoothly).
 
 <p align="center">
-  <img src="../../images/touch_pack_gui_sensors_izhikevich.png" width="92%" alt="Sensors tab — 4×4 heatmap, RA/SA raster, I_final and postsynaptic neuron of the Izhikevich model"/>
+  <img src="../../images/gui/touch_pack_gui_sensors_izhikevich.png" width="92%" alt="Sensors tab — 4×4 heatmap, RA/SA raster, I_final and postsynaptic neuron of the Izhikevich model"/>
 </p>
 <p align="center"><em><strong>Sensors</strong> tab: 4×4 voltage heatmap, RA/SA raster, <code>I_final</code> current and the postsynaptic neuron response (Izhikevich), read from the STM32 over USB-CDC.</em></p>
 
@@ -241,7 +241,7 @@ Rendered with **blitting** (`FuncAnimation` @ 20 Hz) — only the artists that c
 Interactive 3D posing: **drag the TCP with the mouse** and the arm follows, with the inverse kinematics solved live.
 
 <p align="center">
-  <img src="../../images/touch_pack_gui_manip3d.png" width="92%" alt="3D Manipulation tab — the CR10 rendered from its real meshes with the palpation TCP, and the side panel with live TCP pose and drag options"/>
+  <img src="../../images/gui/touch_pack_gui_manip3d.png" width="92%" alt="3D Manipulation tab — the CR10 rendered from its real meshes with the palpation TCP, and the side panel with live TCP pose and drag options"/>
 </p>
 <p align="center"><em><strong>3D Manipulation</strong> with <code>end_effector:=touch_tool</code>: the CR10 drawn from <code>cra_description</code>'s own STLs, the printed palpation stack on the flange, and the draggable handle on the TCP.</em></p>
 
@@ -250,7 +250,7 @@ Interactive 3D posing: **drag the TCP with the mouse** and the arm follows, with
 So the CR10 arrives with its six link meshes and blue accent rings; `touch_tool` adds the palpation stack (FA7155 fixed flange → FA7155 cell → hot-swap coupler → tip F); `hand` adds the prosthesis coupler and the full COVVI hand, whose fingers **articulate live** from `/joint_states` — the URDF's `<mimic>` joints drive the 25 secondary links off the 6 primary ones, exactly as in the sim.
 
 <p align="center">
-  <img src="../../images/touch_pack_gui_manip3d_hand.png" width="80%" alt="3D Manipulation tab in hand mode — CR10 with the COVVI hand rendered from its own meshes"/>
+  <img src="../../images/gui/touch_pack_gui_manip3d_hand.png" width="80%" alt="3D Manipulation tab in hand mode — CR10 with the COVVI hand rendered from its own meshes"/>
 </p>
 <p align="center"><em>The same tab with <code>end_effector:=hand</code>, zoomed onto the end effector: the black prosthesis coupler and the COVVI hand with its fingers curled, driven live by the hand controller. The TCP handle sits at the grasp point of <code>kinematics.T_HAND_ATTACH</code> — a convention, not a URDF link, which is why it floats just past the fingertips.</em></p>
 
@@ -533,7 +533,7 @@ strips the standalone `world`/`Link6` scaffolding), so the simulated stack and
 the standalone URDF can no longer drift apart.
 
 The links come from a single CAD assembly,
-[`cad/step/MONTAGEM_FA7155_stack.step`](../../cad/step) — the solids are
+[`cad/montagens/MONTAGEM_FA7155_stack.step`](../../cad/montagens) — the solids are
 already positioned against each other, and the mesh generator normalizes Z = 0
 to the face that bolts onto the CR10 wrist. The wrist itself is in the assembly
 as a mounting reference only: it counts neither towards the mass nor towards
@@ -635,7 +635,7 @@ are shown raw.
 <p align="center"><em>The twin is born synchronized: at launch the real CR10 pose is read over TCP/IP (read-only) and Gazebo is driven to it (~3 s). If the robot is off or unreachable, the default URDF pose is kept and the system still comes up.</em></p>
 
 <p align="center">
-  <img src="../../images/physical_initial_state_sync_gazebo.jpg" width="72%" alt="The real CR10 with the touch tool beside a monitor showing Gazebo with the simulated arm in the same pose"/>
+  <img src="../../images/fotos/physical_initial_state_sync_gazebo.jpg" width="72%" alt="The real CR10 with the touch tool beside a monitor showing Gazebo with the simulated arm in the same pose"/>
 </p>
 <p align="center"><em>The same initial state on both sides — real arm and Gazebo — right after startup synchronization.</em></p>
 

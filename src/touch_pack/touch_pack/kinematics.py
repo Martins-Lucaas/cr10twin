@@ -62,7 +62,7 @@ T_HAND_ATTACH = np.array([
 ], dtype=float)
 
 # TCP de palpação: pilha da célula FA7155 de 6 eixos montada no flange.
-# Geometria lida de `cad/step/MONTAGEM_FA7155_stack.step` (Z=0 na face do
+# Geometria lida de `cad/montagens/MONTAGEM_FA7155_stack.step` (Z=0 na face do
 # flange do CR10, +Z saindo dela):
 #
 #     0,0 …   6,0   flange fixo FA7155  (disco ⌀75, alumínio, comprado)

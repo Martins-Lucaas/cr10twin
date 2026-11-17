@@ -13,7 +13,7 @@
 </div>
 
 <p align="center">
-  <img src="images/physical_bench_cr10_covvi_hand_with_sim.jpg" width="90%" alt="Physical bench: Dobot CR10A arm with the COVVI hand mounted on the flange, and the Gazebo digital twin mirrored on the monitor at the left"/>
+  <img src="images/fotos/physical_bench_cr10_covvi_hand_with_sim.jpg" width="90%" alt="Physical bench: Dobot CR10A arm with the COVVI hand mounted on the flange, and the Gazebo digital twin mirrored on the monitor at the left"/>
 </p>
 <p align="center"><em>The physical bench — <strong>Dobot CR10A</strong> with the <strong>COVVI Hand</strong> on the flange — next to the Gazebo digital twin running the same pose.</em></p>
 
@@ -28,24 +28,24 @@ Part of an **undergraduate thesis (TCC) in Biomedical Engineering** — a virtua
 Click a strip to open the video — GitHub plays it in the file viewer.
 
 <p align="center">
-  <a href="images/tcc_video_visao_geral.mp4"><img src="images/poster_overview.jpg" width="90%" alt="Video thumbnail: overview of the bench — the operator moves the real CR10 with the COVVI hand while the Gazebo twin follows on the monitor"/></a>
+  <a href="images/videos/tcc_video_visao_geral.mp4"><img src="images/videos/posters/poster_overview.jpg" width="90%" alt="Video thumbnail: overview of the bench — the operator moves the real CR10 with the COVVI hand while the Gazebo twin follows on the monitor"/></a>
 </p>
 <p align="center"><em><strong>Overview (52 s)</strong> — the bench end to end: GUI, real arm with the COVVI hand and the Gazebo twin following it.</em></p>
 
 <p align="center">
-  <a href="images/real_to_sim_drag_teach_bench.mp4"><img src="images/poster_real_to_sim_drag_teach.jpg" width="90%" alt="Video thumbnail: the operator drags the real CR10 by hand while the twin on the monitor reproduces the motion"/></a>
+  <a href="images/videos/real_to_sim_drag_teach_bench.mp4"><img src="images/videos/posters/poster_real_to_sim_drag_teach.jpg" width="90%" alt="Video thumbnail: the operator drags the real CR10 by hand while the twin on the monitor reproduces the motion"/></a>
 </p>
 <p align="center"><em><strong>Real-to-Sim drag teach (27 s)</strong> — the arm is moved by hand with the motors released; the twin on the left monitor mirrors it from the 125 Hz feedback.</em></p>
 
 <p align="center">
-  <a href="images/tcc_video_2026-07-06_10-53-14.mp4"><img src="images/poster_drag_teach_covvi_hand.jpg" width="44%" alt="Video thumbnail: drag teach of the CR10 carrying the COVVI hand"/></a>
-  <a href="images/tcc_screencast_2026-07-06_10-30-20.webm"><img src="images/poster_gui_covvi_grips_gazebo.jpg" width="52%" alt="Video thumbnail: Manual Control tab applying COVVI factory grips to the simulated hand in Gazebo"/></a>
+  <a href="images/videos/tcc_video_2026-07-06_10-53-14.mp4"><img src="images/videos/posters/poster_drag_teach_covvi_hand.jpg" width="44%" alt="Video thumbnail: drag teach of the CR10 carrying the COVVI hand"/></a>
+  <a href="images/videos/tcc_screencast_2026-07-06_10-30-20.webm"><img src="images/videos/posters/poster_gui_covvi_grips_gazebo.jpg" width="52%" alt="Video thumbnail: Manual Control tab applying COVVI factory grips to the simulated hand in Gazebo"/></a>
 </p>
 <p align="center"><em><strong>Drag teach with the COVVI hand (20 s)</strong> · <strong>Manual Control → COVVI grips in Gazebo (51 s)</strong>.</em></p>
 
 <p align="center">
-  <a href="images/palpation_fa7155_touch_side_x.mp4"><img src="images/poster_fa7155_touch_x.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a glass plate, seen from the sensor's +Y side"/></a>
-  <a href="images/palpation_fa7155_touch_side_y.mp4"><img src="images/poster_fa7155_touch_y.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a layered sample, seen from the sensor's +X side"/></a>
+  <a href="images/videos/palpation_fa7155_touch_side_x.mp4"><img src="images/videos/posters/poster_fa7155_touch_x.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a glass plate, seen from the sensor's +Y side"/></a>
+  <a href="images/videos/palpation_fa7155_touch_side_y.mp4"><img src="images/videos/posters/poster_fa7155_touch_y.jpg" width="48%" alt="Video thumbnail: the palpation tip on the FA7155 cell touching a layered sample, seen from the sensor's +X side"/></a>
 </p>
 <p align="center"><em><strong>The real CR10 with the FA7155 cell touching a sample</strong>, filmed from two sides of the sensor (9 s · 10 s).</em></p>
 
@@ -54,12 +54,12 @@ Click a strip to open the video — GitHub plays it in the file viewer.
 ## The sim ↔ real bridge
 
 <p align="center">
-  <img src="images/sim_real_flow_diagram.svg" width="80%" alt="Diagram of the bidirectional Sim-to-Real and Real-to-Sim bridge between the digital twin and the CR10 + COVVI hardware"/>
+  <img src="images/diagramas/sim_real_flow_diagram.svg" width="80%" alt="Diagram of the bidirectional Sim-to-Real and Real-to-Sim bridge between the digital twin and the CR10 + COVVI hardware"/>
 </p>
 <p align="center"><em>One direction at a time, selected by mode: <strong>Sim-to-Real</strong> (the twin commands, the hardware replicates — ServoJ streaming at 33 Hz, MovJ on manual jog, COVVI hand over ECI) and <strong>Real-to-Sim</strong> (the hardware commands, the twin replicates — joint feedback at 125 Hz, which enables drag teach). Diagram labels are in Portuguese.</em></p>
 
 <p align="center">
-  <img src="images/physical_initial_state_sync_gazebo.jpg" width="72%" alt="Real CR10 next to a monitor where Gazebo shows the simulated arm in the exact same pose after startup synchronization"/>
+  <img src="images/fotos/physical_initial_state_sync_gazebo.jpg" width="72%" alt="Real CR10 next to a monitor where Gazebo shows the simulated arm in the exact same pose after startup synchronization"/>
 </p>
 <p align="center"><em>At startup, <code>real_pose_sync</code> reads the real arm's pose and drives Gazebo to it (~3 s), so the twin is born synchronized rather than in an arbitrary URDF pose.</em></p>
 
@@ -82,14 +82,14 @@ Click a strip to open the video — GitHub plays it in the file viewer.
 | IMUs | **WBAN-Inercial** — 6 ESPs over Wi-Fi | `imu_node` publishes `/imu/sensor_<id>` (Madgwick orientation); hand mode only (`imu:=true`). `tools/imu_arm_teleop` uses them to teleoperate the CR10 by arm motion |
 
 <p align="center">
-  <img src="images/physical_bench_overview_cr10_covvi.jpg" width="31%" alt="Full lab bench: the CR10 arm with the COVVI hand, and the Gazebo digital twin on the monitor in the foreground"/>
-  <img src="images/covvi_hand_power_grasp_bottle.jpg" width="31%" alt="COVVI hand mounted on the CR10 flange holding a bottle in a power grasp"/>
-  <img src="images/covvi_hand_pinch_grasp_cube.jpg" width="31%" alt="COVVI hand pinching a small 3D-printed cube between thumb and index finger"/>
+  <img src="images/fotos/physical_bench_overview_cr10_covvi.jpg" width="31%" alt="Full lab bench: the CR10 arm with the COVVI hand, and the Gazebo digital twin on the monitor in the foreground"/>
+  <img src="images/fotos/covvi_hand_power_grasp_bottle.jpg" width="31%" alt="COVVI hand mounted on the CR10 flange holding a bottle in a power grasp"/>
+  <img src="images/fotos/covvi_hand_pinch_grasp_cube.jpg" width="31%" alt="COVVI hand pinching a small 3D-printed cube between thumb and index finger"/>
 </p>
 <p align="center"><em>The real hardware in the lab: the bench with the twin on screen · a <strong>power grasp</strong> on a bottle · a <strong>pinch grasp</strong> on a 3D-printed cube.</em></p>
 
 <p align="center">
-  <img src="images/physical_fa7155_palpation_tool.jpg" width="62%" alt="The palpation end effector on the real CR10: the FA7155 six-axis cell, a blue printed coupler and the tip resting on a glass plate over a layered sample"/>
+  <img src="images/fotos/physical_fa7155_palpation_tool.jpg" width="62%" alt="The palpation end effector on the real CR10: the FA7155 six-axis cell, a blue printed coupler and the tip resting on a glass plate over a layered sample"/>
 </p>
 <p align="center"><em>The current palpation end effector: the <strong>FA7155 6-axis cell</strong> on the flange, the blue printed coupler and the contact tip on a sample. Swapping it for the COVVI hand is what <code>end_effector:=touch_tool</code> vs <code>hand</code> (the default) selects.</em></p>
 
@@ -203,7 +203,7 @@ pip install ultralytics
 # so anyone who wants the model has to train it.
 pip install scikit-learn torch
 
-# Optional — regenerate the palpation TCP meshes/inertias from cad/step/*.step
+# Optional — regenerate the palpation TCP meshes/inertias from cad/**/*.step
 pip install cadquery-ocp
 ```
 
@@ -229,9 +229,9 @@ pip install cadquery-ocp
 Each package documents how to run it in its own README.
 
 <p align="center">
-  <img src="images/conveyor_cell_gazebo_full_scene.png" width="31%" alt="grasp_ml_pack — the manufacturing cell in Gazebo with conveyor, arm and destination bins"/>
-  <img src="images/touch_pack_gazebo_tactile_cell.png" width="31%" alt="touch_pack — the tactile palpation cell in Gazebo with the CR10 and the TouchTool tip"/>
-  <img src="images/covvi_hand_rviz_joints_open.png" width="31%" alt="hand_pack — the COVVI hand URDF in RViz with the fingers open"/>
+  <img src="images/simulacao/conveyor_cell_gazebo_full_scene.png" width="31%" alt="grasp_ml_pack — the manufacturing cell in Gazebo with conveyor, arm and destination bins"/>
+  <img src="images/simulacao/touch_pack_gazebo_tactile_cell.png" width="31%" alt="touch_pack — the tactile palpation cell in Gazebo with the CR10 and the TouchTool tip"/>
+  <img src="images/simulacao/covvi_hand_rviz_joints_open.png" width="31%" alt="hand_pack — the COVVI hand URDF in RViz with the fingers open"/>
 </p>
 <p align="center"><em><code>grasp_ml_pack</code> — manufacturing cell · <code>touch_pack</code> — tactile palpation cell · <code>hand_pack</code> — combined CR10 + COVVI URDF.</em></p>
 
@@ -262,9 +262,9 @@ Each package documents how to run it in its own README.
 | **Hand latency measurement** — same cross-correlation, on the COVVI joints | `hand_latency_probe` |
 
 <p align="center">
-  <img src="images/gui_manual_en.png" width="32%" alt="Manual Control tab: CR10 joint sliders on the left, COVVI primary joints and factory grip patterns on the right"/>
-  <img src="images/gui_poses_en.png" width="32%" alt="Poses & Motions tab: saved poses on the left, a motion built from a pose sequence with speed, duration, Run, Loop and Stop"/>
-  <img src="images/gui_manip3d_en.png" width="32%" alt="3D Manipulation tab: the CR10 with the COVVI hand rendered from its meshes, with the live TCP pose and drag options"/>
+  <img src="images/gui/gui_manual_en.png" width="32%" alt="Manual Control tab: CR10 joint sliders on the left, COVVI primary joints and factory grip patterns on the right"/>
+  <img src="images/gui/gui_poses_en.png" width="32%" alt="Poses & Motions tab: saved poses on the left, a motion built from a pose sequence with speed, duration, Run, Loop and Stop"/>
+  <img src="images/gui/gui_manip3d_en.png" width="32%" alt="3D Manipulation tab: the CR10 with the COVVI hand rendered from its meshes, with the live TCP pose and drag options"/>
 </p>
 <p align="center"><em>The <code>palpation_gui</code> today (hand mode): <strong>Manual Control</strong> · <strong>Poses &amp; Motions</strong> · <strong>3D Manipulation</strong>.</em></p>
 
@@ -291,12 +291,14 @@ cr10twin/
 ├── data/                 Versioned measurements behind the paper: latency/ and latency_hand/
 │                         (written there directly by the latency probes) and IMU data/
 ├── tools/imu_arm_teleop/ Standalone bridge (not a ROS node): WBAN IMUs → CR10 Cartesian teleop
-├── docs/adr/             Design decisions the code does not make obvious — read before
-│                         touching force control, the load cell or firmware
-├── images/               Photos, Gazebo/GUI screenshots, diagrams, videos and their posters
-├── Docs/                 Vendor manuals (Dobot, COVVI, FA7155) — local only, not versioned
-├── Dockerfile · docker-compose.yml   Reproducible ROS 2 Humble environment (also used by CI)
-└── modbus.txt            Dobot Appendix A — Modbus register map (robot as Modbus slave)
+├── cad/                  STEP/F3D by type: montagens/, celula_carga/, acopladores/, ponteiras/,
+│                         eletronica/, molde/
+├── images/               fotos/ (real bench), simulacao/ (Gazebo, RViz, CAD renders), gui/,
+│                         videos/ (+ posters/), diagramas/
+├── Docs/                 adr/ (design decisions — read before touching force control, the
+│                         load cell or firmware), manuais/ (vendor PDFs), tutoriais/,
+│                         referencias/ (Modbus map, papers), pesquisa/ (IMU teleop notes)
+└── Dockerfile · docker-compose.yml   Reproducible ROS 2 Humble environment (also used by CI)
 ```
 
 ---

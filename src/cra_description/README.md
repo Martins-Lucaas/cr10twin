@@ -3,12 +3,12 @@
 Package holding the **URDF/Xacro and meshes of the Dobot CR10 arm** (CR10A model, 6-DOF). Extracted from the official Dobot repository [`DOBOT_6Axis_ROS2_V4`](https://github.com/Dobot-Arm/DOBOT_6Axis_ROS2_V4) — only this package is used; the others (cr3, cr5, cr7, MoveIt, nova2, etc.) can be discarded.
 
 <p align="center">
-  <img src="../../images/gazebo_arm_above_pick_station.png" width="60%" alt="Dobot CR10 arm (cra_description URDF) positioned above the pick station in Gazebo"/>
+  <img src="../../images/simulacao/gazebo_arm_above_pick_station.png" width="60%" alt="Dobot CR10 arm (cra_description URDF) positioned above the pick station in Gazebo"/>
 </p>
 <p align="center"><em>URDF of the <strong>Dobot CR10</strong> (6-DOF) loaded into Gazebo Classic from this package's <code>cr10_robot.xacro</code>.</em></p>
 
 <p align="center">
-  <img src="../../images/physical_cr10_end_effector_joints.jpg" width="72%" alt="Close-up of the real CR10 wrist joints and tool flange, with an end effector bolted on and the emergency stop in the background"/>
+  <img src="../../images/fotos/physical_cr10_end_effector_joints.jpg" width="72%" alt="Close-up of the real CR10 wrist joints and tool flange, with an end effector bolted on and the emergency stop in the background"/>
 </p>
 <p align="center"><em>The real arm this URDF models: the CR10 wrist (joint4–joint6) and the tool flange the project's end effectors bolt onto.</em></p>
 
