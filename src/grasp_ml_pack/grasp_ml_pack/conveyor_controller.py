@@ -2,7 +2,7 @@
 Nó de controle da esteira — Célula de Manufatura Biomédica.
 
 Objetos gerenciados:
-  frasco — frasco de medicamento (cilindro âmbar, r=42mm, h=90mm)
+  frasco — frasco de medicamento (cilindro âmbar, r=25mm, h=90mm)
   tubo   — tubo de ensaio        (cilindro azul,  r=12mm, h=120mm)
   ampola — ampola farmacêutica   (cilindro verde, r=5mm,  h=75mm)
 
@@ -46,12 +46,12 @@ _SDF_FRASCO = """\
   <static>false</static>
   <link name="link">
     <inertial>
-      <mass>0.180</mass>
-      <inertia><ixx>2.01e-4</ixx><iyy>2.01e-4</iyy><izz>1.59e-4</izz>
+      <mass>0.080</mass>
+      <inertia><ixx>6.65e-5</ixx><iyy>6.65e-5</iyy><izz>2.50e-5</izz>
                <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
     </inertial>
     <collision name="collision">
-      <geometry><cylinder><radius>0.042</radius><length>0.090</length></cylinder></geometry>
+      <geometry><cylinder><radius>0.025</radius><length>0.090</length></cylinder></geometry>
       <surface>
         <friction>
           <ode><mu>2.5</mu><mu2>2.5</mu2><fdir1>0 0 0</fdir1><slip1>0.0</slip1><slip2>0.0</slip2></ode>
@@ -61,7 +61,7 @@ _SDF_FRASCO = """\
       </surface>
     </collision>
     <visual name="visual">
-      <geometry><cylinder><radius>0.042</radius><length>0.090</length></cylinder></geometry>
+      <geometry><cylinder><radius>0.025</radius><length>0.090</length></cylinder></geometry>
       <material>
         <ambient>0.80 0.45 0.00 1</ambient>
         <diffuse>0.90 0.55 0.05 1</diffuse>

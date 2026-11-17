@@ -37,7 +37,7 @@ LINK_STL_BOUNDS: dict[str, tuple] = {
 
 # Objetos picáveis (world frame, cx cy cz sx sy sz)
 PICK_OBJ_BBOX: dict[str, tuple] = {
-    'frasco': (0.75, 0.00, 0.851, 0.090, 0.090, 0.090),
+    'frasco': (0.75, 0.00, 0.851, 0.050, 0.050, 0.090),
     'tubo':   (0.75, 0.00, 0.866, 0.030, 0.030, 0.120),
     'ampola': (0.75, 0.00, 0.844, 0.015, 0.015, 0.075),
 }

@@ -73,8 +73,35 @@ def _Rtcp_palm_down(finger_dir: tuple = (0.0, 1.0, 0.0)):
 #     target IK é a posição exata do objeto.
 #   CLAW grip (tubo): fingertips abraçam o objeto pela lateral — target IK
 #     é a posição do objeto, com a palma 115mm atrás na direção do approach.
-_FINGER_DIR_FRASCO = (1.0, 0.0, 0.0)   # top-down palm grip, dedos em +X
 _FINGER_DIR_AMPOLA = (1.0, 0.0, 0.0)   # fingertip pinch top-down
+
+# hand_base_link = TCP · _R_HAND_FROM_TCP (Rx(π/2) do acoplamento Link6→mão).
+import numpy as _np
+_R_HAND_FROM_TCP = _np.array([[1.0, 0.0,  0.0],
+                              [0.0, 0.0, -1.0],
+                              [0.0, 1.0,  0.0]])
+
+# Sentido do movimento APPROACH→PICK (mundo). Lateral = normal da palma.
+_APPROACH_DIR = {
+    'frasco': (1.0, 0.0, 0.0),    # mão vem do lado do robô, palma em +X
+    'tubo':   (0.0, -1.0, 0.0),   # mão vem de +Y, palma em −Y
+    'ampola': (0.0, 0.0, -1.0),   # pinça desce na vertical
+}
+_APPROACH_DIST = {'frasco': 0.10, 'tubo': 0.10, 'ampola': 0.06}
+_LIFT_DZ = 0.180                  # PRE/lift: sobe na vertical a partir do PICK
+
+# Centro do objeto no frame hand_base_link na pose de PICK. Resolvido
+# offline sobre a URDF de spawn (FK + caixas/malhas de colisão; bate com o
+# Gazebo) exigindo: folga ≥7 mm mão↔objeto em todo APPROACH→PICK com o
+# pre-shape, mão ≥16 mm acima da esteira e contato de ≥2 dígitos ao fechar
+# em HAND_GRIPS. Frasco: 8 mm da palma, 4 dedos encostam. Tubo: palma
+# encosta, 3 dedos envolvem. Ampola: 14 mm para o lado do polegar (antes
+# ficava sob o indicador, que a tombava na descida).
+_OBJ_IN_HAND = {
+    'frasco': (-0.025, 0.060, 0.072),
+    'tubo':   (-0.020, 0.075, 0.045),
+    'ampola': (0.0442, 0.1119, 0.0552),
+}
 
 # Offset físico palma→fingertip convergence (m). hand_base→TCP = 0.115
 # inclui ~45mm de palma + ~70mm de fingertip extension; o centro útil
@@ -89,25 +116,30 @@ GRIP_TYPE = {
 }
 
 
+def _Rtcp_lateral(palm_normal: tuple):
+    """R_tcp da pega de força LATERAL num cilindro vertical: eixo do
+    cilindro ∥ largura da palma (hand_x = +Z mundo, polegar em cima), palma
+    (hand_z) virada para `palm_normal` (horizontal, sentido da aproximação).
+    """
+    import numpy as np
+    x = np.array([0.0, 0.0, 1.0])
+    z = np.asarray(palm_normal, float); z = z / np.linalg.norm(z)
+    R_hand = np.column_stack([x, np.cross(z, x), z])
+    return R_hand @ _R_HAND_FROM_TCP.T
+
+
 def _build_rtcp_by_obj():
     """R_tcp por objeto. Lateral para frasco/tubo (wrap horizontal em
     torno do cilindro vertical); top-down pinch para ampola."""
-    try:
-        import numpy as np
-        from .kinematics import approach_to_Rtcp
-    except Exception:
-        return {}
     return {
-        # Frasco — TOP-DOWN palm grip: palma horizontal sobre o frasco,
-        # dedos extendem em +X e curvam para baixo abraçando a parte
-        # superior do cilindro.
-        'frasco': _Rtcp_palm_down(finger_dir=_FINGER_DIR_FRASCO),
+        # Frasco/tubo — pega de força LATERAL (objeto apoiado na palma,
+        # dedos envolvendo). A antiga palma-para-baixo do frasco (Ø84 mm)
+        # não cabia: vão da mão aberta ~75 mm, a raiz do polegar ficava
+        # DENTRO do frasco (só "funcionava" com dedos teleportados).
+        'frasco': _Rtcp_lateral(_APPROACH_DIR['frasco']),
         'ampola': _Rtcp_palm_down(finger_dir=_FINGER_DIR_AMPOLA),
-        # Tubo — mantido lateral (cilindro vertical alto 120mm — top-down
-        # exigiria descida muito grande). Lateral claw aborda em +Y.
-        'tubo':   approach_to_Rtcp(np.array([0.0, 1.0, 0.0])),
+        'tubo':   _Rtcp_lateral(_APPROACH_DIR['tubo']),
         '_finger_dir': {
-            'frasco': _FINGER_DIR_FRASCO,
             'ampola': _FINGER_DIR_AMPOLA,
         },
     }
@@ -165,10 +197,9 @@ PICK_TCP_WORLD: dict[str, tuple] = {
 
 
 def _refresh_tcp_from_grip_type():
-    """Recalcula TCP world por objeto a partir do GRASP_CENTER atual."""
+    """TCP world de PRE/APPR/PICK por objeto a partir de _OBJ_IN_HAND."""
     try:
         import numpy as np
-        from .kinematics import HAND_CONFIGS, grasp_center_in_hand
         from .collision import PICK_OBJ_BBOX
     except Exception:
         return
@@ -176,43 +207,15 @@ def _refresh_tcp_from_grip_type():
     if not isinstance(RTCP_BY_OBJ, dict) or not RTCP_BY_OBJ:
         return
 
-    # Rx(π/2) — converte TCP frame → hand_base_link frame (T_HAND_ATTACH
-    # mais a rotação fixa do URDF Link6 → hand_base_link).
-    R_HAND_FROM_TCP = np.array([[1.0, 0.0,  0.0],
-                                 [0.0, 0.0, -1.0],
-                                 [0.0, 1.0,  0.0]], dtype=float)
-
-    _GRIP_KIND   = {'frasco': 'palm', 'ampola': 'fingertip', 'tubo': 'claw'}
-    _HAND_CFGKEY = {'frasco': 'palm_grip',
-                    'ampola': 'fingertip_grip',
-                    'tubo':   'claw_grip'}
-
-    # Offsets de approach: top-down sobe em +Z, claw lateral recua em
-    _APPR_DZ = 0.060
-    _PRE_DZ  = 0.180
-    _APPR_DLAT = 0.120
-    _PRE_DLAT  = 0.200
-
     for obj in ('frasco', 'ampola', 'tubo'):
         if obj not in PICK_OBJ_BBOX or obj not in RTCP_BY_OBJ:
             continue
-        cx, cy, cz, *_ = PICK_OBJ_BBOX[obj]
-        obj_pos = np.array([cx, cy, cz], dtype=float)
-        gc_hand = grasp_center_in_hand(HAND_CONFIGS[_HAND_CFGKEY[obj]],
-                                        _GRIP_KIND[obj])
-        R_tcp  = np.asarray(RTCP_BY_OBJ[obj], dtype=float)
-        R_hand = R_tcp @ R_HAND_FROM_TCP
-        hand_base = obj_pos - R_hand @ gc_hand
-        finger_dir_w = R_hand[:, 1]      # hand_y no mundo
-        tcp_pick = hand_base + 0.115 * finger_dir_w
-
-        if obj == 'tubo':
-            tcp_appr = tcp_pick - _APPR_DLAT * finger_dir_w
-            tcp_pre  = tcp_pick - _PRE_DLAT  * finger_dir_w
-        else:
-            up = np.array([0.0, 0.0, 1.0])
-            tcp_appr = tcp_pick + _APPR_DZ * up
-            tcp_pre  = tcp_pick + _PRE_DZ  * up
+        obj_pos = np.array(PICK_OBJ_BBOX[obj][:3], dtype=float)
+        R_hand = np.asarray(RTCP_BY_OBJ[obj], dtype=float) @ _R_HAND_FROM_TCP
+        hand_base = obj_pos - R_hand @ np.array(_OBJ_IN_HAND[obj])
+        tcp_pick = hand_base + 0.115 * R_hand[:, 1]     # hand_y = dedos
+        tcp_appr = tcp_pick - _APPROACH_DIST[obj] * np.array(_APPROACH_DIR[obj])
+        tcp_pre = tcp_pick + np.array([0.0, 0.0, _LIFT_DZ])
 
         PICK_TCP_WORLD[obj]            = tuple(float(round(v, 4)) for v in tcp_pick)
         APPROACH_TCP_WORLD_BY_OBJ[obj] = tuple(float(round(v, 4)) for v in tcp_appr)
@@ -295,52 +298,29 @@ HAND_OPEN = {j: 0 for j in HAND_JOINTS}
 #                    Rotate alto (164) — médio/anelar/mínimo NÃO usados.
 HAND_GRIPS = {
     'Open': HAND_OPEN,
-    # Slider 200 = curl máximo (1.6 rad). 138 / 156 / 138 (anteriores)
-    # deixavam fingertips ~57mm do eixo do cilindro — fora do frasco
-    # (r=45mm). Subimos a 185-195 para envolverem a geometria.
-    'Palm Grip (frasco)':      {'Thumb': 185, 'Index': 195, 'Middle': 195,
-                                 'Ring':  190, 'Little': 185, 'Rotate':  50},
-    # Claw e Fingertip: posições MÁXIMAS (slider 0..200) — o
-    # PerfectGrasp interrompe o fechamento antes via lag-detection
-    # quando o dedo encontra o objeto, então estes valores definem o
-    # envelope de contato (não o aperto final).
-    'Claw Grip (tubo)':        {'Thumb':  75, 'Index':  75, 'Middle':  80,
-                                 'Ring':   82, 'Little':  87, 'Rotate': 200},
-    'Fingertip Grip (ampola)': {'Thumb': 104, 'Index':  62, 'Middle':   0,
+    # ALVOS de fechamento (slider 0..200, mesma conversão MIN..MAX do
+    # driver usada pela GUI e pelo executor). O PerfectGrasp para cada dedo
+    # no contato e aperta; o alvo só precisa passar do objeto. Validados com
+    # a geometria de colisão real (ver _OBJ_IN_HAND): frasco 4 dedos, tubo
+    # 3 dedos + palma, ampola polegar+indicador. Rotate baixo nas pegas
+    # laterais: a palma (lisa) gira junto com o Rotate e empurraria o objeto.
+    'Palm Grip (frasco)':      {'Thumb': 178, 'Index': 200, 'Middle': 200,
+                                 'Ring':  200, 'Little': 200, 'Rotate':   0},
+    'Claw Grip (tubo)':        {'Thumb': 178, 'Index': 200, 'Middle': 200,
+                                 'Ring':  200, 'Little': 200, 'Rotate':  40},
+    'Fingertip Grip (ampola)': {'Thumb': 135, 'Index': 109, 'Middle':   0,
                                  'Ring':    0, 'Little':   0, 'Rotate': 146},
 }
 
-# Pré-shape = aprox. 50% de cada grip final. Mantém a assinatura
-# distintiva (palm/claw/fingertip) mas com dedos pré-curvados o
-# suficiente para não varrer o objeto durante a descida.
-# Cup-shape para descida: fingertips ficam ABAIXO do topo do objeto MAS
-# fora da projeção horizontal. Validado numericamente para canonical (0.75, 0, z).
-# Notas:
-#   - Thumb em palm/frasco fica menos curlado (slider 30 vs 70) para
-#     não penetrar a parede +Y do frasco durante a descida.
-#   - Rotate alto em fingertip (=35 final, =20 preshape) abre a mão para
-#     que polegar e indicador convirjam SOBRE a ampola na fase final.
-#   - Palm/frasco: Index/Middle/Ring/Little reduzidos (80/80/75/70 →
-#     60/60/55/55) — com o curl antigo os fingertips desciam a r≈40-42mm
-#     do eixo do frasco (raio real 42mm + pele 3mm) e varriam a borda
-#     superior do cilindro durante TODA a descida APPROACH→PICK,
-#     empurrando o objeto antes do fechamento. Com 60/60/55/55 o pior
-#     dedo passa a r≥47mm (folga ≥2mm além da pele) e continua ≥68mm
-#     ABAIXO do topo do frasco no PICK (cage preservado).
+# Pré-shape durante APPROACH→PICK. Pegas laterais: mão ABERTA (dedos
+# retos no plano da palma passam ≥8 mm do objeto). Ampola: indicador
+# aberto (com curl ele descia a ~3 mm da ampola e a tombava).
 HAND_PRESHAPE = {
-    'Palm Grip (frasco)':      {'Thumb':  30, 'Index':  60, 'Middle':  60,
-                                 'Ring':   55, 'Little':  55, 'Rotate':  25},
-    #   - Claw/tubo: dedos ABERTOS + Rotate já na oposição final (200).
-    #     O engajamento do tubo é LATERAL (translação horizontal até o
-    #     PICK): com qualquer curl os fingertips varriam a faixa de
-    #     altura do tubo e o empurravam (pior caso −13 mm de
-    #     interferência). Com a mão aberta o conjunto passa a +16 mm da
-    #     superfície e, na pose final, polegar (r=24 mm) e dedos
-    #     (r=38-56 mm) engaiolam o cilindro; o PerfectGrasp fecha a
-    #     partir do aberto com contato em 4/5 dedos.
+    'Palm Grip (frasco)':      {'Thumb':   0, 'Index':   0, 'Middle':   0,
+                                 'Ring':    0, 'Little':   0, 'Rotate':   0},
     'Claw Grip (tubo)':        {'Thumb':   0, 'Index':   0, 'Middle':   0,
-                                 'Ring':    0, 'Little':   0, 'Rotate': 200},
-    'Fingertip Grip (ampola)': {'Thumb':  15, 'Index':  50, 'Middle':   0,
+                                 'Ring':    0, 'Little':   0, 'Rotate':   0},
+    'Fingertip Grip (ampola)': {'Thumb':  15, 'Index':   0, 'Middle':   0,
                                  'Ring':    0, 'Little':   0, 'Rotate':  20},
 }
 
@@ -699,29 +679,31 @@ def compute_targets():
 # ── Cache hardcoded de poses (resolvido off-line por compute_targets) ─
 # Para evitar 10s de IK em cada import. Re-gerar em runtime definindo
 # GRASP_RECOMPUTE_POSES=1 no ambiente (ver bloco de resolução abaixo).
+# PRE/APPROACH/PICK regenerados 2026-11-17 para as pegas físicas
+# (_OBJ_IN_HAND) e com o sinal do joint1 corrigido (axis −Z na URDF).
 _CACHED_PRE_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  -21.2071, 'joint2':   8.3155, 'joint3': -100.0195,
-               'joint4': -88.2957, 'joint5': -68.7932, 'joint6':  -0.0001},
-    'ampola': {'joint1':  -19.8765, 'joint2':  12.6962, 'joint3': -101.1162,
-               'joint4': -91.5796, 'joint5': -70.1238, 'joint6':  -0.0001},
-    'tubo':   {'joint1': +18.7403, 'joint2': -34.8821, 'joint3':  -66.0045,
-               'joint4': -79.1134, 'joint5': 161.2597, 'joint6':  90.0000},
+    'frasco': {'joint1':  -33.8048, 'joint2':  -11.4186, 'joint3':  -78.2298,
+               'joint4':  -90.3516, 'joint5':   33.8048, 'joint6':   90.0000},
+    'ampola': {'joint1':  -18.3182, 'joint2':   12.5507, 'joint3':  -99.7900,
+               'joint4':  -92.7606, 'joint5':  -71.6817, 'joint6':   -0.0000},
+    'tubo': {'joint1':  -13.6203, 'joint2':  -45.6530, 'joint3':  -25.2976,
+               'joint4': -109.0493, 'joint5':  103.6202, 'joint6':   90.0000},
 }
 _CACHED_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  -21.2090, 'joint2':   6.7135, 'joint3': -110.9968,
-               'joint4': -75.7163, 'joint5': -68.7912, 'joint6':  -0.0002},
-    'ampola': {'joint1':  -19.8808, 'joint2':  11.7286, 'joint3': -112.4787,
-               'joint4': -79.2495, 'joint5': -70.1196, 'joint6':  -0.0001},
-    'tubo':   {'joint1': +13.8222, 'joint2': -31.2261, 'joint3':  -72.1125,
-               'joint4': -76.6613, 'joint5': 166.1778, 'joint6':  90.0000},
+    'frasco': {'joint1':  -39.1445, 'joint2':   -4.8913, 'joint3': -104.1049,
+               'joint4':  -71.0037, 'joint5':   39.1445, 'joint6':   90.0000},
+    'ampola': {'joint1':  -18.3087, 'joint2':   11.8793, 'joint3': -111.5077,
+               'joint4':  -80.3716, 'joint5':  -71.6913, 'joint6':    0.0000},
+    'tubo': {'joint1':  -19.3678, 'joint2':  -42.8103, 'joint3':  -48.6766,
+               'joint4':  -88.5131, 'joint5':  109.3678, 'joint6':   90.0000},
 }
 _CACHED_PICK_POSES_DEG = {
-    'frasco': {'joint1':  -21.2084, 'joint2':   4.8444, 'joint3': -115.6019,
-               'joint4': -69.2421, 'joint5': -68.7920, 'joint6':  -0.0001},
-    'ampola': {'joint1':  -19.8810, 'joint2':  10.2150, 'joint3': -117.5355,
-               'joint4': -72.6792, 'joint5': -70.1194, 'joint6':  -0.0001},
-    'tubo':   {'joint1':  +5.7597, 'joint2': -27.0708, 'joint3':  -78.2997,
-               'joint4': -74.6294, 'joint5': 174.2403, 'joint6':  90.0000},
+    'frasco': {'joint1':  -33.8039, 'joint2':  -13.9498, 'joint3':  -93.5162,
+               'joint4':  -72.5340, 'joint5':   33.8039, 'joint6':   90.0000},
+    'ampola': {'joint1':  -18.1700, 'joint2':   10.3800, 'joint3': -116.0100,
+               'joint4':  -74.3700, 'joint5':  -71.8300, 'joint6':    0.0000},
+    'tubo': {'joint1':  -13.8104, 'joint2':  -41.6018, 'joint3':  -50.7123,
+               'joint4':  -87.6860, 'joint5':  103.8105, 'joint6':   90.0000},
 }
 # DELIVERY regenerado 2026-07-05: as poses antigas eram pré-acoplador
 # (T_HAND_ATTACH 0.115 m) — com o acoplador (+0.05546 m) o TCP real caía 171

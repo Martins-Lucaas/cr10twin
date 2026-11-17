@@ -115,7 +115,10 @@ class PerfectGrasp:
     STEP_DT           = 0.10   # 100 ms entre passos
     LAG_THRESHOLD_RAD = 0.04   # >2.3° de lag = bloqueio
     STALL_TICKS       = 2      # ticks consecutivos para confirmar contato
-    TIMEOUT_S         = 4.0    # falha se levar mais que isso
+    # Tempo de PAREDE: cada passo custa ~0.3 s (goal bloqueante + STEP_DT)
+    # e a sim roda <1x. Com 4 s a rampa parava no meio, com o dedo no
+    # contato e força zero.
+    TIMEOUT_S         = 10.0
     MIN_STEPS_BEFORE_CHECK = 3 # ignora detecção nos 3 primeiros passos
     # Após o contato o alvo do dedo fica ESTE tanto além da posição de
     # contato: o PID (effort) vira força de aperto ≈ p·ratio·squeeze,
@@ -207,6 +210,7 @@ class PerfectGrasp:
         commanded: Dict[str, float] = {j: actual.get(j, 0.0) for j in _PRIMARY}
         stalled: Dict[str, bool] = {j: False for j in _PRIMARY}
         stall_ctr: Dict[str, int] = {j: 0 for j in _PRIMARY}
+        start = dict(commanded)
 
         t0 = time.time()
         step_i = 0
@@ -275,9 +279,12 @@ class PerfectGrasp:
                               abs(commanded[j] - target_rad[j]) < 1e-4
                               for j in _PRIMARY)
             if all_stalled or not any_active:
-                # Re-envia o último commanded para travar (sem step extra)
-                # com effort do PID — o dedo já não vai mais andar mas o
-                # PID continua aplicando torque residual = atrito de aperto.
+                # Dedo que fechou sem o lag disparar (objeto deslizou junto
+                # até travar na palma) também precisa de aperto: sem isso o
+                # PID fica com erro ~0 no contato e o objeto escorrega no lift.
+                for j in _PHALANGES:
+                    if not stalled[j] and target_rad[j] > start[j] + 0.01:
+                        commanded[j] += self.HOLD_SQUEEZE_RAD
                 self._send_hand_rad(commanded, duration=0.4)
                 time.sleep(0.4)
                 break

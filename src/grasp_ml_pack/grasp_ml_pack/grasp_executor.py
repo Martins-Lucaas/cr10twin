@@ -58,7 +58,7 @@ except ImportError:
 from .kinematics import (
     inverse_kinematics,
     forward_kinematics,
-    HAND_CONFIGS, HAND_LIMITS, HAND_LOWER, hand_ik,
+    HAND_CONFIGS, HAND_LIMITS, HAND_LOWER,
 )
 from .perfect_grasp import PerfectGrasp
 from .cage_check import cage_status
@@ -130,7 +130,6 @@ _PICK_SEED_Q = {
 # altitude).
 _VIA_BOX_SEED_Q = np.array([-0.5, -0.5, -0.8, -1.5, 0.5, 0.0])
 _APPROACH_CLEAR = 0.15    # m — altura de pré-abordagem (acima da parede das caixas: 0.705m)
-_CLOSE_EXTRA    = 0.05    # fração extra de fechamento sobre o cfg nominal
 _MAX_JOINT_VEL  = 1.40    # rad/s — agressivo para fluidez
 _N_TRAJ_STEPS   = 8       # waypoints por segmento de trajetória
 _N_CART_VIA     = 6       # waypoints Cartesianos para transições longas
@@ -239,11 +238,16 @@ def _make_hand_goal(cfg: dict[str, float],
     return goal
 
 
-def _close_extra(cfg: dict[str, float]) -> dict[str, float]:
-    """Adiciona margem de fechamento sobre a configuração de grasp."""
-    return {j: float(min(cfg.get(j, 0.0) + _CLOSE_EXTRA * HAND_LIMITS[j],
-                         HAND_LIMITS[j]))
-            for j in _HAND_PRIMARY}
+def _grip_cfgs(obj: str) -> tuple[dict[str, float], dict[str, float]]:
+    """(pre-shape, alvo de fechamento) em rad do driver, de poses.py
+    (HAND_PRESHAPE / HAND_GRIPS, slider 0..200 → [HAND_LOWER, HAND_LIMITS])."""
+    from .poses import HAND_GRIPS, HAND_PRESHAPE, OBJ_GRIP
+
+    def rad(slider: dict) -> dict[str, float]:
+        return {j: HAND_LOWER[j] + float(slider.get(j, 0)) / 200.0
+                * (HAND_LIMITS[j] - HAND_LOWER[j]) for j in _HAND_PRIMARY}
+    label = OBJ_GRIP[obj]
+    return rad(HAND_PRESHAPE[label]), rad(HAND_GRIPS[label])
 
 
 # Verificação de colisão — delega ao módulo `collision.py`
@@ -594,9 +598,8 @@ class GraspExecutorNode(Node):
                 return response
             self._busy = True
 
-        grip_type, _, obj_diam = _OBJECT_MAP[obj]
-        cfg_grasp  = hand_ik(grip_type, obj_diam)
-        cfg_closed = _close_extra(cfg_grasp)
+        grip_type = _OBJECT_MAP[obj][0]
+        preshape_rad, cfg_closed = _grip_cfgs(obj)
 
         # Executa em thread para não bloquear o serviço
         def _do():
@@ -607,20 +610,10 @@ class GraspExecutorNode(Node):
                     f'(PerfectGrasp + contact detection)')
                 # PerfectGrasp: pré-shape + fechamento incremental com
                 # parada por contato. Evita ejeção do objeto.
-                from .poses import HAND_PRESHAPE, OBJ_GRIP
-                grip_label = OBJ_GRIP.get(obj)
-                preshape_slider = (HAND_PRESHAPE.get(grip_label)
-                                    if grip_label else None)
-                preshape_rad = (
-                    {j: HAND_LOWER[j] + float(preshape_slider.get(j, 0)) / 200.0
-                        * (HAND_LIMITS[j] - HAND_LOWER[j])
-                     for j in _HAND_PRIMARY}
-                    if preshape_slider else None)
-
                 # Cage check antes de fechar — mesmo padrão da Fase 2 do
                 # ciclo autônomo.
                 cage = cage_status(self._current_q,
-                                   preshape_rad or cfg_closed,
+                                   preshape_rad,
                                    obj,
                                    world_obj_pos=self._get_world_obj_pos())
                 if not cage.valid:
@@ -681,7 +674,7 @@ class GraspExecutorNode(Node):
 
     def _run_cycle(self, obj_class: str):
         """Ciclo completo: Pick → Lift → Place → Home."""
-        grip_type, box_key, obj_diam = _OBJECT_MAP[obj_class]
+        grip_type, box_key, _ = _OBJECT_MAP[obj_class]
 
         # Posição mundial do objeto picável — prioridade:
         #   1. Ground-truth do Gazebo (/gazebo/model_states)
@@ -825,8 +818,7 @@ class GraspExecutorNode(Node):
 
             # Configurações da mão
             cfg_open   = HAND_CONFIGS['open']
-            cfg_grasp  = hand_ik(grip_type, obj_diam)
-            cfg_closed = _close_extra(cfg_grasp)
+            preshape_rad, cfg_closed = _grip_cfgs(obj_class)
 
             # FASE 1: HOME → APPROACH (acima do objeto, mão aberta) Em vez
             # de ir direto ao PICK, paramos 60 mm acima — aí pre-fechamos a
@@ -841,33 +833,22 @@ class GraspExecutorNode(Node):
             self._validate_sweep(q_ap, q_pick, n_steps=10,
                                  name='approach→pick', skip=_skip_pick,
                                  margin=0.005)
-            # Pre-shape (cup) a partir de HAND_PRESHAPE (poses.py).
-            from .poses import HAND_PRESHAPE, OBJ_GRIP
-            grip_label = OBJ_GRIP.get(obj_class)
-            preshape_slider = HAND_PRESHAPE.get(grip_label) if grip_label else None
-            preshape_rad = (
-                {j: HAND_LOWER[j] + float(preshape_slider.get(j, 0)) / 200.0
-                    * (HAND_LIMITS[j] - HAND_LOWER[j])
-                 for j in _HAND_PRIMARY}
-                if preshape_slider else None)
-
-            # FASE 1 + 1.5: HOME → APPROACH já conformando o cup. Com a mão
-            # ABERTA os dedos esticados passam abaixo do TCP e batiam no topo
-            # do frasco a 60 mm do PICK (empurrando-o antes do grasp).
+            # FASE 1 + 1.5: HOME → APPROACH já no pre-shape (poses.py), para
+            # a mão chegar conformada e fora do objeto.
             self._status_msg = f'APPROACH:{obj_class}'
             self.get_logger().info(
-                '[F1] HOME → APPROACH (60 mm acima do PICK, mão em pre-shape)')
-            self._send_hand_async(preshape_rad or cfg_open, 1.0)
+                '[F1] HOME → APPROACH (mão em pre-shape)')
+            self._send_hand_async(preshape_rad, 1.0)
             self._send_arm(q_ap)
 
             # NOTA (2026-07-05): a antiga FASE 1.55 (tubo step-aside −X 50
             # mm) foi REMOVIDA.
 
-            # FASE 1.6: APPROACH → PICK (descida com mão em cup) Mão FIXA em
-            # preshape durante a descida vertical de 60 mm.
+            # FASE 1.6: APPROACH → PICK (lateral p/ frasco/tubo, vertical
+            # p/ ampola) com a mão fixa no pre-shape.
             self._status_msg = f'DESCEND:{obj_class}'
             self.get_logger().info(
-                '[F1.6] APPROACH → PICK (descida, mão fixa em cup-shape)')
+                '[F1.6] APPROACH → PICK (mão fixa em pre-shape)')
             self._send_arm(q_pick)
 
             # ── FASE 2: Fechar mão com detecção de contato (PerfectGrasp) ─
@@ -878,7 +859,7 @@ class GraspExecutorNode(Node):
             # Cage check: garante que os fingertips estão em torno do objeto
             # (não acima, não penetrando, dentro do alcance).
             cage = cage_status(self._current_q,
-                               preshape_rad or cfg_closed,
+                               preshape_rad,
                                obj_class,
                                world_obj_pos=self._get_world_obj_pos())
             if not cage.valid:
