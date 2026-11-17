@@ -49,8 +49,10 @@ def _fix_virtual_link_inertia(urdf_body: str) -> str:
     )
     minimal_inertial = (
         '<inertial>'
-        '<mass value="0.001"/>'
-        '<inertia ixx="1e-9" ixy="0.0" ixz="0.0" iyy="1e-9" iyz="0.0" izz="1e-9"/>'
+        # 1e-5 (não 1e-9): com a mão em effort+PID, inércia ~0 nos elos
+        # virtuais (drivers, *_l1) deixa o PID instável a 1 kHz.
+        '<mass value="0.01"/>'
+        '<inertia ixx="1e-5" ixy="0.0" ixz="0.0" iyy="1e-5" iyz="0.0" izz="1e-5"/>'
         '</inertial>'
     )
     return re.sub(phantom_inertial, minimal_inertial, urdf_body, flags=re.DOTALL)
@@ -65,8 +67,9 @@ def _stabilize_hand_joints(urdf_body: str) -> str:
         if 'type="revolute"' not in jxml:
             return jxml
         is_mimic = '<mimic' in jxml
-        damp, fric = (30.0, 10.0) if is_mimic else (5.0, 1.0)
-        dyn_tag = f'<dynamics damping="{damp}" friction="{fric}"/>'
+        # Amortecimento leve e SEM atrito seco: em effort, friction=10 N·m
+        # (antigo) passava do limite de 1 N·m dos mimics e travava o dedo.
+        dyn_tag = '<dynamics damping="0.002" friction="0.0"/>'
         if '<dynamics' in jxml:
             jxml = re.sub(r'<dynamics[^/]*/>', dyn_tag, jxml)
         else:
@@ -137,8 +140,10 @@ def _inject_skin_layer(urdf_body: str) -> str:
 def _build_robot_urdf():
     hand_pack_share = get_package_share_directory('hand_pack')
     touch_pack_share = get_package_share_directory('touch_pack')
+    # YAML próprio da célula: mão em effort (o do hand_pack é compartilhado
+    # com touch_pack e continua em position).
     combined_yaml = os.path.join(
-        hand_pack_share, 'config', 'cr10_covvi_controllers.yaml')
+        get_package_share_directory('grasp_ml_pack'), 'config', 'cell_controllers.yaml')
 
     cr10_xacro_path = os.path.join(
         get_package_share_directory('cra_description'),
@@ -166,6 +171,12 @@ def _build_robot_urdf():
     hand_body = re.sub(
         r'<joint\s+name="base_joint"[^>]*>.*?</joint>', '', hand_body, flags=re.DOTALL)
     hand_body = hand_body.replace('"base_link"', '"hand_base_link"')
+    # A malha do punho (hand_base_link) já interpenetra thumb_link e o
+    # polegar em repouso: com a mão dinâmica isso prende o polegar. A palma
+    # (lisa) mantém a colisão de captura.
+    hand_body = re.sub(
+        r'(<link\s+name="hand_base_link"\s*>.*?)<collision>.*?</collision>',
+        r'\1', hand_body, count=1, flags=re.DOTALL)
     hand_body = re.sub(
         r'<gazebo>\s*<plugin[^>]*gazebo_ros2_control[^>]*>.*?</plugin>\s*</gazebo>',
         '', hand_body, flags=re.DOTALL)
@@ -174,6 +185,10 @@ def _build_robot_urdf():
         '<ros2_control name="HandGazeboSystem"')
 
     hand_body = _fix_virtual_link_inertia(hand_body)
+    # Mão por esforço: o contato freia o dedo (position teleportava a junta
+    # através do objeto → ejeção / explosão do ODE).
+    hand_body = hand_body.replace('<command_interface name="position"/>',
+                                  '<command_interface name="effort"/>')
     # Limites factíveis do manual da COVVI (81° flexão dos dedos) — sem isso
     # as falanges curvam-se até atravessar a palma quando a mão fecha.
     hand_body = clamp_hand_joint_limits(hand_body)
@@ -186,9 +201,11 @@ def _build_robot_urdf():
     hand_link_names = re.findall(r'<link\s+name="([^"]+)"', hand_body)
     finger_collision_set = set(INTER_FINGER_COLLISION_LINKS)
     for lname in hand_link_names:
-        # Falanges + palma → self_collide=true + mu alto (captura sólida).
+        # mu alto nas falanges/palma (captura sólida). self_collide=false: a
+        # "pele" inflada já interpenetra polegar×palma em repouso — com a mão
+        # dinâmica (effort) isso prende o polegar. Dedo×objeto não é afetado.
         is_grip = lname in finger_collision_set
-        sc = 'true' if is_grip else 'false'
+        sc = 'false'
         # mu1/mu2 (atrito long./transversal): 2.5 nos pontos de captura
         # (falange/palma) para o objeto não escorregar sob impulso vertical.
         # impulso vertical de levantamento.

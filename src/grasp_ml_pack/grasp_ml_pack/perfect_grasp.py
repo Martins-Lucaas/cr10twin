@@ -80,6 +80,15 @@ _MIMIC_RATIOS: Dict[str, tuple] = {
 }
 
 
+# Falanges que de fato tocam o objeto, por driver. Os drivers (Thumb, Index…)
+# movem elos VIRTUAIS sem colisão — o lag tem que ser medido aqui. Rotate não
+# fecha sobre o objeto: nunca entra em detecção de contato.
+_PHALANGES: Dict[str, tuple] = {
+    f: (f'_{f.lower()}_proximal_j01', f'_{f.lower()}_distal_j01')
+    for f in ('Thumb', 'Index', 'Middle', 'Ring', 'Little')
+}
+
+
 @dataclass
 class GraspResult:
     """Resumo do fechamento."""
@@ -108,6 +117,11 @@ class PerfectGrasp:
     STALL_TICKS       = 2      # ticks consecutivos para confirmar contato
     TIMEOUT_S         = 4.0    # falha se levar mais que isso
     MIN_STEPS_BEFORE_CHECK = 3 # ignora detecção nos 3 primeiros passos
+    # Após o contato o alvo do dedo fica ESTE tanto além da posição de
+    # contato: o PID (effort) vira força de aperto ≈ p·ratio·squeeze,
+    # saturada pelo <limit effort> da falange. Sem isso não há atrito para
+    # levantar o objeto.
+    HOLD_SQUEEZE_RAD  = 0.15
 
     def __init__(self, node: Node, send_hand_fn):
         """
@@ -128,12 +142,20 @@ class PerfectGrasp:
         """Chamar a partir do callback /joint_states do nó hospedeiro."""
         with self._lock:
             for n, p in zip(msg.name, msg.position):
-                if n in _PRIMARY:
+                if n in _PRIMARY or n in _MIMIC_RATIOS:
                     self._latest_positions[n] = float(p)
 
     def _read_actual(self) -> Dict[str, float]:
+        """Posição por driver, em unidades do driver. Para os dedos é a
+        falange MAIS atrasada (posição / ratio) — é ela que encosta."""
         with self._lock:
-            return dict(self._latest_positions)
+            pos = dict(self._latest_positions)
+        out = {j: pos[j] for j in _PRIMARY if j in pos}
+        for f, joints in _PHALANGES.items():
+            vals = [pos[k] / _MIMIC_RATIOS[k][1] for k in joints if k in pos]
+            if vals:
+                out[f] = min(vals)
+        return out
 
     # núcleo: closing loop
     def close_until_contact(self,
@@ -225,7 +247,7 @@ class PerfectGrasp:
 
             # 4) Detecção de stall (a partir do passo MIN_STEPS_BEFORE_CHECK)
             if step_i >= self.MIN_STEPS_BEFORE_CHECK:
-                for j in _PRIMARY:
+                for j in _PHALANGES:
                     if stalled[j]:
                         continue
                     lag = commanded[j] - actual.get(j, commanded[j])
@@ -236,13 +258,15 @@ class PerfectGrasp:
                         stall_ctr[j] += 1
                         if stall_ctr[j] >= self.STALL_TICKS:
                             stalled[j] = True
-                            # Congela commanded no pos_actual atual para
-                            # parar de empurrar o objeto.
-                            commanded[j] = actual.get(j, commanded[j])
+                            # Para a rampa e aperta: alvo = contato + squeeze.
+                            # O dedo está bloqueado pelo objeto, então isso
+                            # vira força (limitada), não movimento.
+                            commanded[j] = (actual.get(j, commanded[j])
+                                            + self.HOLD_SQUEEZE_RAD)
                             result.contact_detected = True
                             self._node.get_logger().info(
                                 f'[perfect_grasp:{label}] CONTATO em {j} '
-                                f'(lag={lag:.3f}rad, pos={commanded[j]:.3f}rad) — congelado')
+                                f'(lag={lag:.3f}rad, alvo={commanded[j]:.3f}rad) — rampa parada, apertando')
                     else:
                         stall_ctr[j] = max(0, stall_ctr[j] - 1)
 

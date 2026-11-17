@@ -68,6 +68,10 @@ _URDF_ORIGINS = (
     (( 0.0000,-0.1250, 0.0000), (_PI2,   0.0,  0.0 )),  # joint5
     (( 0.0000, 0.1084, 0.0000), (-_PI2,  0.0,  0.0 )),  # joint6
 )
+# joint1 tem axis="0 0 -1" no cr10_robot.xacro (juntas 2-6: +Z). Sem este
+# sinal a FK espelhava a base: o Gazebo girava q1 ao contrário e a mão
+# chegava ~0,5 m longe do objeto. Mesmo tratamento de touch_pack.kinematics.
+_JOINT_AXIS_SIGN = (-1., 1., 1., 1., 1., 1.)
 
 # Parâmetros da mão COVVI
 _L_PROX       = 0.0450
@@ -121,8 +125,8 @@ def forward_kinematics(q: np.ndarray,
         T: pose do efetuador, matriz homogênea 4×4
     """
     T = np.eye(4)
-    for (xyz, rpy), qi in zip(_URDF_ORIGINS, q):
-        T = T @ _make_T(xyz, rpy) @ _Rz4(float(qi))
+    for (xyz, rpy), sgn, qi in zip(_URDF_ORIGINS, _JOINT_AXIS_SIGN, q):
+        T = T @ _make_T(xyz, rpy) @ _Rz4(sgn * float(qi))
     if include_hand:
         T = T @ T_HAND_ATTACH
     return T
@@ -133,7 +137,7 @@ def fk_partial(q: np.ndarray, n_links: int) -> np.ndarray:
     T = np.eye(4)
     for i in range(n_links):
         xyz, rpy = _URDF_ORIGINS[i]
-        T = T @ _make_T(xyz, rpy) @ _Rz4(float(q[i]))
+        T = T @ _make_T(xyz, rpy) @ _Rz4(_JOINT_AXIS_SIGN[i] * float(q[i]))
     return T
 
 
@@ -146,9 +150,9 @@ def jacobian(q: np.ndarray) -> np.ndarray:
     origins = np.empty((6, 3))
     for i, ((xyz, rpy), qi) in enumerate(zip(_URDF_ORIGINS, q)):
         T = T @ _make_T(xyz, rpy)   # frame da junta ANTES da rotação Rz
-        z_axes[i]  = T[:3, 2]       # eixo de rotação no frame base
+        z_axes[i]  = _JOINT_AXIS_SIGN[i] * T[:3, 2]   # eixo (com sinal) no frame base
         origins[i] = T[:3, 3]       # origem da junta no frame base
-        T = T @ _Rz4(float(qi))
+        T = T @ _Rz4(_JOINT_AXIS_SIGN[i] * float(qi))
 
     p_e = (T @ T_HAND_ATTACH)[:3, 3]
 
@@ -237,7 +241,8 @@ def _geometric_guess(p_tcp: np.ndarray, R_tcp: np.ndarray,
     # Posição do wrist center
     p_wc = p_tcp - _D_WC_TCP * R_tcp[:, 2]
 
-    q1 = float(q1_force) if q1_force is not None else math.atan2(p_wc[1], p_wc[0])
+    q1 = (float(q1_force) if q1_force is not None
+          else _JOINT_AXIS_SIGN[0] * math.atan2(p_wc[1], p_wc[0]))
 
     # θ3_DH via lei dos cossenos
     r = math.sqrt(p_wc[0]**2 + p_wc[1]**2)
@@ -376,7 +381,7 @@ def _ik_candidates(p_tcp: np.ndarray, R_tcp: np.ndarray,
                     elbow_up: bool = True) -> list[np.ndarray]:
     """Gera candidatos de palpite inicial varrendo q1 ±40° e ambos os cotovelos."""
     candidates: list[np.ndarray] = []
-    q1_naive = math.atan2(p_tcp[1], p_tcp[0])
+    q1_naive = _JOINT_AXIS_SIGN[0] * math.atan2(p_tcp[1], p_tcp[0])
     primary   = True  if elbow_up else False
     secondary = False if elbow_up else True
 
@@ -418,11 +423,15 @@ def inverse_kinematics(
 
     best_q, best_err, best_ok = candidates[0].copy(), 1e9, False
 
-    for cand in candidates:
+    for i, cand in enumerate(candidates):
         q_cand = np.clip(cand, JOINT_MIN, JOINT_MAX)
         q, ok = _ik_refine(p_tcp, R_tcp, q_cand)
         T = forward_kinematics(q)
         err = float(np.linalg.norm(p_tcp - T[:3, 3]))
+        # Seed convergido = ramo escolhido pelo chamador; não trocar por um
+        # candidato de outro ramo só porque erra 1 mm a menos.
+        if i == 0 and q_seed is not None and ok and err < 10e-3:
+            return q, True
         if err < best_err:
             best_err = err; best_q = q; best_ok = ok
         if best_ok and best_err < 2e-3:

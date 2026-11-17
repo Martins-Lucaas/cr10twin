@@ -10,9 +10,8 @@ def _build_combined_urdf():
     # --- CR10 arm (process xacro) ---
     cr10_xacro_path = os.path.join(
         get_package_share_directory('cra_description'), 'urdf', 'cr10_robot.xacro')
-    doc = xacro.parse(open(cr10_xacro_path))
-    xacro.process_doc(doc)
-    cr10_urdf = doc.toxml()
+    # xacro has no type hints; Pyright wrongly infers parse() may return the file object
+    cr10_urdf = xacro.process_file(cr10_xacro_path).toxml()  # pyright: ignore[reportAttributeAccessIssue]
 
     # --- COVVI hand (raw URDF) ---
     hand_urdf_path = os.path.join(

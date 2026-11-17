@@ -81,41 +81,53 @@ def bbox_overlap(a: tuple, b: tuple,
     return collides, max(ox, oy, oz) * 1000.0
 
 
-def link_world_aabb(q: np.ndarray, link_idx: int) -> tuple:
-    """AABB world (cx,cy,cz,sx,sy,sz) do link `link_idx` (0=base, 1..6)."""
+def _link_T_key(q: np.ndarray, link_idx: int) -> tuple[np.ndarray, str]:
+    """Pose world 4×4 do link `link_idx` (0=base, 1..6) + chave do STL."""
     from .kinematics import fk_partial
     T_base = np.eye(4); T_base[2, 3] = ROBOT_BASE_Z
     if link_idx == 0:
-        T_world = T_base; key = 'base_link'
-    else:
-        T_world = T_base @ fk_partial(q, link_idx)
-        key = f'Link{link_idx}'
-    xmin, xmax, ymin, ymax, zmin, zmax = LINK_STL_BOUNDS[key]
-    pts = []
-    for x in (xmin, xmax):
-        for y in (ymin, ymax):
-            for z in (zmin, zmax):
-                p = T_world @ np.array([x, y, z, 1.0])
-                pts.append(p[:3])
-    pts = np.array(pts)
-    cx = float((pts[:, 0].min() + pts[:, 0].max()) / 2)
-    cy = float((pts[:, 1].min() + pts[:, 1].max()) / 2)
-    cz = float((pts[:, 2].min() + pts[:, 2].max()) / 2)
-    sx = float(pts[:, 0].max() - pts[:, 0].min())
-    sy = float(pts[:, 1].max() - pts[:, 1].min())
-    sz = float(pts[:, 2].max() - pts[:, 2].min())
-    return (cx, cy, cz, sx, sy, sz)
+        return T_base, 'base_link'
+    return T_base @ fk_partial(q, link_idx), f'Link{link_idx}'
+
+
+def _box_corners(T: np.ndarray, xmin, xmax, ymin, ymax, zmin, zmax) -> np.ndarray:
+    return np.array([(T @ np.array([x, y, z, 1.0]))[:3]
+                     for x in (xmin, xmax) for y in (ymin, ymax) for z in (zmin, zmax)])
+
+
+def _aabb_of(pts: np.ndarray) -> tuple:
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    return (*((lo + hi) / 2).tolist(), *(hi - lo).tolist())
+
+
+def link_world_aabb(q: np.ndarray, link_idx: int) -> tuple:
+    """AABB world (cx,cy,cz,sx,sy,sz) do link `link_idx` (0=base, 1..6)."""
+    T_world, key = _link_T_key(q, link_idx)
+    return _aabb_of(_box_corners(T_world, *LINK_STL_BOUNDS[key]))
 
 
 def arm_clears_bbox(q: np.ndarray, bbox: tuple,
                     links: tuple = (1, 2, 3, 4, 5, 6),
                     margin: float = 0.005) -> tuple[bool, str]:
     """True se nenhum dos `links` colide com `bbox`."""
+    cx, cy, cz, sx, sy, sz = bbox
+    obs_T = np.eye(4); obs_T[:3, 3] = (cx, cy, cz)
     for li in links:
         la = link_world_aabb(q, li)
         coll, clr = bbox_overlap(la, bbox, margin=margin)
+        if not coll:
+            continue
+        # A AABB world de um elo INCLINADO (antebraço de 0,6 m) engorda
+        # muito. Confirma no frame do próprio elo: obstáculo → local, contra
+        # o STL bound exato. Os dois testes são conservadores; colisão real
+        # sobrepõe nos dois.
+        T_world, key = _link_T_key(q, li)
+        local = _box_corners(np.linalg.inv(T_world) @ obs_T,
+                             -sx / 2, sx / 2, -sy / 2, sy / 2, -sz / 2, sz / 2)
+        coll, clr_l = bbox_overlap(_aabb_of(_box_corners(np.eye(4), *LINK_STL_BOUNDS[key])),
+                                   _aabb_of(local), margin=margin)
         if coll:
-            return False, f'Link{li} penetra ({clr:.1f}mm)'
+            return False, f'Link{li} penetra ({max(clr, clr_l):.1f}mm)'
     return True, 'OK'
 
 

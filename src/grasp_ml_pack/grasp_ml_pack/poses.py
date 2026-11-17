@@ -236,7 +236,7 @@ _FALLBACK_TOP_DOWN_SEED = {
     'joint4':   0.0, 'joint5': -90.0, 'joint6':   0.0,
 }
 _FALLBACK_LATERAL_SEED = {
-    'joint1':  +2.5, 'joint2': -21.0, 'joint3':  -84.9,
+    'joint1':  -2.5, 'joint2': -21.0, 'joint3':  -84.9,
     'joint4':  -74.1, 'joint5': -177.5, 'joint6': +90.0,
 }
 FALLBACK_PRE_APPROACH_DEG: dict[str, dict] = {
@@ -255,11 +255,11 @@ FALLBACK_PICK_DEG: dict[str, dict] = {
     'tubo':   dict(_FALLBACK_LATERAL_SEED),
 }
 FALLBACK_DELIVERY_DEG = {
-    'frasco': {'joint1': +108.4, 'joint2': -19.6, 'joint3': -91.3,
+    'frasco': {'joint1': -108.4, 'joint2': -19.6, 'joint3': -91.3,
                'joint4':  -69.1, 'joint5': +108.4, 'joint6':  +0.0},
-    'tubo':   {'joint1':  +85.6, 'joint2': -23.2, 'joint3': -86.3,
+    'tubo':   {'joint1':  -85.6, 'joint2': -23.2, 'joint3': -86.3,
                'joint4':  -70.5, 'joint5':  +85.6, 'joint6':  +0.0},
-    'ampola': {'joint1':  +65.8, 'joint2': -36.5, 'joint3': -65.6,
+    'ampola': {'joint1':  -65.8, 'joint2': -36.5, 'joint3': -65.6,
                'joint4':  -77.9, 'joint5':  +65.8, 'joint6':  +0.0},
 }
 
@@ -700,27 +700,27 @@ def compute_targets():
 # Para evitar 10s de IK em cada import. Re-gerar em runtime definindo
 # GRASP_RECOMPUTE_POSES=1 no ambiente (ver bloco de resolução abaixo).
 _CACHED_PRE_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  21.2071, 'joint2':   8.3155, 'joint3': -100.0195,
+    'frasco': {'joint1':  -21.2071, 'joint2':   8.3155, 'joint3': -100.0195,
                'joint4': -88.2957, 'joint5': -68.7932, 'joint6':  -0.0001},
-    'ampola': {'joint1':  19.8765, 'joint2':  12.6962, 'joint3': -101.1162,
+    'ampola': {'joint1':  -19.8765, 'joint2':  12.6962, 'joint3': -101.1162,
                'joint4': -91.5796, 'joint5': -70.1238, 'joint6':  -0.0001},
-    'tubo':   {'joint1': -18.7403, 'joint2': -34.8821, 'joint3':  -66.0045,
+    'tubo':   {'joint1': +18.7403, 'joint2': -34.8821, 'joint3':  -66.0045,
                'joint4': -79.1134, 'joint5': 161.2597, 'joint6':  90.0000},
 }
 _CACHED_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  21.2090, 'joint2':   6.7135, 'joint3': -110.9968,
+    'frasco': {'joint1':  -21.2090, 'joint2':   6.7135, 'joint3': -110.9968,
                'joint4': -75.7163, 'joint5': -68.7912, 'joint6':  -0.0002},
-    'ampola': {'joint1':  19.8808, 'joint2':  11.7286, 'joint3': -112.4787,
+    'ampola': {'joint1':  -19.8808, 'joint2':  11.7286, 'joint3': -112.4787,
                'joint4': -79.2495, 'joint5': -70.1196, 'joint6':  -0.0001},
-    'tubo':   {'joint1': -13.8222, 'joint2': -31.2261, 'joint3':  -72.1125,
+    'tubo':   {'joint1': +13.8222, 'joint2': -31.2261, 'joint3':  -72.1125,
                'joint4': -76.6613, 'joint5': 166.1778, 'joint6':  90.0000},
 }
 _CACHED_PICK_POSES_DEG = {
-    'frasco': {'joint1':  21.2084, 'joint2':   4.8444, 'joint3': -115.6019,
+    'frasco': {'joint1':  -21.2084, 'joint2':   4.8444, 'joint3': -115.6019,
                'joint4': -69.2421, 'joint5': -68.7920, 'joint6':  -0.0001},
-    'ampola': {'joint1':  19.8810, 'joint2':  10.2150, 'joint3': -117.5355,
+    'ampola': {'joint1':  -19.8810, 'joint2':  10.2150, 'joint3': -117.5355,
                'joint4': -72.6792, 'joint5': -70.1194, 'joint6':  -0.0001},
-    'tubo':   {'joint1':  -5.7597, 'joint2': -27.0708, 'joint3':  -78.2997,
+    'tubo':   {'joint1':  +5.7597, 'joint2': -27.0708, 'joint3':  -78.2997,
                'joint4': -74.6294, 'joint5': 174.2403, 'joint6':  90.0000},
 }
 # DELIVERY regenerado 2026-07-05: as poses antigas eram pré-acoplador
@@ -728,11 +728,11 @@ _CACHED_PICK_POSES_DEG = {
 # mm AQUÉM da caixa em Y e 75 mm alto: o objeto era solto na borda da
 # prateleira, não dentro da caixa.
 _CACHED_DELIVERY_POSES_DEG = {
-    'frasco': {'joint1': 111.43, 'joint2': -18.54, 'joint3':  -84.44,
+    'frasco': {'joint1': -111.43, 'joint2': -18.54, 'joint3':  -84.44,
                'joint4': -167.02, 'joint5': -90.00, 'joint6': -158.57},
-    'tubo':   {'joint1':  84.88, 'joint2':  -0.12, 'joint3': -106.13,
+    'tubo':   {'joint1':  -84.88, 'joint2':  -0.12, 'joint3': -106.13,
                'joint4':  16.25, 'joint5':  90.00, 'joint6':   -5.12},
-    'ampola': {'joint1':  62.73, 'joint2': -14.90, 'joint3':  -89.21,
+    'ampola': {'joint1':  -62.73, 'joint2': -14.90, 'joint3':  -89.21,
                'joint4':  14.11, 'joint5':  90.00, 'joint6':  -27.27},
 }
 

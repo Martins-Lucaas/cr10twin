@@ -74,8 +74,9 @@ ros2 run touch_pack kinematic_attacher
 ros2 service call /kinematic_attach/attach std_srvs/srv/Trigger   # feche a mão antes
 ros2 service call /kinematic_attach/detach std_srvs/srv/Trigger   # solta
 ```
-O `grasp_executor` (conveyor cell) ainda usa a cópia inline do attach —
-migrar essa célula para a preensão-por-física acima é o follow-up.
+O `grasp_executor` (conveyor cell) **não** usa mais attach: a mão da
+célula roda em `effort` + PID (`config/cell_controllers.yaml`) e o objeto
+sobe só pelo atrito do aperto do `PerfectGrasp`.
 
 ## Aplicado nesta rodada (aditivo, sem tocar no caminho de comando)
 
