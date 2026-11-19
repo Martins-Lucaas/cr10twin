@@ -8,6 +8,11 @@ Argumentos (todos opcionais):
                                     célula FA7155 + acoplador hot-swap +
                                     ponteira F); tcp_link = face da
                                     ponteira, +67,7 mm do flange
+    tool             F | texturas_v2  (só com end_effector:=touch_tool).
+                       Vazio (default) = ~/.config/touch_pack/tool.json, ou F
+                       sem arquivo. Troca a ponteira na simulação (mesh,
+                       massa, colisão, tcp_link) e em TODOS os nós (IK, TCP,
+                       explorer, GUI) via TOUCH_PACK_TOOL.
     control_mode     sim_only | mirror | real_from_sim (default sim_only)
     robot_ip         IP do controlador CR10 real (default 192.168.5.2)
     feedback_port    30004 (8 ms, default) | 30005 (200 ms). A lenta é para
@@ -55,6 +60,7 @@ Exemplos:
     ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool sensor:='4'
     ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool sensor:='5'
     ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool no_gui:=true
+    ros2 launch touch_pack tactile_cell.launch.py end_effector:=touch_tool tool:=texturas_v2
 """
 import os
 import re
@@ -72,10 +78,14 @@ from touch_pack.constants import (
     FT_MODE_CHOICES,
     FT_MODE_POLLED,
     FT_SERIAL_BAUD,
+    TOOL_ENV,
+    TOOLS,
+    selected_tool,
 )
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, OpaqueFunction,
-                             RegisterEventHandler, IncludeLaunchDescription)
+                             RegisterEventHandler, IncludeLaunchDescription,
+                             SetEnvironmentVariable)
 from launch.conditions import UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -154,7 +164,8 @@ def _inject_hand_initial_values(hand_body: str) -> str:
 
 
 # Construção do URDF combinado (roteado por end_effector)
-def _build_robot_urdf(end_effector: str, force_source: str = 'real'):
+def _build_robot_urdf(end_effector: str, force_source: str = 'real',
+                      tool: str = 'F'):
     hand_pack_share  = get_package_share_directory('hand_pack')
     cra_share        = get_package_share_directory('cra_description')
     touch_pack_share = get_package_share_directory('touch_pack')
@@ -197,7 +208,7 @@ def _build_robot_urdf(end_effector: str, force_source: str = 'real'):
             cr10_urdf, hand_pack_share, arm_gz, touch_pack_share)
     else:
         full_urdf = _build_touch_tool_suffix(cr10_urdf, touch_pack_share,
-                                             arm_gz, force_source)
+                                             arm_gz, force_source, tool)
 
     # URDF mínimo para o robot_state_publisher
     minimal = full_urdf
@@ -349,8 +360,69 @@ def _build_hand_suffix(cr10_urdf: str, hand_pack_share: str, arm_gz: str,
     return full_urdf
 
 
+# Ponteiras além da F (que é a do touch_tool_tcp.urdf). base_m = base da
+# ponteira acima da base do acoplador; height_m = base → face. O tcp_link sai
+# disso, e tem de bater com constants.TOOLS (conferido em _apply_tool_tip).
+# Massa e inércia: scripts/gen_tcp_meshes_from_step.py --stack texturas_v2.
+_COUPLER_BASE_M = 0.0004 + 0.0368   # flange → base do acoplador (URDF)
+_TOOL_TIPS = {
+    'texturas_v2': {
+        'mesh': 'ponteira_texturas_v2.stl',
+        'base_m': 0.0090,
+        'height_m': 0.0290,
+        'inertial': (
+            '<inertial>\n'
+            '      <origin xyz="-0.00002 0.00003 0.01802" rpy="0 0 0"/>\n'
+            '      <mass value="0.0405"/>\n'
+            '      <inertia ixx="3.766e-06" ixy="-4.987e-09" ixz="-7.396e-09"\n'
+            '               iyy="3.257e-05" iyz="7.885e-09" izz="3.185e-05"/>\n'
+            '    </inertial>'),
+        # Base 36 × 36 × 3, cubo central e a placa de 107 × 20 × 14 (z 15–29).
+        'collisions': (
+            '<collision name="col_tip_body">\n'
+            '      <origin xyz="0 0 0.0075" rpy="0 0 0"/>\n'
+            '      <geometry><box size="0.036 0.036 0.015"/></geometry>\n'
+            '    </collision>\n'
+            '    <collision name="col_tip_face">\n'
+            '      <origin xyz="0 0 0.022" rpy="0 0 0"/>\n'
+            '      <geometry><box size="0.107 0.020 0.014"/></geometry>\n'
+            '    </collision>'),
+    },
+}
+
+
+def _apply_tool_tip(tool_body: str, tool: str) -> str:
+    """Troca a ponteira F do touch_tool_tcp.urdf pela `tool` pedida."""
+    if tool == 'F':
+        return tool_body
+    tip = _TOOL_TIPS[tool]
+    tcp_mm = (_COUPLER_BASE_M + tip['base_m'] + tip['height_m']) * 1e3
+    if abs(tcp_mm - TOOLS[tool][0]) > 0.05:
+        raise RuntimeError(
+            f'ponteira {tool}: o URDF daria tcp_link a {tcp_mm:.2f} mm e '
+            f'constants.TOOLS diz {TOOLS[tool][0]:.2f} mm — corrija um dos dois.')
+    m = re.search(r'<link\s+name="tool_tip_link">.*?</link>', tool_body,
+                  re.DOTALL)
+    link = m.group(0)
+    link = re.sub(r'<inertial>.*?</inertial>', tip['inertial'], link,
+                  count=1, flags=re.DOTALL)
+    link = re.sub(r'meshes/ponteira_F_retangular_15x17\.stl',
+                  'meshes/' + tip['mesh'], link, count=1)
+    link = re.sub(r'<collision\b.*</collision>', tip['collisions'], link,
+                  count=1, flags=re.DOTALL)
+    tool_body = tool_body.replace(m.group(0), link)
+    tool_body = re.sub(
+        r'(<joint\s+name="tool_tip_attach".*?<origin\s+xyz="0 0 )[-\d.]+',
+        rf'\g<1>{tip["base_m"]:.4f}', tool_body, count=1, flags=re.DOTALL)
+    tool_body = re.sub(
+        r'(<joint\s+name="tcp_alias_joint".*?<origin\s+xyz="0 0 )[-\d.]+',
+        rf'\g<1>{tip["height_m"]:.4f}', tool_body, count=1, flags=re.DOTALL)
+    return tool_body
+
+
 def _build_touch_tool_suffix(cr10_urdf: str, touch_pack_share: str,
-                              arm_gz: str, force_source: str = 'real') -> str:
+                              arm_gz: str, force_source: str = 'real',
+                              tool: str = 'F') -> str:
     """Injeta o TCP de palpação (urdf/touch_tool_tcp.urdf) no CR10.
 
     Com `force_source != 'sim'` remove a F/T simulada da junta
@@ -409,6 +481,7 @@ def _build_touch_tool_suffix(cr10_urdf: str, touch_pack_share: str,
             r'|<gazebo>\s*<plugin\s+name="sim_load_cell_ft"[\s\S]*?</gazebo>\s*',
             '', tool_body)
 
+    tool_body = _apply_tool_tip(tool_body, tool)
     full_urdf = cr10_urdf.replace('</robot>', tool_body + '</robot>')
     full_urdf = full_urdf.replace('</robot>', arm_gz + '\n</robot>')
     return full_urdf
@@ -517,11 +590,20 @@ def launch_setup(context, *args, **kwargs):
 
     robot_mode = _CONTROL_MODE_MAP.get(control_mode, 'SIM_ONLY')
 
+    # Ponteira: o arg vence o tool.json; nome desconhecido aborta o launch em
+    # vez de cair na F calado — a IK andaria com o TCP de outra peça.
+    tool = LaunchConfiguration('tool').perform(context).strip()
+    if tool and tool not in TOOLS:
+        raise RuntimeError(f"tool:='{tool}' não existe — use um de "
+                           f"{', '.join(sorted(TOOLS))}.")
+    tool = tool or selected_tool()
+
     pkg_touch  = get_package_share_directory('touch_pack')
     pkg_gazebo = get_package_share_directory('gazebo_ros')
 
     # URDFs tempfile (não path fixo): duas sessões simultâneas não colidem.
-    full_urdf, minimal_urdf = _build_robot_urdf(end_effector, force_source)
+    full_urdf, minimal_urdf = _build_robot_urdf(end_effector, force_source,
+                                                tool)
     fd, urdf_spawn_path = tempfile.mkstemp(
         prefix='tactile_cell_robot_', suffix='.urdf')
     with os.fdopen(fd, 'w') as f:
@@ -716,7 +798,10 @@ def launch_setup(context, *args, **kwargs):
         imu_nodes.append(Node(package='touch_pack', executable='imu_node',
                               parameters=[imu_params], output='screen'))
 
-    return [gazebo, rsp, spawn_robot] + chain + imu_nodes
+    # Primeiro da lista: todo nó lançado depois (inclusive pelos event
+    # handlers) herda a mesma ponteira que o URDF acabou de usar.
+    return ([SetEnvironmentVariable(TOOL_ENV, tool),
+             gazebo, rsp, spawn_robot] + chain + imu_nodes)
 
 
 def generate_launch_description():
@@ -725,7 +810,12 @@ def generate_launch_description():
             'end_effector', default_value='hand',
             description='Efector final: hand (COVVI) | touch_tool '
                         '(flange fixo + célula FA7155 + acoplador hot-swap + '
-                        'ponteira F; tcp_link a +67,7 mm do flange).'),
+                        'ponteira do arg `tool`; tcp_link na face dela).'),
+        DeclareLaunchArgument(
+            'tool', default_value='',
+            description='Ponteira do touch_tool: F | texturas_v2. Vazio = '
+                        '~/.config/touch_pack/tool.json, ou F. Vale para a '
+                        'simulação e para todos os nós (IK, TCP, explorer).'),
         DeclareLaunchArgument(
             'control_mode', default_value='sim_only',
             description='sim_only | mirror | real_from_sim'),

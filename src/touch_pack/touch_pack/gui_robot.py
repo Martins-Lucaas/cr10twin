@@ -120,7 +120,14 @@ class RobotMixin:
                     if self._latest_phase not in ('IDLE', 'DONE', 'ABORTED'):
                         return
                 drv._send_dash(f'SpeedFactor({speed_pct})')
-                drv.mov_j_joint_deg(q_dobot_deg)
+                # Alvo do jog cartesiano → MovL (TCP em linha reta). Qualquer
+                # outra origem (sliders, home, arrasto) segue em MovJ.
+                jog_q = getattr(self, '_jog_linear_q', None)
+                if jog_q is not None and np.allclose(
+                        positions_rad, jog_q, atol=1e-6):
+                    drv.mov_l_joint_deg(q_dobot_deg)
+                else:
+                    drv.mov_j_joint_deg(q_dobot_deg)
                 self._last_robot_cmd_t = time.monotonic()
                 if self._drag_enabled:
                     self._drag_enabled = False

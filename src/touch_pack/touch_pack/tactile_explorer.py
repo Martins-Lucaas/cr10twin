@@ -146,7 +146,6 @@ from .plane_probe import (
     sagitta_m as _sagitta_m,
     SAGITTA_MAX_M_DEFAULT as _SAGITTA_MAX_M,
     probe_ring_from_grid as _probe_ring_from_grid,
-    slope_along_deg as _slope_along_deg,
     validate_fit as _validate_fit,
 )
 from .lc_filter import (   # noqa: F401 — _MEDIAN_N é reexportado
@@ -2886,7 +2885,7 @@ class TactileExplorer(AttackMixin, Node):
         """
         cfg = self._align_params()
         if cfg is None:
-            return 'ok'
+            return self._apply_saved_plane()
         if cfg['manual']:
             motivo = self._manual_attack_refusal(cfg)
             if motivo is not None:
@@ -3027,7 +3026,7 @@ class TactileExplorer(AttackMixin, Node):
         # mas esgotam a reserva de indentação (alvo/K, dezenas de µm contra
         # contato rígido) em menos de 2 mm de curso lateral. Medir e depois
         # deslizar na horizontal seria jogar fora a medição.
-        self._align_set_slide_plane(fit)
+        self._align_set_slide_plane(fit)   # e grava em surface_plane.json
 
         attack = _attack_dir_from_normal(fit.normal)
         if fit.tilt_deg <= _ALIGN_ORI_TOL_DEG:
@@ -3190,40 +3189,6 @@ class TactileExplorer(AttackMixin, Node):
             f'novos com resíduo RMS de {fit2.rms_m*1e3:.3f} mm. Este é o '
             'ângulo ENTRE ferramenta e peça, não a soma dos elos.')
         return 'ok'
-
-    def _align_set_slide_plane(self, fit) -> None:
-        """Entrega ao SLIDING o plano MEDIDO da amostra.
-
-        O deslize percorre uma reta contida no plano (ver o bloco "Plano do
-        deslize" nas constantes). Sem esta entrega ele cairia na inclinação
-        DECLARADA na GUI, e o alinhamento conquistado na descida se perderia
-        no primeiro milímetro de curso.
-
-        A declaração do usuário NÃO é sobrescrita: ela continua em
-        `_slide_slope_deg` e volta a valer se a calibração não rodar. Só o
-        modo SLIDE consome isto.
-        """
-        with self._params_lock:
-            if self._mode != 'SLIDE':
-                return
-            dir_xy = self._slide_dir_vec.copy()
-            declarado = float(self._slide_slope_deg)
-            self._slide_plane_n = np.asarray(fit.normal, dtype=float).copy()
-        try:
-            medido = _slope_along_deg(fit.normal, dir_xy)
-        except ValueError:
-            # O plano existe e já foi guardado; só a leitura em GRAUS ao
-            # longo do curso é que não faz sentido (plano de pé). O deslize
-            # usa o vetor, não este número — que é só para o log.
-            self.get_logger().info(
-                '[ALIGN] plano do deslize definido pela normal medida '
-                '(inclinação ao longo do curso indefinida).')
-            return
-        self.get_logger().info(
-            f'[ALIGN] plano do deslize definido pela normal medida: o curso '
-            f'segue uma reta a {medido:+.2f}° na direção pedida (o valor '
-            f'declarado na GUI, {declarado:+.2f}°, fica de reserva). O curso '
-            'pedido passa a ser distância sobre a SUPERFÍCIE.')
 
     def _calibrate_or_abort(self) -> bool:
         """Roda a calibração e trata o desfecho no padrão das outras fases.

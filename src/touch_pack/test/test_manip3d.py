@@ -264,3 +264,28 @@ def test_ik_step_keeps_locked_joints_fixed():
     res = ik_step(q, target, T_end=T_TOUCH_TOOL_ATTACH, locked=locked)
     assert np.array_equal(res.q[locked], q[locked])
     assert np.any(np.abs(res.q[~locked] - q[~locked]) > 1e-4)
+
+
+# Pose real da bancada em 2026-11-19 (J4 = 80,4°). Com o limite velho de J4
+# em +80° a IK girava o punho antes de qualquer cálculo e o jog Z− de 10 mm
+# parava 8 mm curto com a ponteira 2,4° torta.
+_Q_BANCADA = np.array([0.91585, -0.27747, -2.69629, 1.40286, 1.57081, -0.15209])
+
+
+@pytest.mark.parametrize('delta', [
+    np.array([0.01, 0.0, 0.0]), np.array([-0.01, 0.0, 0.0]),
+    np.array([0.0, 0.01, 0.0]), np.array([0.0, -0.01, 0.0]),
+    np.array([0.0, 0.0, 0.01]), np.array([0.0, 0.0, -0.01]),
+])
+def test_cartesian_jog_keeps_tool_attitude_at_bench_pose(delta):
+    q = _Q_BANCADA.copy()
+    T0 = tcp_pose(q, T_end=T_TOUCH_TOOL_ATTACH)
+    target = T0[:3, 3] + delta
+    for _ in range(8):
+        res = ik_step(q, target, T_end=T_TOUCH_TOOL_ATTACH, R_lock=T0[:3, :3],
+                      tol_pos_m=5e-6)
+        q = res.q
+    R = T0[:3, :3].T @ tcp_pose(q, T_end=T_TOUCH_TOOL_ATTACH)[:3, :3]
+    ang_deg = math.degrees(math.acos(np.clip((np.trace(R) - 1) / 2, -1, 1)))
+    assert res.pos_err_m < 1e-4
+    assert ang_deg < 0.01

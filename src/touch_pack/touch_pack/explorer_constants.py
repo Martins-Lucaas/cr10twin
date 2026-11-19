@@ -25,6 +25,7 @@ from .constants import (
     CONTACT_ON_N as _CONTACT_ON_N,
     FORCE_CTRL_SIGMA_N as _FORCE_CTRL_SIGMA_N,
     POINTING_SEED_DEG as _POINTING_SEED_DEG,
+    TOOLS, selected_tool,
 )
 
 
@@ -512,9 +513,9 @@ _HOLD_DWELL_S   = 5.0
 # própria IK converge com erro dessa ordem, e girar por menos que isso só
 # adiciona movimento (e risco) sem melhorar o alinhamento.
 _ALIGN_ORI_TOL_DEG   = 2.0
-# Meia-diagonal da face 15 × 17 da ponteira F (m). É o quanto a aresta pode
-# descer ao inclinar; trocar de ponteira exige rever este valor.
-_TIP_HALF_DIAG_M     = 0.01134
+# Meia-diagonal da face da ponteira montada (m) — F: 15 × 17 → 11,34 mm. É o
+# quanto a aresta pode descer ao inclinar.
+_TIP_HALF_DIAG_M     = 0.5e-3 * math.hypot(*TOOLS[selected_tool()][1:])
 # Tare automático depois de mudar a orientação: o peso abaixo do plano de
 # medição se projeta de outro jeito nos eixos e o zero anterior deixa de valer.
 # A espera cobre a janela do ft_receiver (~0,8 s), que olha para trás: pedir

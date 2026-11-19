@@ -593,6 +593,42 @@ HOME_POSE_HAND_FILE   = os.path.join(CONFIG_DIR, 'home_pose_hand.json')
 ROBOT_CONFIG_FILE     = os.path.join(CONFIG_DIR, 'robot.json')
 POSES_FILE            = os.path.join(CONFIG_DIR, 'poses.json')
 PALPATION_PARAMS_FILE = os.path.join(CONFIG_DIR, 'palpation_params.json')
+TOOL_FILE             = os.path.join(CONFIG_DIR, 'tool.json')
+# Plano da superfície de apoio medido pelo probe align (ver plane_probe).
+SURFACE_PLANE_FILE    = os.path.join(CONFIG_DIR, 'surface_plane.json')
+
+# Ponteiras da pilha FA7155 + acoplador hot-swap (só a ponteira muda):
+# nome → (flange→face de contato em mm, face em mm × mm). Base do acoplador a
+# 37,2 mm do flange; a ponteira assenta acima dela — F: 12,5 + 18,0 de altura
+# (MONTAGEM_FA7155_stack.step); v2: 9,0 + 29,0
+# (MONTAGEM_ponteira_texturas_v2.step). Número de CAD, ±0,5 mm: conferir na
+# bancada. Na montagem a v2 está girada ~102° em torno do eixo, então a direção
+# do lado de 107 mm em relação ao flange NÃO sai do CAD.
+TOOLS = {
+    'F':           (67.7, 15.0, 17.0),
+    'texturas_v2': (75.2, 107.0, 20.0),
+}
+TOOL_ENV = 'TOUCH_PACK_TOOL'   # o launch (arg `tool`) define para todos os nós
+TOOL_DEFAULT = 'F'
+
+
+def selected_tool() -> str:
+    """Ponteira montada: variável TOUCH_PACK_TOOL (posta pelo launch, arg
+    `tool`), senão ~/.config/touch_pack/tool.json ({"tool": "texturas_v2"}).
+    Sem nenhum dos dois, ou nome desconhecido → F. Lida no import: trocar de
+    ponteira exige reiniciar GUI e explorer."""
+    import json
+    env = os.environ.get(TOOL_ENV, '').strip()
+    if env:
+        return env if env in TOOLS else TOOL_DEFAULT
+    try:
+        with open(TOOL_FILE, encoding='utf-8') as f:
+            name = str(json.load(f).get('tool', TOOL_DEFAULT))
+    except FileNotFoundError:
+        return TOOL_DEFAULT
+    except Exception:
+        return TOOL_DEFAULT
+    return name if name in TOOLS else TOOL_DEFAULT
 # Profundidade do contato aprendida POR HOME.
 LEARNED_CONTACT_FILE  = os.path.join(CONFIG_DIR, 'learned_contact.json')
 

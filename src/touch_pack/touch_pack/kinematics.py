@@ -35,7 +35,8 @@ from __future__ import annotations
 import math
 import numpy as np
 
-from .constants import HAND_DRIVER_LOWER_RAD, HAND_DRIVER_UPPER_RAD
+from .constants import (HAND_DRIVER_LOWER_RAD, HAND_DRIVER_UPPER_RAD,
+                        TOOLS, selected_tool)
 
 _PI2 = math.pi / 2
 
@@ -72,10 +73,14 @@ T_HAND_ATTACH = np.array([
 #
 # Poses ensinadas com outra ferramenta não valem: quem avisa é o carimbo
 # `tool_tcp_mm` (constants.tool_stamp_mismatch), que lê justamente daqui.
+#
+# A ponteira montada vem de ~/.config/touch_pack/tool.json (constants.TOOLS);
+# sem arquivo é a F, +67,7 mm.
+TOOL_NAME = selected_tool()
 T_TOUCH_TOOL_ATTACH = np.array([
     [1.0,  0.0,  0.0,  0.0000],
     [0.0,  1.0,  0.0,  0.0000],
-    [0.0,  0.0,  1.0,  0.0677],  # +67.7 mm — flange → face da ponteira F
+    [0.0,  0.0,  1.0,  TOOLS[TOOL_NAME][0] * 1e-3],  # flange → face
     [0.0,  0.0,  0.0,  1.0000],
 ], dtype=float)
 
@@ -106,15 +111,18 @@ def _apply_tcp_calib() -> float | None:
 
 TOUCH_TOOL_CALIB_MM = _apply_tcp_calib()
 
-# Limites articulares — convenção URDF (rad). Joints 2 e 4 têm offset de
-# -π/2 em relação à convenção DH; os limites físicos são mapeados de ±170°
-# (DH) → [-260°, +80°] (URDF).
-JOINT_MIN = np.array([np.deg2rad(-180.), np.deg2rad(-260.),
-                       -2.861,
-                       np.deg2rad(-260.), np.deg2rad(-135.), np.deg2rad(-360.)])
-JOINT_MAX = np.array([np.deg2rad( 180.), np.deg2rad(  80.),
-                        2.861,
-                        np.deg2rad(  80.), np.deg2rad( 135.), np.deg2rad( 360.)])
+# Limites articulares — convenção URDF (rad). Joints 2 e 4 usam ±170°: o
+# offset URDF↔DOBOT é zero (_URDF_DOBOT_OFFSET), então NÃO há mais o
+# deslocamento de −π/2 que mapeava ±170° em [−260°, +80°]. Esse mapeamento
+# velho travava J4 em +80° com o robô parado em 80,4° e a IK girava o punho
+# sozinha. Hardware CR10A (manual V1.8): J2/J4 ±360° — ±170° é margem nossa;
+# J3 ±160° é o limite do hardware (o URDF ainda diz ±2,861 rad = ±163,9°).
+JOINT_MIN = np.array([np.deg2rad(-180.), np.deg2rad(-170.),
+                       np.deg2rad(-160.),
+                       np.deg2rad(-170.), np.deg2rad(-135.), np.deg2rad(-360.)])
+JOINT_MAX = np.array([np.deg2rad( 180.), np.deg2rad( 170.),
+                       np.deg2rad( 160.),
+                       np.deg2rad( 170.), np.deg2rad( 135.), np.deg2rad( 360.)])
 
 # Distância efetiva WC→flange ao longo do vetor de abordagem (m).
 _D_WC_FLANGE = 0.26

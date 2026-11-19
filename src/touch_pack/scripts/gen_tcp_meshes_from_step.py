@@ -63,6 +63,13 @@ STACKS = {
         ('coupler_tool', 'acoplador_celula_hotswap.stl',    RHO_PRINTED, None,           1),
         ('tool_tip',     'ponteira_F_retangular_15x17.stl', RHO_PRINTED, None,           1),
     ]),
+    # Só a ponteira, da peça avulsa (face 107 × 20, lado longo em X). A
+    # MONTAGEM_ponteira_texturas_v2.step tem a mesma peça girada ~102° em
+    # torno do eixo — usá-la giraria o mesh. Base da peça = frame do
+    # tool_tip_link; a altura do encaixe está em constants.TOOLS.
+    'texturas_v2': ('../ponteiras/ponteira_texturas_v2.step', [
+        ('tool_tip',     'ponteira_texturas_v2.stl',        RHO_PRINTED, None,           1),
+    ]),
 }
 
 # PLANO DE MONTAGEM: a face INFERIOR do flange fixo do FA7155 é a face do

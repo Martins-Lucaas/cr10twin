@@ -178,3 +178,12 @@ def test_request_control_still_fails_on_a_real_denial():
                       None, b'-1,{},RequestControl();'])
     drv = _driver_with(sock)
     assert drv._request_control_with_retry(retries=2, delay_s=0) is False
+
+
+def test_mov_l_joint_sends_linear_move_to_joint_target():
+    drv = CR10RealDriver(dry_run=True)
+    sent = []
+    drv._send_motion = lambda cmd: sent.append(cmd) or '0,{},MovL();'
+    drv.mov_l_joint_deg([1, 2, 3, 4, 5, 6])
+    assert sent == ['MovL(joint={1.000000,2.000000,3.000000,'
+                    '4.000000,5.000000,6.000000})']

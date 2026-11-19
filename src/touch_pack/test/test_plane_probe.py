@@ -301,3 +301,47 @@ def test_slope_refuses_a_null_direction():
 def test_slope_refuses_a_vertical_plane():
     with pytest.raises(ValueError):
         slope_along_deg((1.0, 0.0, 0.0), (1.0, 0.0))
+
+
+# ── Plano salvo ──────────────────────────────────────────────────────
+
+def _fit_inclinado(graus=1.0):
+    from touch_pack.plane_probe import fit_plane
+    t = np.tan(np.radians(graus))
+    pts = np.array([[x, y, 0.1 + t * x] for x, y in
+                    [(0.05, 0), (0, 0.05), (-0.05, 0), (0, -0.05)]])
+    return fit_plane(pts)
+
+
+def test_plano_salvo_ida_e_volta(tmp_path):
+    from touch_pack.plane_probe import save_plane, load_plane
+    p = str(tmp_path / 'surface_plane.json')
+    fit = _fit_inclinado(1.0)
+    save_plane(p, fit, tool='F')
+    n, info = load_plane(p, tilt_max_deg=30.0)
+    assert np.allclose(n, fit.normal, atol=1e-9)
+    assert info['tool'] == 'F' and info['n_points'] == 4
+
+
+def test_plano_salvo_ausente_e_none(tmp_path):
+    from touch_pack.plane_probe import load_plane
+    assert load_plane(str(tmp_path / 'x.json'), tilt_max_deg=30.0) is None
+
+
+def test_plano_salvo_normal_invertida_volta_para_cima(tmp_path):
+    import json
+    from touch_pack.plane_probe import load_plane
+    p = tmp_path / 'p.json'
+    p.write_text(json.dumps({'normal': [0.0, 0.0, -2.0]}))
+    n, _ = load_plane(str(p), tilt_max_deg=30.0)
+    assert np.allclose(n, [0, 0, 1])
+
+
+@pytest.mark.parametrize('conteudo', ['{', '{"normal": [0, 0, 0]}',
+                                      '{"normal": [1, 0, 0.1]}'])
+def test_plano_salvo_invalido_e_recusado(tmp_path, conteudo):
+    from touch_pack.plane_probe import load_plane
+    p = tmp_path / 'p.json'
+    p.write_text(conteudo)
+    with pytest.raises(ValueError):
+        load_plane(str(p), tilt_max_deg=30.0)

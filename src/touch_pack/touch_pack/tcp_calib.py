@@ -40,7 +40,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .constants import CONFIG_DIR
+from .constants import CONFIG_DIR, TOOL_DEFAULT, selected_tool
 
 log = logging.getLogger('touch_pack.tcp_calib')
 
@@ -151,6 +151,7 @@ def save_offset_mm(fit: PivotFit) -> str:
             'pivot_mm': list(fit.pivot_mm),
             'residual_mm': fit.residual_mm,
             'n_points': fit.n_points,
+            'tool': selected_tool(),
         }, f, indent=2)
     return TCP_CALIB_FILE
 
@@ -166,6 +167,13 @@ def load_offset_mm() -> tuple[float, float, float] | None:
         with open(TCP_CALIB_FILE, encoding='utf-8') as f:
             d = json.load(f)
         x, y, z = (float(v) for v in d['offset_mm'])
+        # Calibração de OUTRA ponteira não vale para a montada. Arquivo sem
+        # o campo é anterior a ele — só existia a F.
+        tool = str(d.get('tool', TOOL_DEFAULT))
+        if tool != selected_tool():
+            log.warning('tcp_calib.json é da ponteira %s, montada é %s — '
+                        'usando o TCP de CAD', tool, selected_tool())
+            return None
     except FileNotFoundError:
         return None
     except Exception as exc:

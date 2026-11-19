@@ -165,6 +165,11 @@ class ManualExtrasMixin:
         with self._suppress():
             for j, g in zip(ARM_JOINTS, graus):
                 self.arm_sliders[j].set(round(g, 5))
+        # O mirror reconhece este alvo e manda MovL em vez de MovJ. Lê de
+        # volta dos sliders (que podem quantizar o valor): é isso que
+        # _publish_arm_from_sliders vai de fato publicar.
+        self._jog_linear_q = [_math.radians(float(self.arm_sliders[j].get()))
+                              for j in ARM_JOINTS]
         self._publish_arm_from_sliders()
 
         p_mm = _fk(q, T_end=T_end)[:3, 3] * 1e3

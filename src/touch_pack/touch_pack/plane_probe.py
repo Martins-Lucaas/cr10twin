@@ -433,3 +433,59 @@ def approach_start(target: np.ndarray, attack: np.ndarray, gap_m: float,
     sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
     travel_m = (float(gap_m) + float(tip_half_m) * sin_t) / cos_t
     return np.asarray(target, dtype=float) - travel_m * attack, travel_m
+
+
+# ── Plano salvo ─────────────────────────────────────────────────────────
+# A superfície de apoio (o vidro) não se move entre experimentos: medido uma
+# vez, o plano vale para os seguintes — e para outra ponteira, porque está em
+# coordenadas do MUNDO. Só a normal é guardada; a altura a descida acha.
+
+def save_plane(path: str, fit: PlaneFit, **extra) -> None:
+    """Grava a normal de um ajuste ACEITO em `path` (JSON)."""
+    import json
+    import os
+    import time
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    data = {
+        'normal': [float(v) for v in fit.normal],
+        'tilt_deg': float(fit.tilt_deg),
+        'tilt_unc_deg': (float(fit.tilt_unc_deg)
+                         if math.isfinite(fit.tilt_unc_deg) else None),
+        'rms_mm': float(fit.rms_m) * 1e3,
+        'n_points': int(fit.n_points),
+        'saved_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        **extra,
+    }
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+def load_plane(path: str, *, tilt_max_deg: float) -> tuple[np.ndarray, dict] | None:
+    """(normal unitária para FORA da superfície, dados do arquivo), ou None
+    sem arquivo. Arquivo ilegível ou plano além de `tilt_max_deg` → ValueError:
+    quem chama recusa o run em vez de deslizar num plano que não confere."""
+    import json
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        raise ValueError(f'{path} ilegível ({exc})') from exc
+    try:
+        n = np.asarray(data['normal'], dtype=float).reshape(3)
+    except Exception as exc:
+        raise ValueError(f'{path} sem normal válida ({exc})') from exc
+    nn = float(np.linalg.norm(n))
+    if not np.all(np.isfinite(n)) or nn < 1e-9:
+        raise ValueError(f'{path}: normal degenerada {n.tolist()}')
+    n = n / nn
+    if float(n @ Z_UP) < 0.0:
+        n = -n
+    tilt = angle_between_deg(n, Z_UP)
+    if tilt > tilt_max_deg:
+        raise ValueError(f'{path}: plano a {tilt:.2f}° da horizontal, acima '
+                         f'do teto de {tilt_max_deg:.1f}°')
+    return n, data

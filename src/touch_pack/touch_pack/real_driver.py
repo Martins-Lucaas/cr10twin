@@ -905,6 +905,23 @@ class CR10RealDriver:
                         code, err_id.strip(), cmd)
             raise CR10RealDriverError(f'MovJ falhou: {code}, GetErrorID={err_id.strip()}')
 
+    def mov_l_joint_deg(self, q_deg: Sequence[float]) -> None:
+        """MovL com alvo ARTICULAR (graus, convenção DOBOT): o controlador faz
+        a FK do alvo e anda em linha reta até ele. Mesmo ponto final do MovJ,
+        mas o TCP não faz arco — é o que o jog cartesiano promete."""
+        q = list(q_deg)
+        if len(q) != 6:
+            raise ValueError('mov_l_joint_deg requer 6 valores')
+        cmd = 'MovL(joint={{{values}}})'.format(
+            values=','.join(f'{v:.6f}' for v in q))
+        resp = self._send_motion(cmd)
+        if resp and not resp.startswith('0'):
+            code = dash_error_text(resp)
+            err_id = self.get_error_id() or ''
+            log.warning('[MOVE] MovL(joint) falhou (%s, GetErrorID=%s) cmd=%s',
+                        code, err_id.strip(), cmd)
+            raise CR10RealDriverError(f'MovL falhou: {code}, GetErrorID={err_id.strip()}')
+
     def mov_j_cartesian(self, x: float, y: float, z: float,
                          rx: float, ry: float, rz: float) -> None:
         """MovJ Cartesiano — PTP até pose (x,y,z,rx,ry,rz) em mm/graus.

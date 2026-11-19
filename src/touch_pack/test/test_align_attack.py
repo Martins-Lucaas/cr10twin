@@ -518,3 +518,90 @@ def test_small_tilt_still_hands_the_plane_to_the_slide(node):
     assert node._attack_dir is None          # abaixo da tolerância: não gira
     assert node._slide_plane_n is not None    # mas o plano medido VALE
     assert np.allclose(node._slide_plane_n, fit_plane(pts).normal)
+
+
+# ── Plano salvo (probe align desligado) ───────────────────────────────
+
+def _save(fit, tool='F'):
+    from touch_pack import explorer_attack as te
+    from touch_pack.plane_probe import save_plane
+    save_plane(te._SURFACE_PLANE_FILE, fit, tool=tool)
+
+
+def _slide(node):
+    with node._params_lock:
+        node._mode = 'SLIDE'
+        node._slide_dir_vec = np.array([0.0, -1.0])
+        node._slide_plane_n = None
+    node._attack_dir = None
+
+
+def test_saved_plane_small_tilt_reaches_slide_without_rotating(node):
+    from touch_pack.plane_probe import fit_plane
+    _slide(node)
+    fit = fit_plane(_tilted_plane_pts(0.5))
+    _save(fit)
+    node._rotate_to_attack = lambda *a, **k: pytest.fail('girou a 0,5°')
+    assert node._phase_calibrate_attack() == 'ok'
+    assert np.allclose(node._slide_plane_n, fit.normal)
+    assert node._attack_dir is None
+
+
+def test_saved_plane_large_tilt_rotates_and_sets_attack(node):
+    from touch_pack.plane_probe import fit_plane
+    _slide(node)
+    fit = fit_plane(_tilted_plane_pts(10.0))
+    _save(fit)
+    seen = []
+    node._rotate_to_attack = lambda a, **k: seen.append(a) or 'ok'
+    assert node._phase_calibrate_attack() == 'ok'
+    assert np.allclose(seen[0], -fit.normal)
+    assert np.allclose(node._attack_dir, -fit.normal)
+    assert np.allclose(node._slide_plane_n, fit.normal)
+
+
+def test_saved_plane_ignored_outside_slide(node):
+    from touch_pack.plane_probe import fit_plane
+    _slide(node)
+    with node._params_lock:
+        node._mode = 'TOUCH'
+    _save(fit_plane(_tilted_plane_pts(10.0)))
+    node._rotate_to_attack = lambda *a, **k: pytest.fail('girou fora do SLIDE')
+    assert node._phase_calibrate_attack() == 'ok'
+    assert node._slide_plane_n is None
+
+
+def test_corrupt_saved_plane_refuses_the_run(node):
+    from touch_pack import explorer_attack as te
+    _slide(node)
+    with open(te._SURFACE_PLANE_FILE, 'w') as f:
+        f.write('{')
+    assert node._phase_calibrate_attack() == 'error'
+
+
+def test_no_saved_plane_keeps_the_old_behaviour(node):
+    _slide(node)
+    node._rotate_to_attack = lambda *a, **k: pytest.fail('girou sem plano')
+    assert node._phase_calibrate_attack() == 'ok'
+    assert node._slide_plane_n is None
+
+
+@pytest.mark.parametrize('mode, grava', [('SLIDE', True), ('TOUCH', True),
+                                         ('MANUAL', True),
+                                         ('MATRIX_MAP', False)])
+def test_which_modes_save_the_plane(node, mode, grava):
+    import os
+    from touch_pack import explorer_attack as te
+    from touch_pack.plane_probe import fit_plane, load_plane
+    with node._params_lock:
+        node._mode = mode
+        node._slide_dir_vec = np.array([0.0, -1.0])
+        node._slide_plane_n = None
+    fit = fit_plane(_tilted_plane_pts(1.0))
+    node._align_set_slide_plane(fit)
+    assert os.path.exists(te._SURFACE_PLANE_FILE) is grava
+    if grava:
+        n, info = load_plane(te._SURFACE_PLANE_FILE, tilt_max_deg=30.0)
+        assert np.allclose(n, fit.normal) and info['mode'] == mode
+    # Só o SLIDE consome o plano NESTE run.
+    assert (node._slide_plane_n is not None) is (mode == 'SLIDE')
