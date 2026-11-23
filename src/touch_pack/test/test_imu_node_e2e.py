@@ -16,6 +16,7 @@ HOLD durante o teste — inofensivo, mas é tráfego real. Pula se não houver
 o WBAN-Inercial, o PyQt6/ahrs no python do ROS, ou interface de rede
 não-loopback (o protocolo é multicast).
 """
+import importlib.util
 import math
 import os
 import random
@@ -31,10 +32,13 @@ from esp_emulator import EspEmulator, still, yaw_after  # noqa: E402
 
 from touch_pack.imu_node import DEFAULT_WBAN_DIR  # noqa: E402
 
-pytest.importorskip('PyQt6.QtCore')
-pytest.importorskip('ahrs')
+# marker em vez de skip de módulo: no pytest 6.2.5 (Humble) o skip de módulo
+# aborta a coleta da pasta inteira e o colcon test roda 0 testes.
+_MISSING = [m for m in ('PyQt6', 'ahrs') if importlib.util.find_spec(m) is None]
 if not os.path.isdir(os.path.join(DEFAULT_WBAN_DIR, 'core')):
-    pytest.skip('WBAN-Inercial não encontrado', allow_module_level=True)
+    _MISSING.append('WBAN-Inercial')
+pytestmark = pytest.mark.skipif(bool(_MISSING),
+                                reason=f'sem {", ".join(_MISSING)}')
 
 YAW_DEG_S = 20.0
 YAW_START_S = 4.0

@@ -32,6 +32,7 @@ o publica em `get_latest_frame()`, que a GUI Tk desenha no seu loop `after`.
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 from typing import Callable
@@ -261,8 +262,11 @@ class HandCameraTeleop:
                 f'({exc})') from exc
         self._cv2, self._mp = cv2, mp
 
-        # CAP_V4L2 é o backend estável para webcam USB no Linux.
-        cap = cv2.VideoCapture(self._camera_index, cv2.CAP_V4L2)
+        # CAP_V4L2 é o backend estável para webcam USB no Linux. Sem /dev/video
+        # (Docker no Windows), TOUCH_CAMERA_URL aponta p/ um stream MJPEG do host.
+        url = os.environ.get('TOUCH_CAMERA_URL')
+        cap = (cv2.VideoCapture(url) if url
+               else cv2.VideoCapture(self._camera_index, cv2.CAP_V4L2))
         if not cap.isOpened():
             cap.release()
             raise CameraUnavailable(

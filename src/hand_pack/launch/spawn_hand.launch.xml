@@ -8,7 +8,7 @@
   </include>
 
   <node pkg="robot_state_publisher" exec="robot_state_publisher" output="screen">
-    <param name="robot_description" value="$(command 'xacro $(find-pkg-share hand_pack)/urdf/linear_covvi_hand_gazebo.urdf')"/>
+    <param name="robot_description" value="$(command 'xacro $(find-pkg-share hand_pack)/urdf/linear_covvi_hand_gazebo.urdf')" type="str"/>
   </node>
 
   <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -entity covvi_hand -z 0.1 -R 1.5708" output="screen"/>

@@ -1,0 +1,22 @@
+# Override p/ Windows (Docker Desktop + WSLg, GPU via D3D12). Uso no PowerShell:
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml run --build --rm cr10twin
+# O docker-compose.yml puro continua valendo para Linux/CI (X11 do host).
+# GPU: Mesa d3d12 sobre /dev/dxg (qualquer GPU com driver WDDM; sem GPU, troque
+# GALLIUM_DRIVER=d3d12 por LIBGL_ALWAYS_SOFTWARE=1).
+services:
+  cr10twin:
+    devices:
+      - /dev/dxg
+    environment:
+      - DISPLAY=:0
+      - WAYLAND_DISPLAY=wayland-0
+      - XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+      - PULSE_SERVER=/mnt/wslg/PulseServer
+      - GALLIUM_DRIVER=d3d12
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      # webcam do Windows via tools/windows_webcam_stream.ps1 (sem /dev/video aqui)
+      - TOUCH_CAMERA_URL=http://host.docker.internal:8090/cam
+    volumes:
+      - /run/desktop/mnt/host/wslg/.X11-unix:/tmp/.X11-unix
+      - /run/desktop/mnt/host/wslg:/mnt/wslg
+      - /usr/lib/wsl:/usr/lib/wsl:ro

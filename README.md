@@ -112,6 +112,25 @@ host and re-run `colcon build` inside. Uncomment the `devices:` block for the
 real load cell / touch sensor. This is the same environment CI builds on every
 push.
 
+#### Windows 11 (Docker Desktop)
+
+Prerequisites: Docker Desktop with the WSL2 backend. WSLg ships with Windows 11,
+so no X server and no `xhost` are needed. From PowerShell, in the repo folder:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.windows.yml run --build --rm cr10twin
+```
+
+- GUIs (Gazebo, rviz2, Tk) open as normal Windows windows via WSLg.
+- OpenGL runs on the host GPU through WSLg D3D12 (`/dev/dxg`, `GALLIUM_DRIVER=d3d12`). Without a GPU, use `LIBGL_ALWAYS_SOFTWARE=1` instead (slow).
+- `.gitattributes` forces LF line endings. If you cloned before it existed,
+  re-checkout (or convert the files): CRLF breaks the Python shebangs on Linux.
+- The image also bakes in the optional extras: scikit-learn,
+  `covvi-eci`, torch + torchvision (CPU), ultralytics with `yolov8n.pt`, and
+  mediapipe (`touch_pack` camera teleop).
+- Real hardware: Windows COM ports are not visible in the container. Attach the
+  USB device to WSL first with usbipd-win (untested).
+
 ### Option B — native
 
 ```bash
