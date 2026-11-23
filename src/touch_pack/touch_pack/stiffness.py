@@ -32,7 +32,9 @@ from .explorer_constants import (
     _DESCEND_CRAWL_V_MIN_MS, _DESCEND_TOUCH_V_MS, _FX_MIN_POINTS,
     _FX_MIN_SEG_DF_N, _FX_MIN_SPAN_N, _K_DEFAULT_NM, _K_EMA_ALPHA,
     _K_MAX_NM, _K_MIN_NM, _K_PAIR_MIN_DF_N, _K_PAIR_MIN_DX_M,
-    _QS_K_PUSH_MARGIN, _STREAM_HALT_LAT_S
+    _QS_K_PUSH_MARGIN, _STREAM_HALT_LAT_S,
+    _SLIDE_FC_DOWN_MAX_MS, _SLIDE_FC_UP_MAX_MS, _SLIDE_FC_DEPTH_MAX_M,
+    _SLIDE_FC_LIFT_MAX_M
 )
 
 
@@ -92,6 +94,26 @@ def impact_peak_n(v_ms: float, k_nm: float,
     descida some no quantum de 10 µm da FK. O que resta é dizer a verdade.
     """
     return float(v_ms) * max(1e-3, float(t_halt_s)) * max(1.0, float(k_nm))
+
+
+def slide_force_step(d_m: float, err_n: float, ki_ms_per_n: float,
+                     dt_s: float, in_contact: bool) -> float:
+    """Um passo da malha leve de força do SLIDING (ver _SLIDE_FC_*).
+
+    d_m: correção de profundidade sobre o plano do HOLD, + = para DENTRO.
+    err_n = F_alvo − F (N). Velocidade saturada assimétrica (descer ≤ 0,1
+    mm/s) e d saturado em [−LIFT, +DEPTH], que também é o anti-windup.
+
+    SEM CONTATO NÃO DESCE: com F ≈ 0 o erro pede descer sem nenhuma
+    realimentação, e o que foi acumulado às cegas vira pico quando a
+    superfície volta (run 20261123_143253: 0,15 mm → 2,7 N a 1 N de alvo).
+    """
+    if ki_ms_per_n <= 0.0 or not math.isfinite(err_n):
+        return d_m
+    rate = min(max(ki_ms_per_n * err_n, -_SLIDE_FC_UP_MAX_MS),
+               _SLIDE_FC_DOWN_MAX_MS if in_contact else 0.0)
+    return min(max(d_m + rate * dt_s, -_SLIDE_FC_LIFT_MAX_M),
+               _SLIDE_FC_DEPTH_MAX_M)
 
 
 def setpoint_resolvable(target_f: float, tol_n: float,

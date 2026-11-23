@@ -209,6 +209,8 @@ from .explorer_constants import (   # noqa: F401 — reexportação
     _FX_MIN_SEG_DF_N, _DEADBEAT_DX_MAX_M, _SLIDE_MAX_SINK_M,
     _SLIDE_CONTACT_MIN_FRAC, _SLIDE_LOST_BUDGET_M, _SLIDE_LOST_ABORTS,
     _SLIDE_SLOPE_MAX_DEG, _Z_HAT, _TARGET_LOST_FREE_M,
+    _SLIDE_FC_HZ_MAX, _SLIDE_FC_DOWN_MAX_MS, _SLIDE_FC_UP_MAX_MS,
+    _SLIDE_FC_DEPTH_MAX_M, _SLIDE_FC_LIFT_MAX_M, _SLIDE_FC_K_MIN_NM,
     _TARGET_LOST_DROP_S, _TARGET_LOST_DROP_FRAC, _CONTACT_ON_SAMPLES,
     _CONTACT_CONFIRM_S, _CONTACT_FALSE_MAX, _DESCEND_CONTACT_V_MAX_MS,
     _CONTACT_ZONE_MARGIN_M, _ZONE_REACTION_S, _CONTACT_MARGIN_MIN_PTS,
@@ -251,7 +253,7 @@ from .force_wave import (           # noqa: F401 — reexportação
 )
 from .stiffness import (            # noqa: F401 — reexportação
     _ContactCurve, _StiffnessEstimator, crawl_v_ms, impact_peak_n,
-    setpoint_resolvable
+    setpoint_resolvable, slide_force_step
 )
 
 
@@ -291,6 +293,9 @@ class TactileExplorer(AttackMixin, Node):
         # Velocidade NOMINAL da rampa fina de _qs_regulate até o setpoint
         # (mm/s). Efetivo ≈ 1/6 — ver _QS_RAMP_V_MS.
         self.declare_parameter('hold_ramp_mms', _QS_RAMP_V_MS * 1e3)
+        # Malha leve de força do SLIDING (Hz); 0 = desligada (_SLIDE_FC_*).
+        # Ligada por padrão desde 23/11/2026, a pedido do usuário.
+        self.declare_parameter('slide_force_hz', _SLIDE_FC_HZ_MAX)
         self.declare_parameter('home_speed_rad_s', _HOME_MAX_RAD_S)
         # Calibração dinâmica do ângulo de ataque — ver o bloco _ALIGN_*.
         # Desligada por padrão: ligá-la muda a aproximação de TODO run.
@@ -5164,6 +5169,23 @@ class TactileExplorer(AttackMixin, Node):
         lost_reported = False
         outcome = 'ok'
         progress = 0.0
+
+        # Malha leve de força: Ki = ω_c/K, K = EMA do HOLD com piso (ver
+        # _SLIDE_FC_*). Sem estimativa no HOLD a malha fica inerte (Ki = 0).
+        fc_hz = min(max(float(self.get_parameter('slide_force_hz').value),
+                        0.0), _SLIDE_FC_HZ_MAX)
+        k_fc = (max(self._k_est.value, _SLIDE_FC_K_MIN_NM)
+                if self._k_est.estimated else math.inf)
+        ki = 2.0 * math.pi * fc_hz / k_fc
+        # d e a âncora valem pelo CICLO (ancorados no HOLD), não por passada:
+        # senão o teto de profundidade recomeçaria a cada volta.
+        if dist_m is None:   # 1ª ida do ciclo
+            self._fc_p0, self._fc_d = p_start.copy(), 0.0
+        p_fc0, d_fc, t_fc = self._fc_p0, self._fc_d, time.time()
+        if ki > 0.0:
+            self.get_logger().info(
+                f'{tag}: malha de força {fc_hz:.2f} Hz, K={k_fc/1e3:.1f} '
+                f'N/mm, Ki={ki*1e3:.3f} mm/s/N.')
         while True:
             if self._stop_requested.is_set():
                 self._stop_requested.clear()
@@ -5240,6 +5262,12 @@ class TactileExplorer(AttackMixin, Node):
                     outcome = 'contact_lost'
                     break
 
+            # dt real com teto: laço travado não vira salto de profundidade.
+            dt_fc, t_fc = min(max(t0 - t_fc, 0.0), 2.0 * dt), t0
+            d_fc = slide_force_step(d_fc, target_f - fz_corr, ki, dt_fc,
+                                    abs(fz_corr) >= _CONTACT_ON_N)
+            p_ref = (p_fc0 + d_fc * approach_dir_eff) if ki > 0.0 else p_start
+
             # ── Rolling-window de _SLIDE_WIN waypoints ──────────────────
             msg = JointTrajectory()
             msg.joint_names = list(_ARM_JOINTS)
@@ -5261,11 +5289,11 @@ class TactileExplorer(AttackMixin, Node):
                 # Lock de orientação
                 tw[3:] = self._ori_twist(R0, T_iter)
                 # Lock de PROFUNDIDADE, ao longo da normal do plano: mantém a
-                # indentação que o HOLD deixou em p_start durante todo o
-                # percurso. Como o avanço (dir_world) já está NO plano, não há
-                # termo de rampa a compensar — a reta é a própria trajetória.
+                # indentação que o HOLD deixou em p_start (+ a correção lenta
+                # d_fc da malha de força, se ligada). Como o avanço já está NO
+                # plano, não há termo de rampa a compensar.
                 depth_err = float(np.dot(
-                    p_start - T_iter[:3, 3], approach_dir_eff))
+                    p_ref - T_iter[:3, 3], approach_dir_eff))
                 tw[:3] += _Z_CORR_GAIN * depth_err * approach_dir_eff
                 # Lock TRANSVERSAL, ao longo de w (no plano), no mesmo ganho:
                 # é o que impede o curso de arquear para fora da direção
@@ -5309,6 +5337,9 @@ class TactileExplorer(AttackMixin, Node):
                 time.sleep(dt - elapsed)
 
         self._last_slide_m = max(0.0, progress)
+        self._fc_d = d_fc
+        if ki > 0.0:
+            self.get_logger().info(f'{tag}: correção final {d_fc*1e3:+.3f} mm.')
         self._settle()
         return outcome
 

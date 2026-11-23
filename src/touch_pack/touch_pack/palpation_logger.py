@@ -100,6 +100,7 @@ from rclpy.qos import (
 
 from std_msgs.msg import Float32, String
 from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectory
 from rosidl_runtime_py.convert import message_to_ordereddict
 from touch_pack_msgs.msg import (
     PalpationStart, PalpationStatus, MatrixPoint, LoadCellSample, TouchFrame)
@@ -231,6 +232,13 @@ MATRIX_CSV_HEADER = [
     'outcome',
 ]
 
+# cmd.csv — 1º ponto de cada JointTrajectory enviada ao braço (~33 Hz).
+# cmd_tfs_s é o time_from_start desse ponto: o comando vale para t_unix+tfs.
+RUN_CMD_CSV = 'cmd.csv'
+CMD_CSV_HEADER = (['t_rel_s', 't_unix', 'n_points', 'cmd_tfs_s']
+                  + [f'cmd_q{i}' for i in range(1, 7)]
+                  + ['cmd_tcp_x', 'cmd_tcp_y', 'cmd_tcp_z'])
+
 _QOS_COMMAND = QoSProfile(
     reliability=QoSReliabilityPolicy.RELIABLE,
     durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -287,6 +295,9 @@ class PalpationLogger(Node):
         self._matrix_writer: csv.writer | None = None
         self._matrix_path: str | None = None
         self._matrix_rows: int = 0
+        # cmd.csv — aberto no 1º comando ao braço dentro de um run.
+        self._cmd_fh: IO | None = None
+        self._cmd_writer = None
         # Identidade do run corrente e a pasta onde TODOS os seus arquivos
         # moram — o matrix.csv é escrito depois do start e precisa dela.
         self._run_stamp: str | None = None
@@ -340,6 +351,11 @@ class PalpationLogger(Node):
         # coordenada onde ela foi medida.
         self.create_subscription(
             MatrixPoint, '/palpation/matrix_point', self._cb_matrix_point, 50)
+        # Posição COMANDADA (só escuta): sem ela o samples.csv só tem o medido
+        # e não dá para identificar o atraso comando→movimento → cmd.csv.
+        self.create_subscription(
+            JointTrajectory, '/cr10_group_controller/joint_trajectory',
+            self._cb_arm_cmd, 50)
 
         # Watchdog @1 Hz para fechar runs órfãos.
         self.create_timer(1.0, self._watchdog)
@@ -472,7 +488,7 @@ class PalpationLogger(Node):
             if self._csv_fh is None or self._run_stamp != rid:
                 return
             run_dir_ = self._run_dir
-            names = [RUN_SAMPLES_CSV, RUN_PARAMS_JSON]
+            names = [RUN_SAMPLES_CSV, RUN_PARAMS_JSON, RUN_CMD_CSV]
             if self._matrix_path:
                 names.append(os.path.basename(self._matrix_path))
             self._close_run_locked('superseded')   # 'superseded' = sem relatório
@@ -573,6 +589,37 @@ class PalpationLogger(Node):
                 self.get_logger().warn(
                     f'Falha ao gravar ponto da matriz: {exc}')
 
+    def _cb_arm_cmd(self, msg: JointTrajectory) -> None:
+        """Uma linha do cmd.csv por comando ao braço: o 1º ponto da janela
+        (q e FK) e o seu time_from_start — o alvo que o JTC persegue agora."""
+        if not msg.points or list(msg.joint_names) != list(_ARM_JOINTS):
+            return
+        pt = msg.points[0]
+        q = np.array(pt.positions, dtype=float)
+        try:
+            tcp = forward_kinematics(q, T_end=T_TOUCH_TOOL_ATTACH)[:3, 3]
+        except Exception:
+            return
+        tfs = pt.time_from_start.sec + pt.time_from_start.nanosec * 1e-9
+        now = time.time()
+        with self._lock:
+            if (self._csv_fh is None or self._run_dir is None
+                    or self._run_t0 is None):
+                return
+            if self._cmd_writer is None:
+                path = os.path.join(self._run_dir, RUN_CMD_CSV)
+                try:
+                    self._cmd_fh = open(path, 'w', newline='')
+                except OSError as exc:
+                    self.get_logger().error(f'Falha ao criar {path}: {exc}')
+                    return
+                self._cmd_writer = csv.writer(self._cmd_fh)
+                self._cmd_writer.writerow(CMD_CSV_HEADER)
+            self._cmd_writer.writerow(
+                [f'{now - self._run_t0:.4f}', f'{now:.4f}', len(msg.points),
+                 f'{tfs:.4f}', *[f'{v:.7f}' for v in q],
+                 *[f'{v:.7f}' for v in tcp]])
+
     def _open_matrix_locked(self) -> bool:
         """Cria o matrix.csv do run. Chamar com `self._lock`. False em falha."""
         if self._run_dir is None:
@@ -637,10 +684,12 @@ class PalpationLogger(Node):
         q = np.array([float(msg.position[idx[j]]) for j in _ARM_JOINTS])
         # FK aqui (~50 Hz), não no _cb_lc_sample: as colunas ficam prontas
         # e cada amostra de força só as copia.
-        q_cols = [f'{v:.5f}' for v in q]
+        # 7 casas: com 5 o tcp saía em degraus de 10 µm (≈0,15 N a 15 N/mm de
+        # contato) e o q em 1e-5 rad — inútil para identificar F×z.
+        q_cols = [f'{v:.7f}' for v in q]
         try:
             tcp = forward_kinematics(q, T_end=T_TOUCH_TOOL_ATTACH)[:3, 3]
-            tcp_cols = [f'{v:.5f}' for v in tcp]
+            tcp_cols = [f'{v:.7f}' for v in tcp]
         except Exception:
             tcp_cols = ['', '', '']
         now = time.time()
@@ -759,6 +808,13 @@ class PalpationLogger(Node):
         self._matrix_writer = None
         self._matrix_path = None
         self._matrix_rows = 0
+        if self._cmd_fh is not None:
+            try:
+                self._cmd_fh.close()
+            except OSError:
+                pass
+        self._cmd_fh = None
+        self._cmd_writer = None
 
         duration = (time.time() - self._run_t0
                      if self._run_t0 else 0.0)

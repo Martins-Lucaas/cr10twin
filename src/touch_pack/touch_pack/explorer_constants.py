@@ -127,6 +127,25 @@ _SLIDE_LOST_ABORTS      = False
 # pede 8,8 mm de Z, quase o orçamento inteiro de afundamento.
 _SLIDE_SLOPE_MAX_DEG    = 10.0
 
+# ── SLIDING: malha LEVE de força normal (parâmetro slide_force_hz) ─────
+# d = correção de profundidade sobre o plano do HOLD (+ = para DENTRO).
+# ḋ = clip(ω_c/K · (F_alvo − F)), ω_c = 2π·slide_force_hz, K = EMA do
+# estimador do HOLD com PISO (_SLIDE_FC_K_MIN_NM) e SEM teto: K maior só
+# deixa a malha mais lenta. Antes usava k_upper (secante × 2), que variou
+# ~5× entre runs iguais (17 → ~80 N/mm) e deixou a malha lenta demais.
+# Medido em 23/11/2026: K 5–30 N/mm, atraso comando→pose ~40 ms + filtro
+# ~50 ms; a 0,5 Hz sobra margem de fase > 55° mesmo com K errado por 2×.
+# ASSIMÉTRICO de propósito: cada mm para dentro pode valer dezenas de N
+# (30 N/mm no vidro). Descer é lento e curto; subir alivia e pode mais.
+# O ganho é o MESMO nos dois sentidos: 2× para subir foi testado no braço
+# (runs 144847/145035) e fazia a malha recuar no pico do início do deslize.
+_SLIDE_FC_DOWN_MAX_MS = 0.1e-3   # 0,1 mm/s para dentro → ≤ 3 N/s a 30 N/mm
+_SLIDE_FC_UP_MAX_MS   = 0.5e-3   # 0,5 mm/s para fora
+_SLIDE_FC_DEPTH_MAX_M = 0.3e-3   # no máximo 0,3 mm abaixo do plano do HOLD
+_SLIDE_FC_LIFT_MAX_M  = 1.0e-3   # no máximo 1 mm acima
+_SLIDE_FC_HZ_MAX      = 0.5      # teto do parâmetro (modo de ~7,5 Hz)
+_SLIDE_FC_K_MIN_NM    = 5_000.0  # 5 N/mm: piso do K do ganho (mais mole → mais lento)
+
 # ── Plano do deslize ──────────────────────────────────────────────────
 # O SLIDING percorre uma RETA CONTIDA NO PLANO DA AMOSTRA, em posição.
 # A força fica livre, e a variação dela ao longo do curso é o sinal de
