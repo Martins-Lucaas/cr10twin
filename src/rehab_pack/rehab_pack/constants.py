@@ -4,12 +4,28 @@ Dono: WS1. Os outros só importam. Precisa de algo novo aqui? Peça no relatóri
 """
 from __future__ import annotations
 
+import json
+import math
 import os
 
 # ── Segurança e temporização ────────────────────────────────────────────────
 FORCE_ABORT_LIMIT_N = 15.0      # mesmo limite do touch_pack
 DT_S = 0.030                    # tick de controle (33 Hz)
 FORCE_STALE_S = 0.5
+# Torque sobre o centro da empunhadura. Nenhuma norma dá esse valor: 2 N·m fica entre o
+# que um robô de reabilitação aplica em prono-supinação (1 N·m) e a força máxima média
+# de adultos saudáveis (3,3 N·m, Min et al. 2025). PROVISÓRIO: confirme com a clínica.
+TORQUE_ABORT_LIMIT_NM = 2.0
+TARE_MAX_TILT_RAD = 0.0873      # 5°: girou mais que isso desde a tara, tare de novo
+SIM_LAG_MAX_RAD = 0.15          # simulado longe do comandado: outro nó move o braço
+TABLE_HALF_XY = (0.30, 0.55)    # meia mesa (frame world), de rehab_lab.world
+LINK_CLEARANCE_M = 0.10         # raio dos elos + folga
+ENABLE_MAX_N = 3.0              # acima disto não habilita: mão no mastro ou tara ruim
+TICK_STALE_S = 0.2              # sem tick da admitância o espelho não manda ServoJ
+RAMP_S = 1.5                    # tempo para absorver a diferença sim−real ao armar
+LOOP_DELAY_S = 0.12             # força → robô real. ESTIMADO, não medido: meça na bancada
+ARM_STIFFNESS_MIN_N_M = 100.0   # M/B que não aguentam este braço são recusados
+ARM_STIFFNESS_REF_N_M = 300.0   # abaixo disto a GUI avisa "perto do limite"
 
 # ── Braço ───────────────────────────────────────────────────────────────────
 ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
@@ -26,6 +42,7 @@ MIN_TCP_Z = 0.10                # piso do setpoint, m, no frame world
 SYNC_TOL_START_RAD = 0.0524     # 3°
 SYNC_TOL_RUN_RAD = 0.1396       # 8°
 REAL_STATUS_STALE_S = 1.0       # status mais velho que isso = rehab_mirror fora do ar
+ROBOT_MODES_OK = (5, 7, 8)        # RobotMode V4: habilitado, rodando, movimento único
 SIM_ROBOT_IP = 'sim'            # robot_ip:='sim' → robô real simulado (ensaio sem hardware)
 
 # ── Conexão com o robô real pela tela (como o cabeçalho do touch_pack) ──────
@@ -35,18 +52,16 @@ S_REAL_CONNECT = '/rehab/real/connect'         # SetBool: True conecta ao robot_
 S_REAL_MODE = '/rehab/real/mode'               # SetBool: True = MIRROR, False = SIM_ONLY
 # /rehab/real/status (JSON) ganha: modo ('SIM_ONLY'|'MIRROR'), conectando (bool), erro (str).
 # O IP é o parâmetro `robot_ip` do nó rehab_mirror (set_parameters); aplica no próximo connect.
-# T_JOG_GOTO aceita 6 juntas (rad) ou 7 valores: o 7º é a velocidade em % (JOG_SPEED_*).
-JOG_SPEED_DEFAULT_PCT = 50.0
-JOG_SPEED_MIN_PCT = 5.0
-JOG_SPEED_MAX_PCT = 100.0
 
 # ── Posicionamento por juntas (aba 5 do painel) ─────────────────────────────
 # Limites de SOFTWARE, mais estreitos que os do URDF (±359°): os mesmos do
 # touch_pack (J2/J4 ±170°, J3 ±160° = limite de hardware do CR10).
 JOINT_LIMITS_DEG = ((-180.0, 180.0), (-170.0, 170.0), (-160.0, 160.0),
                     (-170.0, 170.0), (-170.0, 170.0), (-180.0, 180.0))
-JOG_MAX_DEG_S = 12.0            # velocidade articular máxima do posicionamento
-JOG_MIN_S = 1.5                 # duração mínima de um movimento
+JOG_MAX_DEG_S = 24.0            # velocidade articular a 100 %
+JOG_SPEED_DEFAULT_PCT = 50.0
+JOG_SPEED_MIN_PCT = 5.0
+JOG_MIN_S = 0.5                 # duração mínima de um movimento
 JOG_MARGIN_S = 0.5              # folga após o fim da trajetória antes de voltar a PARADO
 JOG_MIN_DELTA_DEG = 0.5         # abaixo disto: "já está nessa posição"
 MIN_CELL_Z = 0.05               # piso da célula de carga no mundo, m
@@ -57,10 +72,10 @@ PLATE_MASS_KG = 0.0094
 TCP_OFFSET_M = 0.1142           # flange → centro da empunhadura
 
 # ── Tópicos ─────────────────────────────────────────────────────────────────
-T_VIRTUAL_WRENCH = '/rehab/virtual_wrench'
 T_SIM_WRENCH = '/sim/load_cell/wrench'
 T_REAL_WRENCH = '/ft_sensor/wrench'
 T_FT = '/rehab/ft/wrench'
+T_TARED = '/rehab/ft/tared'   # Float64 latched: time.monotonic() da tara; 0 = sem tara
 T_REFERENCE = '/rehab/admittance/reference'
 T_TICK = '/rehab/admittance/tick'
 T_TCP_POSE = '/rehab/tcp/pose'
@@ -74,7 +89,7 @@ T_SESSION_META = '/rehab/session/meta'
 T_SESSION_SUMMARY = '/rehab/session/summary'
 T_EMG = '/rehab/emg'
 T_REAL_STATUS = '/rehab/real/status'   # JSON do rehab_mirror (10 Hz)
-T_JOG_GOTO = '/rehab/jog/goto'         # Float64MultiArray: 6 juntas em rad (convenção URDF)
+T_JOG_GOTO = '/rehab/jog/goto'         # Float64MultiArray: 6 juntas em rad (URDF) + velocidade em %
 T_JOG_RESULT = '/rehab/jog/result'     # String JSON {ok, motivo, duracao_s, fim?}
 
 # ── Serviços ────────────────────────────────────────────────────────────────
@@ -97,7 +112,7 @@ TICK_FIELDS = (
     'sx_m', 'sy_m', 'sz_m',
     'vx_ms', 'vy_ms', 'vz_ms',
     'rx_m', 'ry_m', 'rz_m',
-    'state', 'force_age_s',
+    'state', 'force_age_s', 'adm_scale',
 )
 
 EVENT_TYPES = ('TASK_START', 'TARGET_ON', 'TARGET_HIT', 'TARGET_MISS',
@@ -107,10 +122,34 @@ EVENT_TYPES = ('TASK_START', 'TARGET_ON', 'TARGET_HIT', 'TARGET_MISS',
 # ── Colunas dos CSV de sessão ───────────────────────────────────────────────
 SAMPLES_COLUMNS = (TICK_FIELDS
                    + ('target_x_m', 'target_y_m', 'target_z_m')
-                   + tuple(f'q{i}_rad' for i in range(1, 7)))
+                   + tuple(f'q{i}_rad' for i in range(1, 7))
+                   + tuple(f'q{i}_real_rad' for i in range(1, 7)))
 WRENCH_COLUMNS = ('t_s', 'fx_n', 'fy_n', 'fz_n', 'tx_nm', 'ty_nm', 'tz_nm',
                   'frame')
 EVENTS_COLUMNS = ('t_s', 'tipo', 'detalhe')
+
+
+HOME_FILE = os.path.expanduser('~/.config/rehab_pack/home_pose.json')
+
+
+def home_q() -> list:
+    """HOME salva pelo operador (rad); HOME_Q_RAD se não houver ou for inválida."""
+    try:
+        with open(HOME_FILE) as fh:
+            d = json.load(fh)
+        q = [float(d[j]) for j in ARM_JOINTS]
+    except (OSError, ValueError, KeyError, TypeError):
+        return list(HOME_Q_RAD)
+    ok = all(lo <= v <= hi for v, (lo, hi) in zip(q, JOINT_LIMITS_DEG))   # NaN reprova
+    return [math.radians(v) for v in q] if ok else list(HOME_Q_RAD)
+
+
+def save_home(q_rad) -> None:
+    """Grava em graus, como o home_pose.json do touch_pack (outra ferramenta, outro arquivo)."""
+    os.makedirs(os.path.dirname(HOME_FILE), exist_ok=True)
+    with open(HOME_FILE, 'w') as fh:
+        json.dump({j: round(math.degrees(v), 4) for j, v in zip(ARM_JOINTS, q_rad)},
+                  fh, indent=2)
 
 
 def runs_dir() -> str:

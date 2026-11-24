@@ -11,6 +11,7 @@ import datetime
 import json
 import math
 import os
+import time
 import re
 import subprocess
 
@@ -18,7 +19,8 @@ from .constants import (
     ARM_JOINTS, EVENTS_COLUMNS, GRIP_MASS_KG, PLATE_MASS_KG, SAMPLES_COLUMNS,
     STATES, T_EMG, T_EVENT, T_FT, T_JOINT_STATES, T_PARAMS, T_SESSION_META,
     T_SESSION_SUMMARY, T_TARGET, T_TICK, TCP_OFFSET_M, S_SESSION_START,
-    S_SESSION_STOP, TICK_FIELDS, WRENCH_COLUMNS, runs_dir)
+    S_SESSION_STOP, SIM_ROBOT_IP, TICK_FIELDS, T_REAL_STATUS, WRENCH_COLUMNS, runs_dir)
+from .tasks import validate_subject_id
 from .session_stats import resumir_arquivos
 
 NAN = float('nan')
@@ -118,13 +120,14 @@ class SessionWriter:
         self._gravar_meta()   # já deixa um meta válido ('interrompida') caso o processo morra
         return pasta
 
-    def escrever_tick(self, tick, alvo=None, q=None):
+    def escrever_tick(self, tick, alvo=None, q=None, q_real=None):
         """tick: len(TICK_FIELDS) números; alvo: (x,y,z) ou None; q: 6 rad ou None."""
         if len(tick) != len(TICK_FIELDS):
             raise ValueError(f'tick com {len(tick)} campos, esperado {len(TICK_FIELDS)}')
         self._wr['samples.csv'].writerow(
             list(tick) + list(alvo if alvo is not None else (NAN,) * 3)
-            + list(q if q is not None else (NAN,) * 6))
+            + list(q if q is not None else (NAN,) * 6)
+            + list(q_real if q_real is not None else (NAN,) * 6))
 
     def escrever_wrench(self, t_s, forca, torque, frame):
         self._wr['wrench.csv'].writerow([t_s, *forca, *torque, frame])
@@ -219,13 +222,20 @@ def main(args=None):
             self.create_subscription(JointState, T_JOINT_STATES, self._js, 20)
             self.create_subscription(Float32MultiArray, T_EMG, self._emg, 50)
             self.pub_resumo = self.create_publisher(String, T_SESSION_SUMMARY, latch)
+            self.real, self.real_t = {}, 0.0
+            self._sim_last, self._wall_last = 0.0, time.monotonic()
+            self.create_subscription(String, T_REAL_STATUS, self._real, 5)
             self.create_service(Trigger, S_SESSION_START, self._srv_start)
             self.create_service(Trigger, S_SESSION_STOP, self._srv_stop)
             self.create_timer(FLUSH_S, lambda: self.w.aberta and self.w.flush())
             self.get_logger().info(f'rehab_logger pronto; pasta base: {self.w.base_dir}')
 
         def _agora(self):
-            return self.get_clock().now().nanoseconds * 1e-9
+            # o /clock sai a ~10 Hz: interpola como o nó de admitância (mesmo t_s)
+            sim, wall = self.get_clock().now().nanoseconds * 1e-9, time.monotonic()
+            if sim != self._sim_last:
+                self._sim_last, self._wall_last = sim, wall
+            return self._sim_last + min(wall - self._wall_last, 0.1)
 
         # callbacks de estado
         def _meta(self, m):
@@ -242,6 +252,12 @@ def main(args=None):
             if self.w.aberta:
                 self.w.atualizar_params(self._agora(), novos)
             self.params = novos
+
+        def _real(self, m):
+            try:
+                self.real, self.real_t = json.loads(m.data), time.monotonic()
+            except json.JSONDecodeError:
+                return
 
         def _alvo(self, m):
             p = m.point
@@ -261,7 +277,9 @@ def main(args=None):
             anterior, self.ultimo_estado = self.ultimo_estado, estado
             if not self.w.aberta:
                 return
-            self.w.escrever_tick(d, self.alvo, self.q)
+            vivo = time.monotonic() - self.real_t < 0.5
+            self.w.escrever_tick(d, self.alvo, self.q,
+                                 self.real.get('q_real') if vivo else None)
             self.w.flush_periodico(d[0])
             if estado == idx_abortado and anterior != idx_abortado:
                 self.w.escrever_evento(d[0], 'ABORT', 'estado=ABORTADO')
@@ -269,9 +287,8 @@ def main(args=None):
 
         def _wrench(self, m):
             if self.w.aberta:
-                s = m.header.stamp
                 self.w.escrever_wrench(
-                    s.sec + s.nanosec * 1e-9,
+                    self._agora(),
                     (m.wrench.force.x, m.wrench.force.y, m.wrench.force.z),
                     (m.wrench.torque.x, m.wrench.torque.y, m.wrench.torque.z),
                     m.header.frame_id)
@@ -297,14 +314,19 @@ def main(args=None):
             if self.w.aberta:
                 resp.success, resp.message = False, 'já existe uma sessão aberta'
                 return resp
-            if not str(self.meta_usuario.get('subject_id', '')).strip():
-                resp.success, resp.message = False, 'subject_id ausente em /rehab/session/meta'
+            if not validate_subject_id(str(self.meta_usuario.get('subject_id', ''))):
+                resp.success, resp.message = False, 'subject_id ausente ou inválido em /rehab/session/meta'
                 return resp
             fonte = self.params.get('force_source', 'desconhecida')
-            topicos = {'virtual': '/rehab/virtual_wrench', 'sim': '/sim/load_cell/wrench',
+            topicos = {'sim': '/sim/load_cell/wrench',
                        'real': '/ft_sensor/wrench'}
             forca = {'fonte': fonte, 'topico_origem': topicos.get(fonte, 'desconhecido'),
-                     'sim_sign': self.get_parameter('sim_sign').value}
+                     'sim_sign': self.get_parameter('sim_sign').value,
+                     'robo': {k: self.real.get(k) for k in ('modo', 'conectado', 'ip')}}
+            # ensaio com robô e célula reais x qualquer coisa simulada
+            forca['simulado'] = not (fonte == 'real' and self.real.get('conectado')
+                                     and self.real.get('modo') == 'MIRROR'
+                                     and self.real.get('ip') != SIM_ROBOT_IP)
             try:
                 pasta = self.w.abrir(
                     self.meta_usuario, self.params, forca, self.q,
@@ -333,6 +355,9 @@ def main(args=None):
         rclpy.spin(no)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        if rclpy.ok():               # no Ctrl-C o contexto já caiu: sai sem traceback
+            raise
     finally:
         no.fechar_ao_sair()
         no.destroy_node()

@@ -26,10 +26,10 @@ from std_msgs.msg import Float64MultiArray, String
 from std_srvs.srv import SetBool, Trigger
 
 from . import constants as C
-from .tasks import HAND_FORCE_MAX_N, clamp_force
 
 # Nó alvo de set_parameters (a fonte de força é só leitura: vem do launch).
 NODE_ADMITTANCE = 'rehab_admittance'
+_SETBOOL = (C.S_ENABLE, C.S_REAL_CONNECT, C.S_REAL_MODE)
 
 _QOS_LATCHED = QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
                           durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -47,7 +47,6 @@ class GuiBridge:
         self.results = collections.deque()            # (rótulo, ok, mensagem)
         self.last = {}                                # chave -> valor mais recente
         self.seen = {}                                # chave -> time.monotonic()
-        self.hand_force = (0.0, 0.0, 0.0)
 
         n.create_subscription(Float64MultiArray, C.T_TICK, self._on_tick, 10)
         n.create_subscription(String, C.T_STATE, self._latch('state'), _QOS_LATCHED)
@@ -63,21 +62,19 @@ class GuiBridge:
         n.create_subscription(WrenchStamped, C.T_REAL_WRENCH, self._touch('ftraw'),
                               qos_profile_sensor_data)
 
-        self._pub_wrench = n.create_publisher(WrenchStamped, C.T_VIRTUAL_WRENCH, 10)
         self._pub_target = n.create_publisher(PointStamped, C.T_TARGET, 10)
         self._pub_ref = n.create_publisher(PointStamped, C.T_REFERENCE, 10)
         self._pub_event = n.create_publisher(String, C.T_EVENT, 10)
         self._pub_goto = n.create_publisher(Float64MultiArray, C.T_JOG_GOTO, 10)
         self._pub_meta = n.create_publisher(String, C.T_SESSION_META, _QOS_LATCHED)
-        n.create_timer(1.0 / 30.0, self._tick_wrench)
 
         self._trig = {s: n.create_client(Trigger, s) for s in (
             C.S_TARE, C.S_ESTOP, C.S_RESET, C.S_HOME,
             C.S_SESSION_START, C.S_SESSION_STOP)}
-        self._enable = n.create_client(SetBool, C.S_ENABLE)
+        self._bool = {s: n.create_client(SetBool, s) for s in _SETBOOL}
         self._setparams = {
             name: n.create_client(SetParameters, f'/{name}/set_parameters')
-            for name in (NODE_ADMITTANCE,)}
+            for name in (NODE_ADMITTANCE, C.NODE_MIRROR)}
 
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(n)
@@ -116,14 +113,6 @@ class GuiBridge:
         except ValueError:
             pass
 
-    def _tick_wrench(self):
-        f = clamp_force(self.hand_force, HAND_FORCE_MAX_N)
-        m = WrenchStamped()
-        m.header.stamp = self.node.get_clock().now().to_msg()
-        m.header.frame_id = 'world'
-        m.wrench.force.x, m.wrench.force.y, m.wrench.force.z = f
-        self._pub_wrench.publish(m)
-
     # ── API para a GUI (chamável da thread do Tk) ───────────────────────
     def age(self, key):
         """Segundos desde a última mensagem de `key` (inf se nunca)."""
@@ -131,11 +120,8 @@ class GuiBridge:
         return float('inf') if t is None else time.monotonic() - t
 
     def service_ready(self, name):
-        cli = self._enable if name == C.S_ENABLE else self._trig[name]
+        cli = self._bool.get(name) or self._trig[name]
         return cli.service_is_ready()
-
-    def set_hand_force(self, f):
-        self.hand_force = tuple(f)
 
     def call_trigger(self, name):
         cli = self._trig[name]
@@ -145,14 +131,27 @@ class GuiBridge:
         fut = cli.call_async(Trigger.Request())
         fut.add_done_callback(lambda f: self._done(name, f))
 
+    def start_session(self):
+        # tópico e serviço não têm ordem entre si: deixa a meta chegar antes
+        threading.Timer(0.2, self.call_trigger, args=(C.S_SESSION_START,)).start()
+
     def call_enable(self, on: bool):
-        if not self._enable.service_is_ready():
-            self.results.append((C.S_ENABLE, False, 'serviço indisponível (nó não está no ar)'))
+        self.call_bool(C.S_ENABLE, on)
+
+    def call_bool(self, name, on: bool):
+        cli = self._bool[name]
+        if not cli.service_is_ready():
+            self.results.append((name, False, 'serviço indisponível (nó não está no ar)'))
             return
         req = SetBool.Request()
         req.data = bool(on)
-        fut = self._enable.call_async(req)
-        fut.add_done_callback(lambda f: self._done(C.S_ENABLE, f))
+        fut = cli.call_async(req)
+        fut.add_done_callback(lambda f: self._done(name, f))
+
+    def connect_real(self, ip: str):
+        """Grava o IP no rehab_mirror e só então conecta (serviços sem ordem entre si)."""
+        self.set_params(C.NODE_MIRROR, {'robot_ip': ip},
+                        then=lambda: self.call_bool(C.S_REAL_CONNECT, True))
 
     def _done(self, name, fut):
         try:
@@ -161,7 +160,7 @@ class GuiBridge:
         except Exception as e:
             self.results.append((name, False, f'falha na chamada: {e}'))
 
-    def set_params(self, node_name, values: dict):
+    def set_params(self, node_name, values: dict, then=None):
         """set_parameters (double ou string) no nó `node_name`."""
         cli = self._setparams[node_name]
         if not cli.service_is_ready():
@@ -184,6 +183,8 @@ class GuiBridge:
                        if not r.successful]
                 self.results.append((f'params:{node_name}', not bad,
                                      '; '.join(bad) or 'parâmetros aplicados'))
+                if then and not bad:
+                    then()
             except Exception as e:
                 self.results.append((f'params:{node_name}', False, f'falha: {e}'))
         fut.add_done_callback(done)
@@ -201,9 +202,9 @@ class GuiBridge:
     def publish_reference(self, xy, z):
         self._pub_ref.publish(self._point(xy, z))
 
-    def publish_goto(self, q_rad):
+    def publish_goto(self, q_rad, speed_pct):
         """Pede ao nó de admitância que posicione as 6 juntas (rad, URDF)."""
-        self._pub_goto.publish(Float64MultiArray(data=[float(v) for v in q_rad]))
+        self._pub_goto.publish(Float64MultiArray(data=[float(v) for v in q_rad] + [float(speed_pct)]))
 
     def publish_event(self, text):
         self._pub_event.publish(String(data=text))

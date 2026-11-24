@@ -19,12 +19,19 @@ import os
 
 import numpy as np
 
-from .constants import (HOME_Q_RAD, REAL_STATUS_STALE_S, SIM_ROBOT_IP,
+from .constants import (GRIP_MASS_KG, HOME_Q_RAD, PLATE_MASS_KG,
+                        REAL_STATUS_STALE_S, ROBOT_MODES_OK, SIM_ROBOT_IP,
                         SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD)
 
 BACKOFF_S = (2.0, 5.0, 10.0, 30.0)
 DEADBAND_RAD = 1.0e-5          # o mesmo SERVOJ_DEADBAND_RAD do touch_pack
 DEFAULT_IP = '192.168.5.2'
+# Carga no flange (detecção de colisão do CR10): célula 0,300 kg + placa + empunhadura,
+# centro de massa pelas alturas da pilha mecânica do README.
+CELL_MASS_KG = 0.300
+PAYLOAD_KG = CELL_MASS_KG + PLATE_MASS_KG + GRIP_MASS_KG
+PAYLOAD_COG_Z_M = (CELL_MASS_KG * 0.0187 + PLATE_MASS_KG * 0.0382
+                   + GRIP_MASS_KG * 0.1142) / PAYLOAD_KG
 
 
 def sync_error_rad(q_sim, q_real) -> float:
@@ -42,10 +49,14 @@ def real_ok(status: dict | None, age_s: float,
         return False, 'desconectado (IP inalcançável ou controlador desligado)'
     if status.get('estop'):
         return False, 'E-Stop do robô real acionado'
+    modo = status.get('robot_mode')
+    if modo is not None and modo not in ROBOT_MODES_OK:
+        return False, (f'RobotMode {modo} (E-Stop físico, alarme, colisão ou pausa): '
+                       'resolva no robô, depois Desconectar e Conectar')
     if not status.get('sync_ok'):
         return False, (f"sim e real diferem {status.get('max_dq_deg', 0.0):.1f}° "
                        f'(máx {math.degrees(SYNC_TOL_START_RAD):.0f}° para '
-                       'armar): aguarde o real_pose_sync')
+                       'armar): aguarde a sincronização')
     return True, 'ok'
 
 
@@ -67,11 +78,27 @@ def robot_ip(param: str, config_file: str | None = None) -> str:
     return ip or DEFAULT_IP
 
 
+def save_robot_ip(ip: str, config_file: str) -> None:
+    """Grava o IP que conectou no robot.json do touch_pack, sem tocar no resto."""
+    try:
+        with open(config_file) as fh:
+            cfg = json.load(fh)
+    except FileNotFoundError:
+        cfg = {}
+    if cfg.get('robot_ip') == ip:
+        return
+    cfg['robot_ip'] = ip
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
+    with open(config_file, 'w') as fh:
+        json.dump(cfg, fh, indent=2, sort_keys=True)
+
+
 class SimulatedDriver:
     """Robô 'real' de mentira para ensaiar o fluxo (robot_ip:='sim'): segue o
     último ServoJ sem atraso. Não substitui o teste com hardware."""
 
     estop_engaged = False
+    last_robot_mode = 5
 
     def __init__(self, q0=HOME_Q_RAD, offset_j1_deg: float = 0.0):
         self.q = np.array(q0, float)
@@ -83,6 +110,7 @@ class SimulatedDriver:
     def enable(self): pass
     def close(self): pass
     def prepare_servoj(self): pass
+    def stop(self): pass
 
     def servo_j_urdf(self, q):
         self.q = np.array(q, float)
@@ -103,6 +131,7 @@ def default_factory(ip: str, period_s: float, feedback_port: int | None = None,
     from touch_pack.real_driver import (CR10RealDriver, CR10RealDriverConfig,
                                         FEEDBACK_PORT)
     return CR10RealDriver(ip=ip, config=CR10RealDriverConfig(
+        payload_kg=PAYLOAD_KG, payload_cog_m=(0.0, 0.0, PAYLOAD_COG_Z_M),
         servoj_period_s=period_s, feedback_port=feedback_port or FEEDBACK_PORT))
 
 
@@ -169,7 +198,14 @@ class RealLink:
         self.attach(drv)
         return True
 
-    def drop(self, why) -> None:
+    @property
+    def robot_mode(self):
+        return getattr(self.drv, 'last_robot_mode', None)
+
+    def drop(self, why, only=None) -> None:
+        """`only`: ignora se a conexão já não é a deste driver."""
+        if only is not None and only is not self.drv:
+            return
         self.last_error = f'conexão perdida: {why}'
         self.log(f'Conexão com o CR10 perdida ({why}) — reconectando.')
         drv, self.drv, self._last_q = self.drv, None, None
@@ -204,6 +240,8 @@ class RealLink:
             try:
                 self.drv.servo_j_urdf(q)
             except Exception:
+                if self._last_q is not None:
+                    raise      # no meio do movimento: limpar alarme e seguir é inseguro
                 self.drv.prepare_servoj()
                 self.drv.servo_j_urdf(q)
             self._last_q = q
@@ -219,6 +257,18 @@ class RealLink:
                 self.drv.stop_motion()
             except Exception as exc:
                 self.log(f'stop_motion falhou: {exc}')
+
+    def disconnect(self) -> None:
+        """Pedido do operador: Stop + DisableRobot e fecha, como o touch_pack."""
+        drv, self.drv, self._last_q = self.drv, None, None
+        if drv is None:
+            return
+        for fn in (drv.stop, drv.close):
+            try:
+                fn()
+            except Exception as exc:
+                self.log(f'desconexão: {exc}')
+        self.log(f'CR10 em {self.ip} desconectado.')
 
     def close(self) -> None:
         if self.drv is not None:

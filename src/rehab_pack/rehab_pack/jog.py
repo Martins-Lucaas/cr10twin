@@ -13,7 +13,7 @@ import math
 
 import numpy as np
 
-from .constants import (JOG_MAX_DEG_S, JOG_MIN_DELTA_DEG, JOG_MIN_S,
+from .constants import (JOG_MAX_DEG_S, JOG_SPEED_DEFAULT_PCT, JOG_MIN_DELTA_DEG, JOG_MIN_S,
                         JOINT_LIMITS_DEG, MIN_CELL_Z, MIN_TCP_Z)
 
 SAMPLES = 25
@@ -26,13 +26,14 @@ def max_delta_deg(q_now, q_goal) -> tuple[float, int]:
     return float(d[k]), k + 1
 
 
-def duration_s(q_now, q_goal) -> float:
-    return max(JOG_MIN_S, max_delta_deg(q_now, q_goal)[0] / JOG_MAX_DEG_S)
+def duration_s(q_now, q_goal, speed_pct: float = JOG_SPEED_DEFAULT_PCT) -> float:
+    return max(JOG_MIN_S, max_delta_deg(q_now, q_goal)[0]
+               / (JOG_MAX_DEG_S * speed_pct / 100.0))
 
 
 def plan_jog(q_now, q_goal, fk_z, limits_deg=JOINT_LIMITS_DEG,
-             min_tcp_z: float = MIN_TCP_Z, min_cell_z: float = MIN_CELL_Z
-             ) -> tuple[bool, str, float]:
+             min_tcp_z: float = MIN_TCP_Z, min_cell_z: float = MIN_CELL_Z,
+             speed_pct: float = JOG_SPEED_DEFAULT_PCT) -> tuple[bool, str, float]:
     """(ok, motivo, duração em s). `fk_z(q)` devolve (z do TCP, z da célula)."""
     q0 = np.asarray(q_now, float).reshape(-1)
     q1 = np.asarray(q_goal, float).reshape(-1)
@@ -56,4 +57,4 @@ def plan_jog(q_now, q_goal, fk_z, limits_deg=JOINT_LIMITS_DEG,
         if z_cell < min_cell_z:
             return False, (f'no caminho a célula desceria a {z_cell:.2f} m '
                            f'(mínimo {min_cell_z:.2f} m): mova em etapas'), 0.0
-    return True, f'J{j} é o maior movimento: {delta:.1f}°', duration_s(q0, q1)
+    return True, f'J{j} é o maior movimento: {delta:.1f}°', duration_s(q0, q1, speed_pct)

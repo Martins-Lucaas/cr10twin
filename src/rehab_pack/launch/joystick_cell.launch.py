@@ -18,6 +18,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from rehab_pack.constants import home_q
 from rehab_pack.urdf_builder import build_robot_urdf
 
 _TRUE = ('1', 'true', 'yes')
@@ -42,8 +43,8 @@ def launch_setup(context, *args, **kwargs):
     sim_ft = _flag(context, 'sim_ft')
     gui = _flag(context, 'gui')
     source = LaunchConfiguration('force_source').perform(context).strip()
-    if source not in ('virtual', 'sim', 'real'):
-        raise RuntimeError(f'force_source={source!r}: use virtual, sim ou real')
+    if source not in ('sim', 'real'):
+        raise RuntimeError(f'force_source={source!r}: use sim ou real')
     if source == 'sim' and not sim_ft:
         raise RuntimeError('force_source:=sim exige sim_ft:=true')
 
@@ -52,12 +53,15 @@ def launch_setup(context, *args, **kwargs):
         raise RuntimeError(f'control_mode={control_mode!r}: use sim_only ou mirror')
     mirror = control_mode == 'mirror'
     robot_ip = LaunchConfiguration('robot_ip').perform(context).strip()
+    if mirror and source != 'real' and robot_ip != 'sim':
+        raise RuntimeError(f'control_mode:=mirror com force_source:={source}: o robô real '
+                           'ignoraria o paciente. Use force_source:=real.')
 
     rehab = get_package_share_directory('rehab_pack')
     cra = get_package_share_directory('cra_description')
     gazebo_ros = get_package_share_directory('gazebo_ros')
 
-    full_urdf, minimal_urdf = build_robot_urdf(cra, rehab, sim_ft=sim_ft)
+    full_urdf, minimal_urdf = build_robot_urdf(cra, rehab, sim_ft=sim_ft, home=home_q())
     # tempfile e não caminho fixo: duas sessões simultâneas não se pisam.
     fd, urdf_path = tempfile.mkstemp(prefix='joystick_cell_', suffix='.urdf')
     with os.fdopen(fd, 'w') as f:
@@ -92,7 +96,11 @@ def launch_setup(context, *args, **kwargs):
 
     sim_time = {'use_sim_time': True}
     nodes = [Node(package='rehab_pack', executable='rehab_force_source',
-                  parameters=[sim_time, {'source': source}])]
+                  parameters=[sim_time, {
+                      'source': source,
+                      'real_sign': float(LaunchConfiguration('ft_sign').perform(context)),
+                      'real_yaw_deg': float(
+                          LaunchConfiguration('ft_yaw_deg').perform(context))}])]
     if source == 'real':
         # Mesmo nó e mesmos argumentos do touch_pack: o ft_receiver é o único
         # dono da porta serial da FA7155 e publica /ft_sensor/wrench.
@@ -108,15 +116,14 @@ def launch_setup(context, *args, **kwargs):
         nodes.append(Node(package='rehab_pack', executable='rehab_admittance',
                           parameters=[sim_time, {'force_source': source,
                                                  'require_real': mirror}]))
+    # Sempre no ar: em sim_only nasce desconectado e a GUI conecta, como no touch_pack.
+    nodes.append(Node(package='rehab_pack', executable='rehab_mirror',
+                      parameters=[{'robot_ip': robot_ip,
+                                   'control_mode': control_mode}]))
     if mirror:
-        nodes.append(Node(package='rehab_pack', executable='rehab_mirror',
-                          parameters=[{'robot_ip': robot_ip}]))
         nodes.append(LogInfo(msg='MIRROR: o CR10 REAL vai seguir o braço '
                                  'simulado quando a admitância estiver ATIVA. '
                                  'Mantenha a mão no E-Stop físico.'))
-        if source == 'virtual':
-            nodes.append(LogInfo(msg='AVISO: force_source=virtual com robô real — '
-                                     'só a mão virtual da GUI move o robô.'))
     if _flag(context, 'logger'):
         nodes.append(Node(package='rehab_pack', executable='rehab_logger',
                           parameters=[sim_time]))
@@ -124,21 +131,11 @@ def launch_setup(context, *args, **kwargs):
         nodes.append(Node(package='rehab_pack', executable='rehab_gui',
                           parameters=[sim_time]))
 
-    after_arm = []
-    if mirror and robot_ip != 'sim':
-        # leva o braço simulado até a pose do robô real ANTES de armar o espelho
-        after_arm.append(RegisterEventHandler(OnProcessExit(
-            target_action=load_arm,
-            on_exit=[Node(package='touch_pack', executable='real_pose_sync',
-                          parameters=[{'use_sim_time': True,
-                                       'robot_ip': robot_ip}])])))
-
     return [gazebo, rsp, spawn, *nodes,
             RegisterEventHandler(OnProcessExit(target_action=spawn,
                                                on_exit=[load_jsb])),
             RegisterEventHandler(OnProcessExit(target_action=load_jsb,
-                                               on_exit=[load_arm])),
-            *after_arm]
+                                               on_exit=[load_arm]))]
 
 
 def generate_launch_description():
@@ -159,12 +156,19 @@ def generate_launch_description():
                         'Vazio = auto-detect pelo VID.'),
         DeclareLaunchArgument('ft_mode', default_value=ft_mode,
                               description='polled (a unidade da bancada) | stream.'),
+        DeclareLaunchArgument('ft_sign', default_value='1.0',
+                              description='Sinal da FA7155 (1 ou -1).'),
+        DeclareLaunchArgument('ft_yaw_deg', default_value='0.0',
+                              description='Giro da montagem da FA7155 em torno do seu z.'),
         DeclareLaunchArgument('ft_baud', default_value=ft_baud,
                               description='Baud da linha RS485 da FA7155.'),
-        DeclareLaunchArgument('ft_autozero', default_value='true',
-                              description='Zera a FA7155 ao subir o ft_receiver.'),
-        DeclareLaunchArgument('ft_filter', default_value='true',
-                              description='Filtro One-Euro do ft_receiver.'),
+        DeclareLaunchArgument('ft_autozero', default_value='false',
+                              description='Auto-zero lento. Ligado, come a força fraca '
+                                          'e sustentada do voluntário.'),
+        DeclareLaunchArgument('ft_filter', default_value='false',
+                              description='One-Euro do ft_receiver (corte até 2 Hz, ~80 ms '
+                                          'de atraso na malha). O nó de admitância já '
+                                          'faz a média das amostras de cada tick.'),
         DeclareLaunchArgument(
             'sim_ft', default_value='false',
             description='true = F/T simulada na junta célula→placa, publicada '
@@ -175,9 +179,9 @@ def generate_launch_description():
             'gui', default_value='true',
             description='false = só o gzserver, sem janela.'),
         DeclareLaunchArgument(
-            'force_source', default_value='virtual',
-            description='virtual (mão virtual da GUI) | sim (exige '
-                        'sim_ft:=true) | real (FA7155 em /ft_sensor/wrench).'),
+            'force_source', default_value='real',
+            description='real (FA7155 em /ft_sensor/wrench) | sim (exige '
+                        'sim_ft:=true).'),
         DeclareLaunchArgument('admittance', default_value='true',
                               description='false = não sobe o controle.'),
         DeclareLaunchArgument('logger', default_value='true',

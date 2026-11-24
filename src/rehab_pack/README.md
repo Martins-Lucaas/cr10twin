@@ -2,11 +2,11 @@
 
 Reabilitação de membro superior com o CR10. O voluntário segura um **mastro**
 (`cad/Joystick.step`) preso à célula FA7155 e guia o robô por **admitância**
-cartesiana. Independente de `touch_pack`, `hand_pack` e `grasp_ml_pack`.
+cartesiana. Usa do `touch_pack` só o driver do CR10 e o `ft_receiver`.
 
-Padrão: **simulação (Gazebo Classic)**, com a força vinda de uma "mão virtual"
-na GUI ou do plugin F/T do Gazebo. O CR10 e a FA7155 reais se ligam do mesmo
-jeito que no `touch_pack` (ver "Robô e célula reais"). Sem EMG real, sem RV.
+Padrão: CR10 simulado (Gazebo Classic) e força da **célula FA7155 real**. Sem célula o
+braço simulado ainda se move pelas juntas (aba 5), mas a admitância não habilita. O
+CR10 real se liga no cabeçalho do painel, como no `touch_pack`. Sem EMG real, sem RV.
 
 ## Como rodar
 
@@ -21,7 +21,7 @@ ros2 launch rehab_pack joystick_cell.launch.py gui:=false     # sem janela do Ga
 ros2 launch rehab_pack joystick_cell.launch.py painel:=false  # sem o painel (testes sem DISPLAY)
 ```
 
-Argumentos: `force_source:=virtual|sim|real` (padrão `virtual`; `sim` exige
+Argumentos: `force_source:=real|sim` (padrão `real`; `sim` exige
 `sim_ft:=true`), `admittance`, `logger`, `painel`, `gui`, `sim_ft`.
 
 Outro Gazebo aberto ocupa a porta 11345 e o `gzserver` novo morre com código
@@ -48,13 +48,28 @@ cima, TCP em ≈ (0,55; 0; 0,25) m no frame `world`.
 
 ## Controle de admitância
 
-`M·a + B·v + K·(x − x_ref) = F`, 3 eixos, tick de 30 ms. Núcleo em
+`M·a + B·v + K·(x − x_ref) = F`, 3 eixos, tick de 30 ms, Euler implícito. A força
+de cada tick é a média das amostras que chegaram nele (anti-aliasing 400 → 33 Hz).
+
+**Admitância variável.** Com a velocidade medida (do CR10 real em MIRROR, senão do
+simulado), o nó observa a fração da energia que o robô devolve à mão. Acima de 0,30
+sobe M e B juntos (até 8×, M/B constante) e relaxa em 3 s. Ideia de Dimeas &
+Aspragathos (2016), Landi et al. (2017) e Ferraguti et al. (2019); é heurística, não
+prova de passividade. Limiares ajustados só em simulação. Movimento voluntário
+acima de ~1 Hz também pode ativá-la. `adm_scale` no `samples.csv` registra a escala
+(1 = nominal).
+
+**Limite de M e B.** `arm_stiffness_limit` dá a maior rigidez do braço com a malha
+estável para o atraso `LOOP_DELAY_S` = 0,12 s (**estimado: meça**). O nó recusa
+combinações abaixo de 100 N/m e a GUI avisa abaixo de 300 N/m.
+
+Núcleo em
 `admittance.py`, cinemática em `kinematics.py` (cadeia `world → tcp_link` lida do
 URDF gerado), comando do braço por `/cr10_group_controller/joint_trajectory`
 (um ponto por tick). A orientação do mastro é mantida fixa: a tara vale a
 sessão toda.
 
-Estados: `PARADO`, `ATIVO`, `SEM_FORCA`, `LIMITE`, `ABORTADO`. Segurança:
+Estados: `PARADO`, `ATIVO`, `SEM_FORCA`, `LIMITE`, `ABORTADO`, `POSICIONANDO`. Segurança:
 |F| > limite (≤ 15 N) → `ABORTADO` travado; força com mais de 0,5 s → v = 0;
 z do TCP ≥ 0,10 m; resíduo da IK > 5 mm → `LIMITE`. Parâmetros por
 `ros2 param set /rehab_admittance ...` (rejeita `abort_force_n` > 15 e
@@ -77,23 +92,36 @@ ros2 launch rehab_pack joystick_cell.launch.py control_mode:=mirror force_source
 
 - **Célula:** `force_source:=real` sobe o `ft_receiver` do `touch_pack` com os
   mesmos argumentos (`ft_port`, `ft_mode` = polled, `ft_baud` = 1 Mbps,
-  `ft_autozero`, `ft_filter`). Ele é o único dono da porta serial e publica
+  `ft_autozero`, `ft_filter`; aqui ambos nascem `false`: o auto-zero come força fraca
+  sustentada e o One-Euro atrasa a malha ~80 ms). Ele é o único dono da porta serial e publica
   `/ft_sensor/wrench`; o `rehab_force_source` o tara e o leva ao frame do mundo.
-- **Robô:** `control_mode:=mirror` sobe o `rehab_mirror`, que usa o
+- **Robô:** o `rehab_mirror` sobe sempre; no cabeçalho do painel: IP, Conectar e modo
+  SIM_ONLY/MIRROR, como no touch_pack. `control_mode:=mirror` já conecta ao subir. Ele usa o
   `CR10RealDriver` do `touch_pack` (TCP 29999, feedback 30004). O IP vem de
   `robot_ip`, senão de `~/.config/touch_pack/robot.json` (o mesmo da GUI do
   touch_pack), senão 192.168.5.2. O braço simulado manda ServoJ a 33 Hz ao real.
-  O `real_pose_sync` leva o simulado até a pose do real antes de armar.
+  Em MIRROR e PARADO, o `rehab_mirror` leva o simulado até a pose do real; só arma
+  abaixo de 3°. O IP que conectou é salvo no `robot.json`.
 - **Sem hardware:** `robot_ip:=sim` usa um robô real simulado (segue o ServoJ),
   para ensaiar o fluxo todo.
 
 **Intertravamentos (modo mirror):** a admitância só habilita com o robô conectado,
-sem E-Stop e com sim e real a menos de 3°; durante o movimento tolera 8° de
+sem E-Stop (inclusive o físico: RobotMode 5, 7 ou 8) e com sim e real a menos de 3°; durante o movimento tolera 8° de
 atraso. Perdeu qualquer condição em `ATIVO` → `ABORTADO`, e o `rehab_mirror`
 manda `Stop()` + `Continue()` ao robô. O espelho só corre com a admitância `ATIVA`.
-`/rehab/home` é recusado nesse modo: posicione o robô real pelo painel de juntas
-(aba 5, preset HOME). O painel mostra o estado do robô real e da célula no cartão Conexões.
+O painel mostra o estado do robô real e da célula no cartão Conexões.
 O padrão é `control_mode:=sim_only`: nada move o robô real sem pedir.
+
+**Força simulada nunca move o robô real:** com MIRROR e fonte diferente de `real` o launch
+falha, a tela recusa e o nó não habilita (e aborta). Exceção: `robot_ip:=sim`. Habilitar exige força recente e ≤ 3 N; pico de
+UMA amostra acima do limite aborta; célula muda em MIRROR aborta (não retoma sozinha);
+dois nós publicando `/rehab/ft/wrench` recusam; tara só em PARADO/ABORTADO, obrigatória
+com a célula real e refeita se ela girar mais de 5°. Torque no centro da empunhadura
+acima de 2 N·m aborta (`abort_torque_nm`, PROVISÓRIO: sem norma). Em ATIVO a célula
+fica ≥ 5 cm e cotovelo/punho ≥ 10 cm sobre a mesa (senão `LIMITE`); coxas e cadeira
+NÃO são conferidas. Ordem com paciente: braço apoiado (tipoia/apoio), mastro solto,
+tarar, habilitar, só então segurar. Ao armar, a diferença sim−real some em 1,5 s. PARAR vai
+também direto ao `rehab_mirror`. Conexão que cai só volta pelo operador.
 
 **Pré-voo (somente leitura):** `ros2 run rehab_pack rehab_preflight --robot-ip 192.168.5.2 --ft-port /dev/ttyUSB0`
 confere, sem enviar nada ao robô: se o `install` é o do `src` (não uma cópia
@@ -103,7 +131,8 @@ USB-RS485 da FA7155. Termina com código 1 se houver FALHA.
 
 **Antes do primeiro ensaio com pessoa (não verificado):**
 1. Confirme o sentido dos eixos: com o mastro solto e tarado, empurre em +X do
-   mundo e veja `/rehab/ft/wrench` e o TCP irem para +X; ajuste `real_sign`.
+   mundo e veja `/rehab/ft/wrench` e o TCP irem para +X; ajuste `ft_sign` e
+   `ft_yaw_deg` no launch.
    O `rehab_force_source` assume que os eixos da FA7155 coincidem com os do
    `load_cell_link` do URDF (conector em +X).
 2. Meça a latência do laço (força → sim → ServoJ → real): ela inclui o JTC e o
@@ -118,21 +147,24 @@ outros nós (LEDs "fora do ar"). Mesma família visual do `touch_pack`
 Cabeçalho: LEDs por nó, estado do braço, |F| ao vivo e **PARAR**. A faixa abaixo
 diz o que fazer em cada estado. Abas: 1 Sessão, 2 Admitância (perfis e margem
 de estabilidade), 3 Tarefas (centro-fora, túnel, alcance), 4 Gráficos (10 s),
-5 Mão e juntas: *Mão virtual* (W/A/S/D/Q/E ou arrastar, só com `force_source:=virtual`)
-e *Posicionar juntas* (ver abaixo).
+5 Juntas.
 Atalhos: 1–5 trocam de aba, Espaço = PARAR.
 
-### Posicionar as juntas (aba 5 › Posicionar juntas)
+### Juntas (aba 5)
 
-Sliders e campos numéricos para as 6 juntas, com a posição **atual**, a do robô
-**real** (no modo mirror) e o alvo. Os alvos nascem iguais à posição atual. "Ir para
-a posição" move em até 12°/s (mínimo 1,5 s), só com o braço `PARADO`; o estado
-passa a `POSICIONANDO` e volta sozinho a `PARADO`. **PARAR** interrompe e cancela a
-trajetória. Com o robô real conectado pede confirmação. O nó recusa: alvo fora dos
-limites de software (J2/J4/J5 ±170°, J3 ±160°), TCP abaixo de 10 cm ou célula
-abaixo de 5 cm da mesa em QUALQUER ponto do caminho, e qualquer comando fora de
-`PARADO`. **Não confere colisão do cotovelo com a mesa, a cadeira ou o voluntário:**
-mova em etapas e com a mão no E-Stop. Preset HOME = mastro para cima (J5 = +90°).
+Como no `touch_pack`: o braço segue o slider na hora (agrupa 80 ms); digitando, confirme
+com Enter. Em MIRROR o robô REAL também segue. Velocidade em % (100 % = 24°/s). **Home**
+vai à pose salva; **Salvar Home** grava a pose atual e **Capturar do robô** a do CR10 real
+em `~/.config/rehab_pack/home_pose.json`, que também é a pose inicial do Gazebo. Só em
+`PARADO`/`POSICIONANDO`. Recusa limite de junta, TCP abaixo de 10 cm ou célula abaixo de
+5 cm no caminho; **não confere colisão do cotovelo**. PARAR interrompe.
+
+## Bancada falsa (tudo menos o robô)
+
+`scripts/fake_bench.py` fala os protocolos do CR10 (TCP 29999/30004) e da FA7155 (Modbus
+numa pty), para rodar o `CR10RealDriver` e o `ft_receiver` verdadeiros sem hardware:
+`robot_ip:=127.0.0.1 ft_port:=<porta impressa>`. O IP que conecta é salvo no `robot.json`;
+use um `HOME` temporário. Não simula dinâmica nem tempos do firmware.
 
 ## Coleta de dados
 
@@ -142,7 +174,8 @@ lado_paretico, tarefa, notas) e chame `/rehab/session/start`; ele falha sem
 `subject_id` ou com sessão aberta. Se a admitância for a `ABORTADO`, a sessão
 fecha sozinha com status `abortada`.
 
-- `samples.csv`: uma linha por tick (33 Hz): `TICK_FIELDS`, alvo (NaN sem alvo) e q1..q6.
+- `samples.csv`: uma linha por tick (33 Hz): `TICK_FIELDS`, alvo (NaN sem alvo), q1..q6
+  do simulado e q1..q6 do CR10 real (NaN sem robô). Posição e TCP são do simulado.
 - `wrench.csv`: força e torque na taxa nativa, com o frame.
 - `events.csv`: `t_s, tipo, detalhe` (inclui `PARAMS` quando um parâmetro muda).
 - `emg.csv`: só com `emg_channels` > 0 (ponto de extensão; sem driver de EMG).
@@ -156,20 +189,15 @@ nós de controle usam timer de relógio de parede e interpolam o `t_s`.
 
 Sala de reabilitação só de primitivas SDF (sem `model://` nem http), com **duas
 paredes**: a do fundo (x = −1,65) e a da direita do voluntário (`wall_right_volunteer`,
-y = +2,25; ele senta virado para −x). O lado −y fica aberto, com fundo de céu. Para
-manter a outra parede, restaure `wall_right` do git e espelhe os pássaros. Tem janelas e porta, piso vinílico, cadeira do voluntário com manequim em
-(1,20; 0) virado para o robô, cadeira de rodas, barras paralelas, espaldar,
+y = +2,25; a cadeira é virada para −x). O lado −y fica aberto, com fundo de céu. Para
+manter a outra parede, restaure `wall_right` do git e espelhe os pássaros. Tem janelas e porta, piso vinílico, cadeira do voluntário (vazia) em
+(1,20; 0) virada para o robô, cadeira de rodas, barras paralelas, espaldar,
 tablado, bolas suíças, rack de halteres, cones, mesa do pesquisador, TV com a
 "tela do jogo", quadro branco, armário e plantas. A mesa do robô tem tampo de
 madeira, estrutura de aço, prateleira com o controlador, placa de alumínio sob
 a base, fita de segurança, botão de emergência e LED na borda.
 
-O laboratório é "vivo": 9 `<actor>` animados, só visuais (sem colisão nem física),
-a mais de 1,6 m do robô e longe do voluntário. Uma terapeuta de jaleco anda entre
-os cones e para para observar o voluntário; a TV roda o jogo centro-fora (cursor
-ciano, alvo que acende e pisca); o ventilador de teto gira; o relógio tem ponteiro
-de segundos real; nuvens e pássaros passam pelas janelas; uma bola suíça rola sob o
-quadro branco e um monitor mostra o traço de ECG. RTF ≈ 1,0 com o robô carregado.
+O laboratório tem 5 `<actor>` só visuais (jogo na TV, relógio, nuvens e pássaros).
 Só aparece depois de reiniciar o Gazebo: uma instância já aberta mantém o mundo antigo. Física (ODE
 4 ms), piso e mesa 0,60 × 1,10 m com topo em z = 0,75 m são idênticos à versão
 mínima. Só piso, mesa e paredes colidem; a decoração é visual.

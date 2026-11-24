@@ -104,7 +104,7 @@ def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, st
     try:
         out = subprocess.run(['ros2', 'pkg', 'executables', 'touch_pack'],
                              capture_output=True, text=True, timeout=15).stdout
-        for exe in ('ft_receiver', 'real_pose_sync'):
+        for exe in ('ft_receiver',):
             add('OK' if exe in out else 'FALHA', f'executável touch_pack/{exe}',
                 'encontrado' if exe in out else 'não encontrado: colcon build do touch_pack?')
     except (OSError, subprocess.SubprocessError) as exc:
@@ -137,7 +137,7 @@ def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, st
             '; '.join(f'{d} ({x})' for d, x in cands) or
             'nenhum encontrado: plugue o conversor e confira o cabo/24 V da célula')
     add('AVISO', 'sentido dos eixos da FA7155', 'NÃO verificável aqui: empurre +X com o mastro tarado '
-        'e veja /rehab/ft/wrench; ajuste real_sign')
+        'e veja /rehab/ft/wrench; ajuste ft_sign/ft_yaw_deg no launch')
     add('AVISO', 'E-Stop físico', 'confirme que corta o robô com o espelho armado (teste sem pessoa)')
     return r
 

@@ -13,9 +13,10 @@ import math
 import random
 import re
 
-from .constants import DT_S, EVENT_TYPES, FORCE_ABORT_LIMIT_N
+from .admittance import arm_stiffness_limit
+from .constants import (ARM_STIFFNESS_MIN_N_M, EVENT_TYPES,
+                        FORCE_ABORT_LIMIT_N)
 
-HAND_FORCE_MAX_N = 10.0
 TASK_NAMES = ('livre', 'centro_fora', 'tunel_reta', 'tunel_circulo',
               'tunel_oito', 'alcance')
 
@@ -51,39 +52,10 @@ def format_event(tipo: str, **kv) -> str:
     return ';'.join(parts)
 
 
-def clamp_force(f, limit=HAND_FORCE_MAX_N):
-    """Limita a norma do vetor (fx, fy, fz) a `limit` [N]."""
-    n = math.sqrt(sum(c * c for c in f))
-    if n <= limit or n == 0.0:
-        return tuple(float(c) for c in f)
-    return tuple(c * limit / n for c in f)
-
-
-def keys_to_force(keys, fmax: float):
-    """Teclas da mão virtual -> força no world. W/S = −x/+x (cima/baixo na
-    tela), A/D = −y/+y, Q/E = +z/−z. Diagonais não excedem `fmax`."""
-    fx = (('s' in keys) - ('w' in keys))
-    fy = (('d' in keys) - ('a' in keys))
-    fz = (('q' in keys) - ('e' in keys))
-    return clamp_force((fx * fmax, fy * fmax, fz * fmax), fmax)
-
-
-def drag_to_force(dx_px: float, dy_px: float, radius_px: float, fmax: float):
-    """Arrasto na tela (dx p/ direita, dy p/ baixo) -> (fx, fy, 0).
-    Proporcional ao deslocamento, saturando em `radius_px`."""
-    f = (dy_px / radius_px * fmax, dx_px / radius_px * fmax, 0.0)
-    return clamp_force(f, fmax)
-
-
-def stability(mass_kg: float, damping_ns_m: float, stiffness_n_m: float,
-              dt: float = DT_S) -> dict:
-    """Critério do AdmittanceController: B·dt/M < 2 e dt < 2·sqrt(M/K).
-    `margin` em 0..1 (1 = folga total, 0 = no limite); ok se > 0."""
-    ratio = damping_ns_m * dt / mass_kg
-    margin = 1.0 - ratio / 2.0
-    if stiffness_n_m > 0.0:
-        margin = min(margin, 1.0 - dt / (2.0 * math.sqrt(mass_kg / stiffness_n_m)))
-    return {'ratio': ratio, 'margin': margin, 'ok': margin > 0.0}
+def stability(mass_kg: float, damping_ns_m: float) -> dict:
+    """Rigidez máxima do braço com a malha estável, para o atraso estimado."""
+    k = arm_stiffness_limit(mass_kg, damping_ns_m)
+    return {'k_max': k, 'ok': k >= ARM_STIFFNESS_MIN_N_M}
 
 
 def abort_limit_ok(limit_n: float) -> bool:

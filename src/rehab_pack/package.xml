@@ -5,7 +5,7 @@
   <description>
     Reabilitação de membro superior com o CR10: mastro (cad/Joystick.step)
     acoplado à célula FA7155, para o voluntário guiar o robô por admitância.
-    Independente de touch_pack, hand_pack e grasp_ml_pack.
+    Usa o driver do CR10 e o ft_receiver do touch_pack para o hardware real.
   </description>
   <maintainer email="lucaspmartins14@gmail.com">Lucas Martins</maintainer>
   <license>MIT</license>

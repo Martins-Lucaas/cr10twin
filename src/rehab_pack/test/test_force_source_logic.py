@@ -2,15 +2,15 @@
 import numpy as np
 import pytest
 
-from rehab_pack.force_source import SOURCES, Tare
+from rehab_pack.force_source import SOURCES, Tare, rot_z6
 
 
 def test_tare_subtracts_window_mean():
     t = Tare()
     t.begin()
-    for w in ([1, 2, 3, 0, 0, 0], [3, 2, 1, 0, 0, 0]):
+    for w in 10 * ([1, 2, 3, 0, 0, 0], [3, 2, 1, 0, 0, 0]):
         t.feed(w)
-    assert t.finish()
+    assert t.finish() == ''
     assert np.allclose(t.apply([2, 2, 2, 0, 0, 0]), 0)
     assert np.allclose(t.apply([5, 2, 2, 0, 0, 1])[[0, 5]], [3, 1])
 
@@ -19,12 +19,21 @@ def test_tare_without_samples_fails_and_keeps_offset():
     t = Tare()
     t.offset = np.ones(6)
     t.begin()
-    assert not t.finish()
+    assert t.finish()
     assert np.allclose(t.offset, 1)
 
 
+@pytest.mark.parametrize('fx', [np.linspace(0, 3, 40), np.full(40, np.nan)])
+def test_tare_recusa_mao_no_mastro_e_nan(fx):
+    t = Tare()
+    t.begin()
+    for v in fx:
+        t.feed([v, 0, 0, 0, 0, 0])
+    assert t.finish() and np.allclose(t.offset, 0)
+
+
 def test_sources_frames():
-    assert SOURCES['virtual'][1] == 'world'
+    assert set(SOURCES) == {'sim', 'real'}
     assert SOURCES['sim'][1] == SOURCES['real'][1] == 'load_cell_link'
 
 
@@ -46,3 +55,8 @@ def test_load_cell_force_rotated_to_world():
     f_w = R @ np.array([0, 0, 5.0])
     assert np.allclose(f_w, [0, 0, 5.0], atol=0.3)
     assert np.linalg.norm(f_w) == pytest.approx(5.0)
+
+
+def test_giro_da_montagem_gira_forca_e_torque():
+    w = rot_z6(np.pi / 2) @ [1, 0, 5, 0, 2, 3]
+    assert np.allclose(w, [0, 1, 5, -2, 0, 3])

@@ -1,10 +1,11 @@
-"""Fonte de força: escolhe virtual | sim | real, tara e reestampa.
+"""Fonte de força: escolhe sim | real, tara e reestampa.
 
 Publica /rehab/ft/wrench a cada mensagem recebida, com o relógio do nó.
 O sinal físico é "força da mão sobre o mastro" (compressão positiva).
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -15,16 +16,18 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
-from .constants import (S_TARE, T_FT, T_REAL_WRENCH, T_SIM_WRENCH,
-                        T_VIRTUAL_WRENCH)
+from .constants import (S_TARE, STATES, T_FT, T_REAL_WRENCH, T_SIM_WRENCH,
+                        T_STATE, T_TARED)
 
 TARE_WINDOW_S = 0.5
+TARE_MIN_N = 10
+TARE_STABLE_N = 0.50          # deriva máxima na janela: o critério do ft_receiver
 # fonte -> (tópico de origem, frame de saída)
-SOURCES = {'virtual': (T_VIRTUAL_WRENCH, 'world'),
-           'sim': (T_SIM_WRENCH, 'load_cell_link'),
+SOURCES = {'sim': (T_SIM_WRENCH, 'load_cell_link'),
            'real': (T_REAL_WRENCH, 'load_cell_link')}
 
 
@@ -48,49 +51,74 @@ class Tare:
         if self._acc is not None:
             self._acc.append(np.asarray(w, float))
 
-    def finish(self) -> bool:
-        """Fecha a janela. False (e offset intacto) se não houve amostras."""
+    def finish(self) -> str:
+        """Fecha a janela. '' se tarou; senão o motivo, com o offset intacto."""
         acc, self._acc = self._acc, None
-        if not acc:
-            return False
+        if not acc or len(acc) < TARE_MIN_N:
+            return f'poucas amostras de força em {TARE_WINDOW_S:g} s'
+        acc = np.array(acc)
+        half = len(acc) // 2
+        drift = float(np.max(np.abs(np.median(acc[half:, :3], axis=0)
+                                    - np.median(acc[:half, :3], axis=0))))
+        if not drift <= TARE_STABLE_N:       # NaN também recusa
+            return f'força variando ({drift:.2f} N): solte o mastro e repita'
         self.offset = np.mean(acc, axis=0)
-        return True
+        return ''
 
     def apply(self, w) -> np.ndarray:
         return np.asarray(w, float) - self.offset
+
+
+def rot_z6(yaw_rad: float) -> np.ndarray:
+    """Gira força e torque em torno do eixo z da célula."""
+    c, s = math.cos(yaw_rad), math.sin(yaw_rad)
+    r = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+    return np.kron(np.eye(2), r)
 
 
 class ForceSource(Node):
     def __init__(self):
         super().__init__('rehab_force_source')
         ro = ParameterDescriptor(read_only=True)
-        self.declare_parameter('source', 'virtual', ro)
-        self.declare_parameter('sim_sign', 1.0)
-        self.declare_parameter('real_sign', 1.0)
+        self.declare_parameter('source', 'real', ro)
+        # só leitura: mudar depois da tara deixaria o zero com sinal/eixo trocado
+        self.declare_parameter('sim_sign', 1.0, ro)
+        self.declare_parameter('real_sign', 1.0, ro)
+        self.declare_parameter('real_yaw_deg', 0.0, ro)
         src = self.get_parameter('source').value
         if src not in SOURCES:
-            raise ValueError(f'source={src!r}: use virtual, sim ou real')
+            raise ValueError(f'source={src!r}: use sim ou real')
         topic, self._frame = SOURCES[src]
         self._src = src
-        self.declare_parameter('source_topic', topic, ro)
+        yaw = math.radians(self.get_parameter('real_yaw_deg').value
+                           if src == 'real' else 0.0)
+        self._map = self._sign() * rot_z6(yaw)
         self._tare = Tare()
         self._lock = threading.Lock()
         self._pub = self.create_publisher(WrenchStamped, T_FT, 50)
         grp = ReentrantCallbackGroup()
         self.create_subscription(WrenchStamped, topic, self._on_wrench,
                                  WRENCH_QOS, callback_group=grp)
+        self._pub_tared = self.create_publisher(
+            Float64, T_TARED,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self._pub_tared.publish(Float64(data=0.0))
+        self._state = None
+        self.create_subscription(
+            String, T_STATE, lambda m: setattr(self, '_state', m.data),
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            callback_group=grp)
         self.create_service(Trigger, S_TARE, self._on_tare,
                             callback_group=grp)
         self.get_logger().info(f'fonte={src} topico={topic} frame={self._frame}')
 
     def _sign(self) -> float:
-        return {'virtual': 1.0,
-                'sim': self.get_parameter('sim_sign').value,
+        return {'sim': self.get_parameter('sim_sign').value,
                 'real': self.get_parameter('real_sign').value}[self._src]
 
     def _on_wrench(self, msg: WrenchStamped):
         f, t = msg.wrench.force, msg.wrench.torque
-        w = self._sign() * np.array([f.x, f.y, f.z, t.x, t.y, t.z])
+        w = self._map @ np.array([f.x, f.y, f.z, t.x, t.y, t.z])
         with self._lock:
             self._tare.feed(w)
             w = self._tare.apply(w)
@@ -103,6 +131,9 @@ class ForceSource(Node):
         self._pub.publish(out)
 
     def _on_tare(self, _req, res):
+        if self._state not in (None, STATES[0], STATES[4]):
+            res.success, res.message = False, f'tara só em PARADO (agora {self._state})'
+            return res
         with self._lock:
             self._tare.begin()
         # espera em tempo de relógio do nó (sim ou parede, conforme use_sim_time)
@@ -112,10 +143,11 @@ class ForceSource(Node):
                and time.monotonic() - wall0 < 10 * TARE_WINDOW_S):
             time.sleep(0.02)
         with self._lock:
-            ok = self._tare.finish()
-        res.success = ok
-        res.message = ('tara feita' if ok else
-                       'sem amostras de força na janela de 0,5 s')
+            err = self._tare.finish()
+        if not err:
+            self._pub_tared.publish(Float64(data=time.monotonic()))
+        res.success = not err
+        res.message = err or 'tara feita'
         return res
 
 
@@ -128,9 +160,12 @@ def main():
         ex.spin()
     except KeyboardInterrupt:
         pass
+    except Exception:
+        if rclpy.ok():               # no Ctrl-C o contexto já caiu: sai sem traceback
+            raise
     finally:
-        node.destroy_node()
         if rclpy.ok():
+            node.destroy_node()
             rclpy.shutdown()
 
 

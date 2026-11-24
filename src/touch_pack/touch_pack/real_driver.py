@@ -70,6 +70,7 @@ FEEDBACK_PORT_SLOW = 30005
 
 # Offset (em bytes) do campo `q_actual` (6 × float64) dentro do struct de
 # 1440 B do feedback.
+FEEDBACK_ROBOT_MODE_OFFSET = 24   # uint64, guia V4.5.1
 FEEDBACK_Q_ACTUAL_OFFSET = 432
 # Offset (em bytes) do campo `actual_TCPForce` (6 × float64 = [Fx,Fy,Fz,Tx,Ty,Tz])
 # dentro do struct de 1440 B do feedback. Assume layout:
@@ -1165,6 +1166,8 @@ class CR10RealDriver:
                 log.debug('[FEED] latest: desalinhado após flush '
                           '(MessageSize=%d, attempt=%d)', msg_size, _attempt + 1)
                 buf = self._realign_feedback(buf)
+        self.last_robot_mode = struct.unpack_from(
+            '<Q', buf, FEEDBACK_ROBOT_MODE_OFFSET)[0]
         q_deg = np.frombuffer(buf, offset=FEEDBACK_Q_ACTUAL_OFFSET,
                               count=6, dtype='<f8').copy()
         if not np.all(np.isfinite(q_deg)) or np.any(np.abs(q_deg) > 400.0):

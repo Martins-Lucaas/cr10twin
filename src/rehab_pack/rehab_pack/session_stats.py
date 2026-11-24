@@ -126,8 +126,10 @@ def resumir(amostras, eventos):
         'n_amostras': n,
         'f_media_n': None, 'f_pico_n': None,
         'pct_tempo_no_tunel': None,
-        'acertos': sum(1 for e in eventos if e[1] == 'TARGET_HIT'),
-        'erros': sum(1 for e in eventos if e[1] == 'TARGET_MISS'),
+        'acertos': sum(1 for e in eventos if e[1] == 'TARGET_HIT'
+                       and 'fase=volta' not in e[2]),
+        'erros': sum(1 for e in eventos if e[1] == 'TARGET_MISS'
+                     and 'fase=volta' not in e[2]),
     }
     if n:
         fn = [math.sqrt(a * a + b * b + c * c) for a, b, c in
@@ -135,9 +137,12 @@ def resumir(amostras, eventos):
         totais['f_media_n'] = sum(fn) / n
         totais['f_pico_n'] = max(fn)
         if n > 1:
-            fora = _tempo_fora_tunel(eventos, t[0], t[-1])
-            if fora is not None and t[-1] > t[0]:
-                totais['pct_tempo_no_tunel'] = 100.0 * (1.0 - fora / (t[-1] - t[0]))
+            # só o tempo de tarefa conta, não a sessão inteira
+            ini = next((e[0] for e in eventos if e[1] == 'TASK_START'), t[0])
+            fim = next((e[0] for e in reversed(eventos) if e[1] == 'TASK_END'), t[-1])
+            fora = _tempo_fora_tunel(eventos, ini, fim)
+            if fora is not None and fim > ini:
+                totais['pct_tempo_no_tunel'] = 100.0 * (1.0 - fora / (fim - ini))
     return {'alcances': alcances, 'totais': totais}
 
 

@@ -137,24 +137,13 @@ def test_area_explorada():
 
 
 def test_estabilidade_e_presets():
-    assert tasks.stability(2.0, 40.0, 0.0)['ok']
-    assert not tasks.stability(0.5, 40.0, 0.0)['ok']     # B·dt/M = 2,4
-    assert not tasks.stability(2.0, 0.0, 1e5)['ok']      # K altíssimo
+    assert tasks.stability(2.0, 40.0)['ok']
+    assert not tasks.stability(2.0, 0.0)['ok']           # sem amortecimento
+    assert not tasks.stability(10.0, 10.0)['ok']         # M alta, B baixo
     for nome, p in tasks.PRESETS.items():
-        assert tasks.stability(p['mass_kg'], p['damping_ns_m'],
-                               p['stiffness_n_m'])['ok'], nome
+        assert tasks.stability(p['mass_kg'], p['damping_ns_m'])['ok'], nome
     assert tasks.PRESETS['Assistido']['stiffness_n_m'] > 0
     assert tasks.abort_limit_ok(15.0) and not tasks.abort_limit_ok(15.1)
-
-
-def test_forca_mao_virtual():
-    assert tasks.keys_to_force({'w'}, 5.0) == (-5.0, 0.0, 0.0)
-    f = tasks.keys_to_force({'s', 'd', 'q'}, 10.0)
-    assert math.sqrt(sum(c * c for c in f)) <= 10.0 + 1e-9
-    assert tasks.keys_to_force({'a', 'd'}, 5.0) == (0.0, 0.0, 0.0)
-    f = tasks.drag_to_force(500, 0, 90, 10.0)             # saturado
-    assert f == pytest.approx((0.0, 10.0, 0.0))
-    assert sum(c * c for c in tasks.clamp_force((30, 40, 0), 10.0)) == pytest.approx(100.0)
 
 
 def test_decimacao_preserva_pico():

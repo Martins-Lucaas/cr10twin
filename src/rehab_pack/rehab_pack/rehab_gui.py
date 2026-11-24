@@ -1,4 +1,4 @@
-"""Painel Tkinter do rehab_pack: sessão, admitância, jogo, gráficos e mão virtual.
+"""Painel Tkinter do rehab_pack: sessão, admitância, jogo, gráficos e juntas.
 
 `ros2 run rehab_pack rehab_gui` abre mesmo sem nenhum outro nó no ar (LEDs
 vermelhos). Toda a lógica de tarefa está em tasks.py; a comunicação ROS, em
@@ -6,7 +6,7 @@ gui_bridge.py (thread própria). Esta thread só desenha e consulta filas.
 Tema e widgets base: gui_theme.py; gráficos: gui_charts.py.
 
 Atalhos (fora de campos de texto): Espaço = PARAR (parada de emergência),
-M = marcador, 1–5 = abas, W/A/S/D/Q/E = mão virtual. Tab percorre os
+M = marcador, 1–5 = abas. Tab percorre os
 controles e Enter aciona o botão em foco (Espaço nunca aciona botão: é PARAR).
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ import math
 import signal
 import sys
 import time
+import traceback
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -24,7 +25,6 @@ from . import constants as C
 from . import gui_theme as th
 from . import tasks as T
 from .gui_charts import LineChart
-from .jog import duration_s, max_delta_deg
 
 IDX = {n: i for i, n in enumerate(C.TICK_FIELDS)}
 LIVE_S = 0.5                 # LED verde se a última mensagem tem menos que isto
@@ -41,6 +41,7 @@ PARAMS = (
     ('v_max_ms', 'Velocidade máxima', 0.02, 0.15, 0.01, 'm/s'),
     ('max_excursion_m', 'Excursão máxima', 0.02, 0.30, 0.01, 'm'),
     ('abort_force_n', 'Limite de aborto', 5.0, C.FORCE_ABORT_LIMIT_N, 0.5, 'N'),
+    ('abort_torque_nm', 'Limite de torque', 0.2, C.TORQUE_ABORT_LIMIT_NM, 0.1, 'N·m'),
 )
 PRESET_HELP = {
     'Livre': 'Movimento livre, amortecido (K = 0).',
@@ -64,17 +65,13 @@ TASK_PARAMS = (
     ('duracao', 'Duração [s]', 60.0, 10.0, 300.0, 10.0, ('alcance',)),
 )
 BANNER = {
-    'SEM DADOS': 'Sem dados da admitância: o nó rehab_admittance não está no ar. '
-                 'Suba o launch joystick_cell.',
-    'PARADO': 'Braço parado. Com o mastro solto, clique em Tarar; depois em Habilitar.',
-    'ATIVO': 'Admitância ativa: o braço segue a força da mão.  Espaço = PARAR.',
-    'SEM_FORCA': 'Sem leitura de força há mais de 0,5 s: braço parado. '
-                 'Verifique a fonte de força.',
-    'LIMITE': 'Limite de alcance do braço: comando suspenso. '
-              'Traga a mão de volta em direção ao centro.',
-    'POSICIONANDO': 'Movendo as juntas até a posição pedida (aba 5).  Espaço = PARAR.',
-    'ABORTADO': 'PARADA DE SEGURANÇA: braço travado (força acima do limite ou PARAR). '
-                'Solte o mastro e clique em Reset.',
+    'SEM DADOS': 'Admitância não está no ar.',
+    'PARADO': 'Parado: Tarar e Habilitar com o mastro solto.',
+    'ATIVO': 'O braço segue a mão.',
+    'SEM_FORCA': 'Sem leitura da célula: braço parado.',
+    'LIMITE': 'Limite de alcance: volte em direção ao centro.',
+    'POSICIONANDO': 'Movendo as juntas. Espaço = PARAR.',
+    'ABORTADO': 'PARADA DE SEGURANÇA: solte o mastro e clique em Reset.',
 }
 STATE_LABEL = {'SEM_FORCA': 'SEM FORÇA'}
 # Nome da ação e nó responsável por serviço (mensagens de erro úteis).
@@ -83,33 +80,36 @@ ACTION = {C.S_TARE: ('Tara', 'rehab_force_source'),
           C.S_ESTOP: ('PARAR', 'rehab_admittance'),
           C.S_RESET: ('Reset', 'rehab_admittance'),
           C.S_HOME: ('Home', 'rehab_admittance'),
+          C.S_REAL_CONNECT: ('Robô real', C.NODE_MIRROR),
+          C.S_REAL_MODE: ('Modo do robô real', C.NODE_MIRROR),
           C.S_SESSION_START: ('Iniciar sessão', 'rehab_logger'),
           C.S_SESSION_STOP: ('Encerrar sessão', 'rehab_logger')}
-SHORTCUTS = 'Espaço PARAR · M marcador · 1–5 abas · W A S D Q E mão virtual · Tab/Enter botões'
+SHORTCUTS = 'Espaço: PARAR'
 
 
 class RehabGui:
     def __init__(self, root: tk.Tk, bridge):
         self.root, self.br = root, bridge
         root.title('Reabilitação — CR10 + FA7155')
-        root.geometry('1180x820')
-        root.minsize(1000, 680)
+        root.geometry('1180x860')
+        root.minsize(1000, 800)
         th.init(root)
 
         self.tick = None                 # último tick (dict campo -> valor)
         self.center = None               # (x, y, z) de referência da vista
         self.task, self.task_name = None, None
-        self.hand_keys, self._rel_ids = set(), {}
-        self._pad_vec = self._cv_vec = (0.0, 0.0, 0.0)
+        self._jog_t, self._jog_after, self._jog_raw = 0.0, None, None   # última mexida do operador; envio agendado
         self._last_estop = 0.0
+        self._estop_wait = 0.0           # PARAR enviado, ainda sem resposta
         self._last_target_pub = 0.0
         self._params_loaded = False
+        self._ref_sent = False           # a assistência moveu x_ref nesta tarefa
         self._summary_shown = None
         self._n_poll = 0
         self._drawn = set()
         self._closing = False
         self.session_open = False
-        self.enabled = False
+        self.enabled = self.moving = False
         self.trail = collections.deque()
         self._co_result = {}             # alvo -> 'hit' | 'miss' (centro-fora)
         self._flash = None               # (instante, x, y, texto, cor)
@@ -124,15 +124,13 @@ class RehabGui:
         self._build_admittance()
         self._build_tasks()
         self._build_charts()
-        self._build_hand()
+        self._build_jog(self._page('5  Juntas'))
 
         root.bind_all('<KeyPress>', self._on_key_press)
-        root.bind_all('<KeyRelease>', self._on_key_release)
         # Espaço em botão/caixa com foco = PARAR (nunca aciona o widget); Enter aciona.
         for cls in ('TButton', 'TCheckbutton', 'TRadiobutton', 'Button'):
             root.bind_class(cls, '<KeyPress-space>', self._space_on_widget)
             root.bind_class(cls, '<Return>', lambda e: e.widget.invoke())
-        root.bind('<FocusOut>', lambda e: self.hand_keys.clear())
         root.protocol('WM_DELETE_WINDOW', self.close)
         self._poll()
 
@@ -152,7 +150,8 @@ class RehabGui:
 
     def _typing(self):
         w = self.root.focus_get()
-        return w is not None and w.winfo_class() in ('Entry', 'TEntry', 'Text', 'TSpinbox', 'Spinbox')
+        return w is not None and w.winfo_class() in ('Entry', 'TEntry', 'Text', 'TSpinbox', 'Spinbox',
+                                                     'TCombobox')
 
     def _tab(self):
         return self.nb.index(self.nb.select())
@@ -232,6 +231,20 @@ class RehabGui:
                                   font=th.FONT_DISPLAY, padx=6, pady=2, width=10, anchor='w')
         self.lbl_state.pack(side='left', padx=(0, 6))
 
+        # Robô real: em todas as abas, como no touch_pack.
+        row = tk.Frame(hdr, bg=H)
+        row.pack(fill='x', padx=18, pady=(0, 10))
+        tk.Label(row, text='IP do CR10', bg=H, fg=th.HEADER_FG, font=th.FONT).pack(side='left')
+        self.var_ip = tk.StringVar()
+        ttk.Entry(row, textvariable=self.var_ip, width=15).pack(side='left', padx=th.PAD)
+        self.btn_real = self._btn(row, 'Conectar', self.toggle_real)
+        self.btn_real.pack(side='left')
+        self.btn_mode = self._btn(row, 'Modo: SIM_ONLY', self.toggle_mode)
+        self.btn_mode.pack(side='left', padx=th.PAD)
+        self.lbl_env = tk.Label(row, text='SIMULAÇÃO', bg=H, fg='#ffffff',
+                                font=th.FONT_TITLE, padx=10, pady=3)
+        self.lbl_env.pack(side='left', padx=th.PAD)
+
         # Faixa de estado: o que está acontecendo e o que fazer.
         self.banner = tk.Frame(self.root, bg=th.GRID)
         self.banner.pack(fill='x', side='top')
@@ -264,8 +277,8 @@ class RehabGui:
 
         c = th.card(left, 'Preparar o braço')
         c.columnconfigure(2, weight=1)
-        steps = (('1', 'Tarar sensor', self.tare, '', 'Solte o mastro antes: a tara mede 0,5 s sem a mão.'),
-                 ('2', 'Habilitar', self.toggle_enable, 'Primary', 'Liga ou desliga o seguimento da força da mão.'))
+        steps = (('1', 'Tarar sensor', self.tare, '', 'Com o mastro solto.'),
+                 ('2', 'Habilitar', self.toggle_enable, 'Primary', 'Mastro solto; depois segurar.'))
         for r, (n, txt, cmd, kind, hint) in enumerate(steps):
             tk.Label(c, text=n, bg=th.GRID, fg=th.TEXT, font=th.FONT_TITLE, width=2
                      ).grid(row=r, column=0, sticky='w', pady=4)
@@ -276,26 +289,26 @@ class RehabGui:
                 self.btn_enable = b
         tk.Frame(c, bg=th.GRID, height=1).grid(row=2, column=0, columnspan=3, sticky='ew', pady=th.PAD)
         for r, (txt, cmd, hint) in enumerate((
-                ('Reset', self.reset, 'Destrava após ABORTADO (volta a PARADO).'),
-                ('Home', self.home, 'Leva o braço à pose inicial em 4 s. Só em PARADO.')), start=3):
+                ('Reset', self.reset, 'Destrava o ABORTADO.'),
+                ('Home', self.jog_home, 'Vai à Home salva.')), start=3):
             self._btn(c, txt, cmd, width=14).grid(row=r, column=1, sticky='w', padx=th.PAD, pady=3)
             th.label(c, hint, muted=True, wraplength=230).grid(row=r, column=2, sticky='w')
 
         c = th.card(left, 'Conexões')
         c.columnconfigure(1, weight=1)
         self.conn = {}
-        for r, (key, nome) in enumerate((('adm', 'Admitância (rehab_admittance)'),
-                                         ('ft', 'Força tarada (/rehab/ft/wrench)'),
-                                         ('arm', 'Braço (/joint_states)'),
-                                         ('log', 'Registrador (rehab_logger)'),
-                                         ('real', 'Robô real (CR10, modo mirror)'),
-                                         ('ftraw', 'Célula FA7155 (/ft_sensor/wrench)'))):
+        for r, (key, nome) in enumerate((('adm', 'Admitância'),
+                                         ('ft', 'Força'),
+                                         ('arm', 'Braço'),
+                                         ('log', 'Registrador'),
+                                         ('real', 'Robô real'),
+                                         ('ftraw', 'Célula FA7155'))):
             th.label(c, nome).grid(row=r, column=0, sticky='w', pady=2)
             v = th.label(c, '○ fora do ar')
             v.grid(row=r, column=1, sticky='w', padx=th.PAD_L)
             self.conn[key] = v
         th.label(c, 'Fonte de força').grid(row=6, column=0, sticky='w', pady=(th.PAD, 2))
-        self.lbl_source = th.label(c, 'desconhecida (vem do launch: force_source)', muted=True)
+        self.lbl_source = th.label(c, '—', muted=True)
         self.lbl_source.grid(row=6, column=1, sticky='w', padx=th.PAD_L, pady=(th.PAD, 2))
 
         c = th.card(right, 'Sessão de coleta')
@@ -305,7 +318,7 @@ class RehabGui:
         g.grid(row=0, column=1, sticky='w', padx=th.PAD)
         self.var_id = tk.StringVar(value='S01')
         ttk.Entry(g, textvariable=self.var_id, width=12).pack(side='left')
-        th.label(g, '  sem nome real (ex.: S01)', muted=True).pack(side='left')
+        th.label(g, '  ex.: S01', muted=True).pack(side='left')
         th.label(c, 'Lado parético').grid(row=1, column=0, sticky='w', pady=3)
         g = tk.Frame(c, bg=th.PANEL)
         g.grid(row=1, column=1, sticky='w', padx=th.PAD)
@@ -376,27 +389,24 @@ class RehabGui:
         c.columnconfigure(0, weight=1)
         self.pvar, self.plbl, self.pnode = {}, {}, {}
         for r, (key, rot, lo, hi, st, un) in enumerate(PARAMS):
-            th.label(c, rot).grid(row=2 * r, column=0, sticky='w', pady=(6, 0))
+            th.label(c, rot).grid(row=2 * r, column=0, sticky='w', pady=(1, 0))
             self.pnode[key] = th.label(c, '', muted=True, font=th.FONT_SMALL)
-            self.pnode[key].grid(row=2 * r, column=1, sticky='e', padx=th.PAD, pady=(6, 0))
+            self.pnode[key].grid(row=2 * r, column=1, sticky='e', padx=th.PAD, pady=(1, 0))
             self.plbl[key] = tk.Label(c, text='', bg=th.PANEL, fg=th.TEXT, width=11,
                                       anchor='e', font=th.FONT_MONO)
-            self.plbl[key].grid(row=2 * r, column=2, sticky='e', pady=(6, 0))
-            v = tk.DoubleVar(value=T.PRESETS['Livre'].get(key, C.FORCE_ABORT_LIMIT_N))
+            self.plbl[key].grid(row=2 * r, column=2, sticky='e', pady=(1, 0))
+            v = tk.DoubleVar(value=T.PRESETS['Livre'].get(
+                key, C.TORQUE_ABORT_LIMIT_NM if key == 'abort_torque_nm' else C.FORCE_ABORT_LIMIT_N))
             self.pvar[key] = v
             ttk.Scale(c, from_=lo, to=hi, variable=v,
                       command=lambda _x, k=key, s=st: self._slide(k, s, manual=True)
-                      ).grid(row=2 * r + 1, column=0, columnspan=3, sticky='ew', pady=(2, 0))
+                      ).grid(row=2 * r + 1, column=0, columnspan=3, sticky='ew')
             self._slide(key, st)
-        th.label(c, 'Setas do teclado ajustam o controle deslizante em foco. '
-                    'Valores só valem no braço depois de "Aplicar ao nó".',
-                 muted=True, font=th.FONT_SMALL).grid(row=2 * len(PARAMS), column=0,
-                                                    columnspan=3, sticky='w', pady=(th.PAD, 0))
 
         c = th.card(right, 'Estabilidade do controlador')
-        self.lbl_ratio = th.readout(c, 'B·dt/M (limite 2)')
+        self.lbl_ratio = th.readout(c, 'Rigidez máx. do braço [N/m]')
         self.lbl_ratio.frame.pack(anchor='w')
-        th.label(c, 'Margem de estabilidade', muted=True, font=th.FONT_SMALL).pack(anchor='w', pady=(th.PAD, 2))
+        th.label(c, 'Folga com o atraso estimado da malha', muted=True, font=th.FONT_SMALL).pack(anchor='w', pady=(th.PAD, 2))
         self.bar_stab = ttk.Progressbar(c, style='Stab.Horizontal.TProgressbar',
                                         maximum=100, mode='determinate')
         self.bar_stab.pack(fill='x')
@@ -409,7 +419,7 @@ class RehabGui:
         self.btn_apply = self._btn(row, 'Aplicar ao nó', self.apply_params, 'Primary')
         self.btn_apply.pack(side='left')
         self._btn(row, 'Ler do nó', self.load_params).pack(side='left', padx=th.PAD)
-        self.lbl_node_params = th.label(c, 'Sem parâmetros do nó: rehab_admittance não está no ar.',
+        self.lbl_node_params = th.label(c, 'Admitância fora do ar.',
                                         muted=True, wraplength=360)
         self.lbl_node_params.pack(anchor='w', pady=(th.PAD, 0))
         self._refresh_stab()
@@ -434,15 +444,16 @@ class RehabGui:
 
     def _refresh_stab(self):
         g = {k: v.get() for k, v in self.pvar.items()}
-        s = T.stability(g['mass_kg'], g['damping_ns_m'], g['stiffness_n_m'])
-        m = 100 * max(s['margin'], 0)
-        if s['margin'] > 0.3:
-            cor, txt = th.OK, f'✔  Estável — margem {m:.0f}%'
+        s = T.stability(g['mass_kg'], g['damping_ns_m'])
+        k = s['k_max']
+        m = min(100 * k / (2 * C.ARM_STIFFNESS_REF_N_M), 100)
+        if k >= C.ARM_STIFFNESS_REF_N_M:
+            cor, txt = th.OK, f'✔  Estável até {k:.0f} N/m'
         elif s['ok']:
-            cor, txt = th.WARN, f'▲  Perto do limite — margem {m:.0f}%'
+            cor, txt = th.WARN, f'▲  Perto do limite: {k:.0f} N/m'
         else:
             cor, txt = th.DANGER_HV, '✖  Instável — não será aplicado'
-        self.lbl_ratio.configure(text=f"{s['ratio']:.2f}")
+        self.lbl_ratio.configure(text=f'{k:.0f}')
         self.bar_stab.configure(value=m)
         ttk.Style().configure('Stab.Horizontal.TProgressbar', background=cor,
                               lightcolor=cor, darkcolor=cor)
@@ -460,8 +471,8 @@ class RehabGui:
 
     def apply_params(self):
         g = {k: v.get() for k, v in self.pvar.items()}
-        if not T.stability(g['mass_kg'], g['damping_ns_m'], g['stiffness_n_m'])['ok']:
-            self._say('Combinação instável (B·dt/M ≥ 2): não aplicada. Reduza B ou aumente M.', False)
+        if not T.stability(g['mass_kg'], g['damping_ns_m'])['ok']:
+            self._say('Combinação instável: não aplicada. Aumente B ou reduza M.', False)
             return
         if not T.abort_limit_ok(g['abort_force_n']):
             self._say(f'Limite de aborto deve ser ≤ {C.FORCE_ABORT_LIMIT_N:g} N.', False)
@@ -491,9 +502,6 @@ class RehabGui:
         self.cv = tk.Canvas(p, bg=th.SUNKEN, highlightthickness=1,
                             highlightbackground=th.BORDER)
         self.cv.pack(side='left', fill='both', expand=True, padx=th.PAD, pady=th.PAD)
-        self.cv.bind('<ButtonPress-1>', self._cv_drag)
-        self.cv.bind('<B1-Motion>', self._cv_drag)
-        self.cv.bind('<ButtonRelease-1>', lambda e: setattr(self, '_cv_vec', (0.0, 0.0, 0.0)))
         self.cv.bind('<Configure>', self._cv_resize)
 
         c = th.card(side, 'Tarefa')
@@ -537,9 +545,6 @@ class RehabGui:
         self.bar_task.pack(fill='x', pady=(th.PAD, 2))
         self.lbl_score = th.label(c, 'Nenhuma tarefa em andamento.', muted=True, wraplength=280)
         self.lbl_score.pack(anchor='w')
-        th.label(c, 'Arraste o mouse no quadro para puxar o cursor (mão virtual); '
-                    'W/A/S/D também funcionam.', muted=True, font=th.FONT_SMALL,
-                 wraplength=280).pack(anchor='w', side='bottom')
         self._task_changed()
 
     def _task_changed(self):
@@ -608,11 +613,8 @@ class RehabGui:
             self._drawn = set()
             self.trail.clear()
 
-    def _cv_drag(self, e):
-        if not self.tick or not self._hand_allowed():
-            return
-        px, py = self._w2s(self.tick['x_m'], self.tick['y_m'])
-        self._cv_vec = T.drag_to_force(e.x - px, e.y - py, 100.0, self.fmax.get())
+    def _center_ok(self):
+        return self.center is not None and all(math.isfinite(v) for v in self.center)
 
     # ── tarefas: ciclo de vida ──────────────────────────────────────────
     def task_start(self):
@@ -627,7 +629,15 @@ class RehabGui:
         self.recenter()
         cx, cy, cz = self.center
         t, name = self.tick['t_s'], self.var_task.get()
-        g = {k: v.get() for k, v in self.tv.items()}
+        try:
+            g = {k: float(v.get()) for k, v in self.tv.items()}
+        except (tk.TclError, ValueError):
+            self._say('Parâmetro da tarefa vazio ou inválido.', False)
+            return
+        for k, rot, _ini, lo, hi, _st, _q in TASK_PARAMS:
+            if not lo <= g[k] <= hi:
+                self._say(f'{rot}: use de {lo:g} a {hi:g}.', False)
+                return
         if name == 'centro_fora':
             self.task = T.CenterOutTask(
                 (cx, cy), reach_m=g['alcance'] / 100, target_radius_m=g['raio'] / 100,
@@ -655,7 +665,9 @@ class RehabGui:
             nan = float('nan')
             self.br.publish_target((nan, nan), nan)
             # Referência no ponto atual: com K > 0 não puxa o braço para o fim da trajetória.
-            self.br.publish_reference((self.tick['x_m'], self.tick['y_m']), self.tick['z_m'])
+            if self._ref_sent:
+                self.br.publish_reference((self.tick['x_m'], self.tick['y_m']), self.tick['z_m'])
+                self._ref_sent = False
         self.task_name = None
 
     def _emit(self, events):
@@ -683,9 +695,7 @@ class RehabGui:
     # ── aba 4: gráficos ─────────────────────────────────────────────────
     def _build_charts(self):
         p = self._page('4  Gráficos')
-        th.label(p, 'Últimos 10 s · cor fixa por eixo: x azul, y laranja, z verde-água, '
-                    'módulo preto · passe o mouse para ler valores',
-                 muted=True).pack(anchor='w', padx=th.PAD_L, pady=(th.PAD, 0))
+        th.label(p, 'Últimos 10 s', muted=True).pack(anchor='w', padx=th.PAD_L, pady=(th.PAD, 0))
         mag = (th.SERIES_MAG, 2)
         xyz = ((th.SERIES_X, 1.5), (th.SERIES_Y, 1.5), (th.SERIES_Z, 1.5))
         self.charts = [
@@ -702,82 +712,17 @@ class RehabGui:
             ch.pack(fill='both', expand=True, padx=th.PAD, pady=th.PAD_S)
 
     # ── aba 5: mão virtual ──────────────────────────────────────────────
-    def _build_hand(self):
-        p = self._page('5  Mão e juntas')
-        sub = ttk.Notebook(p)
-        sub.pack(fill='both', expand=True)
-        hand = tk.Frame(sub, bg=th.BG)
-        jog = tk.Frame(sub, bg=th.BG)
-        sub.add(hand, text='  Mão virtual  ')
-        sub.add(jog, text='  Posicionar juntas  ')
-        self.sub5 = sub
-        self._build_jog(jog)
-        self.hand_warn = tk.Frame(hand, bg='#fef3c7')
-        self.lbl_hand = tk.Label(self.hand_warn, text='', bg='#fef3c7', fg='#78350f',
-                                 font=th.FONT, anchor='w', justify='left')
-        self.lbl_hand.pack(fill='x', padx=th.PAD_L, pady=th.PAD)
-        body = tk.Frame(hand, bg=th.BG)
-        body.pack(fill='both', expand=True)
-        self._hand_body = body
-        body.columnconfigure(0, weight=1, uniform='h')
-        body.columnconfigure(1, weight=1, uniform='h')
-        left = tk.Frame(body, bg=th.BG)
-        left.grid(row=0, column=0, sticky='nsew', padx=(th.PAD_S, 2), pady=th.PAD_S)
-        right = tk.Frame(body, bg=th.BG)
-        right.grid(row=0, column=1, sticky='nsew', padx=(2, th.PAD_S), pady=th.PAD_S)
-
-        c = th.card(left, 'Teclado')
-        self.keys_cv = tk.Canvas(c, width=300, height=150, bg=th.PANEL, highlightthickness=0)
-        self.keys_cv.pack(anchor='w')
-        th.label(c, 'W/S: longe/perto do voluntário (−x/+x)   A/D: esquerda/direita (−y/+y)\n'
-                    'Q/E: subir/descer (+z/−z). Valem em qualquer aba, exceto num campo de texto.',
-                 muted=True).pack(anchor='w', pady=(th.PAD, 0))
-        row = tk.Frame(c, bg=th.PANEL)
-        row.pack(fill='x', pady=(th.PAD_L, 0))
-        th.label(row, 'Força por tecla').pack(side='left')
-        self.fmax = tk.DoubleVar(value=5.0)
-        ttk.Scale(row, from_=1.0, to=T.HAND_FORCE_MAX_N, variable=self.fmax
-                  ).pack(side='left', fill='x', expand=True, padx=th.PAD)
-        self.lbl_fmax = tk.Label(row, text='', bg=th.PANEL, fg=th.TEXT, width=7,
-                                 anchor='e', font=th.FONT_MONO)
-        self.lbl_fmax.pack(side='left')
-
-        c = th.card(right, f'Arrastar   (limite {T.HAND_FORCE_MAX_N:g} N, publicada a 30 Hz)')
-        top = tk.Frame(c, bg=th.PANEL)
-        top.pack(fill='x')
-        self.lbl_hmag = th.readout(top, 'FORÇA DA MÃO VIRTUAL |F|', 'N')
-        self.lbl_hmag.frame.pack(side='left')
-        self.lbl_vec = tk.Label(top, text='F = (0, 0, 0) N', bg=th.PANEL, fg=th.TEXT,
-                                font=th.FONT_MONO)
-        self.lbl_vec.pack(side='right', anchor='s')
-        self.PAD_C, self.PAD_R = 140, 100
-        self.pad = tk.Canvas(c, width=280, height=280, bg=th.SUNKEN, highlightthickness=1,
-                             highlightbackground=th.BORDER)
-        self.pad.pack(pady=(th.PAD, 0))
-        o, r = self.PAD_C, self.PAD_R
-        self.pad.create_oval(o - r, o - r, o + r, o + r, outline=th.BORDER, width=2)
-        self.pad.create_oval(o - r / 2, o - r / 2, o + r / 2, o + r / 2, outline=th.GRID)
-        self.pad.create_line(o, o - r, o, o + r, fill=th.GRID)
-        self.pad.create_line(o - r, o, o + r, o, fill=th.GRID)
-        for x, y, txt in ((o, 14, 'longe (−x)'), (o, 266, 'perto (+x)'),
-                          (22, o, 'esq.'), (258, o, 'dir.')):
-            self.pad.create_text(x, y, text=txt, fill=th.MUTED, font=th.FONT_SMALL)
-        self.pad.bind('<ButtonPress-1>', self._pad_drag)
-        self.pad.bind('<B1-Motion>', self._pad_drag)
-        self.pad.bind('<ButtonRelease-1>', lambda e: setattr(self, '_pad_vec', (0.0, 0.0, 0.0)))
-        th.label(c, 'Pressione e arraste a partir do centro: distância = força '
-                    '(borda = força por tecla).', muted=True).pack(anchor='w', pady=(th.PAD, 0))
-
     # ── aba 5 / Posicionar juntas ───────────────────────────────────────
     def _build_jog(self, f):
-        c = th.card(f, 'Posicionar as juntas do robô')
+        c = th.card(f, 'Juntas (graus)')
         c.pack(fill='x', padx=th.PAD_S, pady=th.PAD_S)
         c.columnconfigure(2, weight=1)
         self.lbl_jog_mode = th.label(c, '', muted=True)
         self.lbl_jog_mode.grid(row=0, column=0, columnspan=5, sticky='w', pady=(0, th.PAD))
-        for col, t in enumerate(('Junta', 'Atual', 'Alvo [graus]', '', 'Real')):
+        for col, t in enumerate(('Junta', 'Atual', 'Alvo', '', 'Real')):
             th.label(c, t, muted=True).grid(row=1, column=col, sticky='w', padx=th.PAD_L)
         self.jog_cur, self.jog_real, self.jog_var, self.jog_spin = [], [], [], []
+        self.jog_widgets = []
         for j, (lo, hi) in enumerate(C.JOINT_LIMITS_DEG):
             r = 2 + j
             th.label(c, f'J{j + 1}', font=th.FONT_TITLE).grid(row=r, column=0, sticky='w', pady=3)
@@ -785,38 +730,126 @@ class RehabGui:
                            width=9, anchor='e')
             cur.grid(row=r, column=1, padx=th.PAD_L)
             v = tk.DoubleVar(value=0.0)
-            ttk.Scale(c, from_=lo, to=hi, variable=v,
-                      command=lambda _x: self._jog_changed()
-                      ).grid(row=r, column=2, sticky='ew', padx=th.PAD_L)
+            sc = ttk.Scale(c, from_=lo, to=hi, variable=v, command=lambda _x: self._jog_user())
+            sc.grid(row=r, column=2, sticky='ew', padx=th.PAD_L)
             sp = ttk.Spinbox(c, from_=lo, to=hi, increment=1.0, textvariable=v, width=8,
-                             format='%.1f', command=self._jog_changed)
+                             format='%.1f', command=self._jog_user)
             sp.grid(row=r, column=3, padx=th.PAD_L)
-            sp.bind('<KeyRelease>', lambda e: self._jog_changed())
+            # só no Enter: digitar '120' passaria por 1° e 12°
+            sp.bind('<Return>', lambda e: self._jog_user())
+            sp.bind('<Key>', lambda e: setattr(self, '_jog_t', time.monotonic()))
+            self.jog_widgets += [sc, sp]
             real = tk.Label(c, text='—', bg=th.PANEL, fg=th.MUTED, font=th.FONT_MONO,
                             width=9, anchor='e')
             real.grid(row=r, column=4, padx=th.PAD_L)
             self.jog_cur.append(cur); self.jog_var.append(v)
             self.jog_real.append(real); self.jog_spin.append(sp)
-            th.label(c, f'{lo:.0f}° a {hi:.0f}°', muted=True, font=th.FONT_SMALL
-                     ).grid(row=r, column=5, sticky='w', padx=th.PAD_L)
         bt = tk.Frame(c, bg=th.PANEL)
         bt.grid(row=8, column=0, columnspan=6, sticky='w', pady=(th.PAD_L, 0))
-        self._btn(bt, 'Ler posição atual', self.jog_read).pack(side='left')
-        self._btn(bt, 'HOME (mastro para cima)', self.jog_home).pack(side='left', padx=th.PAD_L)
-        self.btn_jog_go = self._btn(bt, 'Ir para a posição  ▶', self.jog_go, 'Primary')
-        self.btn_jog_go.pack(side='left')
+        self._btn(bt, '⌂  Home', self.jog_home, 'Primary').pack(side='left')
+        self._btn(bt, '✔  Salvar Home', self.jog_save_home).pack(side='left', padx=th.PAD)
+        self._btn(bt, '⌖  Capturar do robô', self.jog_capture).pack(side='left')
+        th.label(bt, 'Velocidade').pack(side='left', padx=(th.PAD_L, 4))
+        self.jog_speed = tk.DoubleVar(value=C.JOG_SPEED_DEFAULT_PCT)
+        ttk.Scale(bt, from_=C.JOG_SPEED_MIN_PCT, to=100.0, variable=self.jog_speed,
+                  length=160).pack(side='left')
+        self.lbl_speed = th.label(bt, '', muted=True)
+        self.lbl_speed.pack(side='left', padx=4)
         self.lbl_jog_est = th.label(c, '', muted=True)
         self.lbl_jog_est.grid(row=9, column=0, columnspan=6, sticky='w', pady=(th.PAD, 0))
         self.lbl_jog_res = th.label(c, '')
         self.lbl_jog_res.grid(row=10, column=0, columnspan=6, sticky='w', pady=(2, 0))
-        th.label(c, f'Move em até {C.JOG_MAX_DEG_S:g}°/s, só com o braço PARADO. Confere limites '
-                    'e piso do TCP/célula; NÃO confere colisão do cotovelo com a mesa, a cadeira '
-                    'ou o voluntário: mova em etapas e com a mão no E-Stop. PARAR interrompe.',
-                 muted=True, wraplength=900).grid(row=11, column=0, columnspan=6, sticky='w',
-                                                  pady=(th.PAD, 0))
-        # Os alvos nascem iguais à posição ATUAL (preenchidos assim que ela chega):
-        # alvos em 0° mandariam o braço a uma pose esticada num clique desatento.
-        self._jog_seeded = False
+        th.label(c, 'Não confere colisão do cotovelo: mova aos poucos.', muted=True,
+                 font=th.FONT_SMALL).grid(row=11, column=0, columnspan=6, sticky='w',
+                                          pady=(th.PAD, 0))
+
+    def _jog_user(self):
+        """Slider ou seta: envia o alvo 80 ms depois da última mexida (como o touch_pack)."""
+        self._jog_t = time.monotonic()
+        if self._jog_after is not None:
+            self.root.after_cancel(self._jog_after)
+        self._jog_after = self.root.after(80, self._jog_send)
+
+    def _jog_send(self):
+        self._jog_after = None
+        goal = self._jog_goal_deg()
+        if goal is None:
+            self._jog_msg('Valor inválido em algum campo.', False)
+        elif self._state_name(self.br.age('tick') < LIVE_S) not in ('PARADO', 'POSICIONANDO'):
+            self._jog_msg('Só com o braço PARADO.', False)
+        else:
+            self.br.publish_goto([math.radians(g) for g in goal], self.jog_speed.get())
+
+    def _jog_msg(self, texto, ok=True):
+        self.lbl_jog_res.configure(text=texto, fg=th.OK if ok else th.DANGER_HV)
+        self._say(texto, ok)
+
+    def _jog_set(self, deg):
+        for v, g in zip(self.jog_var, deg):
+            v.set(round(g, 1))
+
+    def jog_home(self):
+        self._jog_set([math.degrees(q) for q in C.home_q()])
+        self._jog_user()
+
+    def jog_save_home(self):
+        self._save_home(self._jog_current_deg(), 'Sem /joint_states: o braço não está no ar.')
+
+    def jog_capture(self):
+        st = self._real_status() or {}
+        q = st.get('q_real')
+        self._save_home([math.degrees(v) for v in q] if q else None,
+                        'Conecte o CR10 antes de capturar a posição.')
+
+    def _save_home(self, deg, sem):
+        if deg is None:
+            return self._jog_msg(sem, False)
+        if not all(lo <= g <= hi for g, (lo, hi) in zip(deg, C.JOINT_LIMITS_DEG)):
+            return self._jog_msg('Posição fora dos limites de junta: Home não salva.', False)
+        try:
+            C.save_home([math.radians(g) for g in deg])
+        except OSError as e:
+            return self._jog_msg(f'Home não salva: {e}', False)
+        self._jog_msg('Home salva: ' + ' / '.join(f'{g:+.0f}°' for g in deg))
+
+    def _refresh_jog(self, live_adm):
+        br = self.br
+        cur = self._jog_current_deg()
+        for j, lb in enumerate(self.jog_cur):
+            lb.configure(text='—' if cur is None else f'{cur[j]:+7.1f}°')
+        st = self._real_status() or {}
+        q_real = st.get('q_real')
+        for j, lb in enumerate(self.jog_real):
+            if not q_real:
+                lb.configure(text='—', fg=th.MUTED)
+                continue
+            dr = math.degrees(q_real[j])
+            off = cur is not None and abs(dr - cur[j]) > 3.0
+            lb.configure(text=f'{dr:+7.1f}°', fg=th.DANGER_HV if off else th.TEXT)
+        espelho = st.get('conectado') and st.get('modo') != 'SIM_ONLY'
+        self.lbl_jog_mode.configure(
+            text='O robô REAL segue o slider' if espelho else 'Só simulação',
+            fg=th.DANGER_HV if espelho else th.MUTED)
+        self.lbl_speed.configure(text=f'{self.jog_speed.get():.0f} %')
+        nome = self._state_name(live_adm)
+        pode = nome in ('PARADO', 'POSICIONANDO')
+        for w in self.jog_widgets:
+            w.state(['!disabled'] if pode else ['disabled'])
+        # parado e sem mexida recente: os sliders mostram onde o braço está
+        if cur is not None and nome != 'POSICIONANDO' and time.monotonic() - self._jog_t > 2.0:
+            self._jog_set(cur)
+        raw = br.last.get('jog')
+        if raw and br.age('jog') < 30.0 and raw != self._jog_raw:
+            self._jog_raw = raw
+            try:
+                r = json.loads(raw)
+                self.lbl_jog_res.configure(
+                    text=('✔ ' if r.get('ok') else '✖ ') + str(r.get('motivo', '')),
+                    fg=th.OK if r.get('ok') else th.DANGER_HV)
+            except ValueError:
+                pass
+        self.lbl_jog_est.configure(text='' if pode else
+                                   f'Só em PARADO (agora: {STATE_LABEL.get(nome, nome)}).')
 
     def _jog_goal_deg(self):
         try:
@@ -841,155 +874,12 @@ class RehabGui:
         except (ValueError, KeyError, TypeError):
             return None
 
-    def jog_read(self, quiet=False):
-        cur = self._jog_current_deg()
-        if cur is None:
-            if not quiet:
-                self.lbl_jog_res.configure(text='Sem /joint_states: o braço não está no ar.',
-                                           fg=th.DANGER_HV)
-            return
-        for v, d in zip(self.jog_var, cur):
-            v.set(round(d, 1))
-        self._jog_changed()
-
-    def jog_home(self):
-        for v, q in zip(self.jog_var, C.HOME_Q_RAD):
-            v.set(round(math.degrees(q), 1))
-        self._jog_changed()
-
-    def _jog_changed(self):
-        goal, cur = self._jog_goal_deg(), self._jog_current_deg()
-        if goal is None:
-            self.lbl_jog_est.configure(text='Valor inválido em algum campo.', fg=th.DANGER_HV)
-        elif cur is None:
-            self.lbl_jog_est.configure(text='Sem posição atual para estimar o movimento.',
-                                       fg=th.MUTED)
-        else:
-            q0, q1 = [math.radians(x) for x in cur], [math.radians(x) for x in goal]
-            d, j = max_delta_deg(q0, q1)
-            self.lbl_jog_est.configure(
-                text=f'Maior movimento: {d:.1f}° em J{j}  ·  duração ≈ {duration_s(q0, q1):.1f} s',
-                fg=th.MUTED)
-
-    def jog_go(self):
-        goal, cur = self._jog_goal_deg(), self._jog_current_deg()
-        if goal is None or cur is None:
-            self.lbl_jog_res.configure(text='Preencha os 6 alvos e confira que o braço está no ar.',
-                                       fg=th.DANGER_HV)
-            return
-        for i, (lo, hi) in enumerate(C.JOINT_LIMITS_DEG):
-            if not lo <= goal[i] <= hi:
-                self.lbl_jog_res.configure(
-                    text=f'J{i + 1} = {goal[i]:.1f}° fora do limite ({lo:.0f}° a {hi:.0f}°).',
-                    fg=th.DANGER_HV)
-                return
-        q0, q1 = [math.radians(x) for x in cur], [math.radians(x) for x in goal]
-        d, j = max_delta_deg(q0, q1)
-        real = self._real_status()
-        if real is not None and real.get('conectado'):
-            if not messagebox.askokcancel(
-                    'Mover o robô REAL',
-                    f'O robô REAL vai se mover: maior movimento {d:.1f}° em J{j} '
-                    f'(≈ {duration_s(q0, q1):.1f} s).\n\n'
-                    'Confirme: ninguém no mastro nem no caminho do braço, e a mão no '
-                    'E-Stop físico.', parent=self.root):
-                return
-        self.br.publish_goto(q1)
-        self.lbl_jog_res.configure(text='Comando enviado…', fg=th.MUTED)
-
-    def _refresh_jog(self, live_adm):
-        br = self.br
-        cur = self._jog_current_deg()
-        if cur is not None and not self._jog_seeded:
-            self._jog_seeded = True
-            self.jog_read(quiet=True)
-        for j, lb in enumerate(self.jog_cur):
-            lb.configure(text='—' if cur is None else f'{cur[j]:+7.1f}°')
-        st = self._real_status()
-        q_real = st.get('q_real') if st else None
-        for j, lb in enumerate(self.jog_real):
-            if not q_real:
-                lb.configure(text='—', fg=th.MUTED)
-                continue
-            dr = math.degrees(q_real[j])
-            off = cur is not None and abs(dr - cur[j]) > 3.0
-            lb.configure(text=f'{dr:+7.1f}°', fg=th.DANGER_HV if off else th.TEXT)
-        if st is not None and st.get('conectado'):
-            self.lbl_jog_mode.configure(
-                text='Modo MIRROR: o robô REAL segue o simulado. Mão no E-Stop físico.',
-                fg=th.DANGER_HV)
-        else:
-            self.lbl_jog_mode.configure(
-                text='Modo simulação: só o braço simulado se move '
-                     '(control_mode:=mirror liga o robô real).', fg=th.MUTED)
-        nome = self._state_name(live_adm)
-        pode = nome == 'PARADO'
-        self.btn_jog_go.state(['!disabled'] if pode else ['disabled'])
-        raw = br.last.get('jog')
-        if raw and br.age('jog') < 30.0:
-            try:
-                r = json.loads(raw)
-                self.lbl_jog_res.configure(
-                    text=('✔ ' if r.get('ok') else '✖ ') + str(r.get('motivo', '')),
-                    fg=th.OK if r.get('ok') else th.DANGER_HV)
-            except ValueError:
-                pass
-        if not pode and nome != 'POSICIONANDO':
-            self.lbl_jog_est.configure(
-                text=f'Só em PARADO (agora: {STATE_LABEL.get(nome, nome)}).', fg=th.MUTED)
-        elif pode:
-            self._jog_changed()
-
-    def _draw_keys(self):
-        cv = self.keys_cv
-        cv.delete('all')
-        s, gap = 58, 8
-        on = self._hand_allowed()
-        for r, linha in enumerate((('q', 'w', 'e'), ('a', 's', 'd'))):
-            for c, k in enumerate(linha):
-                x = 4 + c * (s + gap) + (r * 18)
-                y = 4 + r * (s + gap)
-                pressed = k in self.hand_keys and on
-                cv.create_rectangle(x, y, x + s, y + s, outline=th.BORDER if not pressed else th.PRIMARY_HV,
-                                    fill=th.PRIMARY if pressed else th.BTN, width=2)
-                cv.create_text(x + s / 2, y + s / 2 - 6, text=k.upper(), font=th.FONT_TITLE,
-                               fill='#ffffff' if pressed else (th.TEXT if on else th.DIM))
-                sub = {'q': '+z', 'w': '−x', 'e': '−z', 'a': '−y', 's': '+x', 'd': '+y'}[k]
-                cv.create_text(x + s / 2, y + s - 12, text=sub, font=th.FONT_SMALL,
-                               fill='#ffffff' if pressed else th.MUTED)
-
-    def _draw_pad_vector(self, f):
-        self.pad.delete('vec')
-        fm = max(self.fmax.get(), 1e-6)
-        o, r = self.PAD_C, self.PAD_R
-        x, y = o + f[1] / fm * r, o + f[0] / fm * r
-        if abs(f[0]) + abs(f[1]) > 1e-6:
-            self.pad.create_line(o, o, x, y, fill=th.PRIMARY, width=4, arrow='last',
-                                 arrowshape=(14, 16, 6), tags='vec')
-        self.pad.create_oval(o - 5, o - 5, o + 5, o + 5, fill=th.TEXT, outline='', tags='vec')
-
-    def _pad_drag(self, e):
-        if self._hand_allowed():
-            self._pad_vec = T.drag_to_force(e.x - self.PAD_C, e.y - self.PAD_C, 100.0, self.fmax.get())
-
-    def _hand_allowed(self):
-        p = self.br.last.get('params')
-        src = p.get('force_source') if p else None
-        return src in (None, 'virtual')
-
-    def _hand_vector(self):
-        if not self._hand_allowed():
-            return (0.0, 0.0, 0.0)
-        k = T.keys_to_force(self.hand_keys, self.fmax.get())
-        return T.clamp_force(tuple(a + b + c for a, b, c in zip(k, self._pad_vec, self._cv_vec)),
-                             T.HAND_FORCE_MAX_N)
-
     # ── ações de sessão e braço ─────────────────────────────────────────
     def estop(self):
         now = time.monotonic()
         if now - self._last_estop < 0.3:
             return
-        self._last_estop = now
+        self._last_estop = self._estop_wait = now
         self.br.call_trigger(C.S_ESTOP)
         self.br.publish_event(T.format_event('ESTOP', origem='gui'))
         self._say('PARAR enviado ao braço.', False)
@@ -998,21 +888,35 @@ class RehabGui:
         if messagebox.askokcancel(
                 'Tarar sensor',
                 'Solte o mastro: ninguém pode tocar na empunhadura.\n'
-                'A tara mede a força por 0,5 s e vale para a sessão inteira.\n\nTarar agora?',
+                'A tara mede a força por 0,5 s e vale até mover as juntas (aba 5): refaça depois.\n\nTarar agora?',
                 parent=self.root):
             self.br.call_trigger(C.S_TARE)
+
+    def toggle_real(self):
+        st = self._real_status() or {}
+        if st.get('conectado') or st.get('conectando'):
+            self.br.call_bool(C.S_REAL_CONNECT, False)
+        elif messagebox.askokcancel(
+                'Conectar ao CR10 real', f'IP {self.var_ip.get().strip()}: o robô será energizado e '
+                'habilitado (freios soltos). Área livre e mão no E-Stop?', parent=self.root):
+            self.br.connect_real(self.var_ip.get().strip())
+
+    def toggle_mode(self):
+        on = (self._real_status() or {}).get('modo') != 'MIRROR'
+        src = (self.br.last.get('params') or {}).get('force_source')
+        if on and src != 'real' and self.var_ip.get().strip() != C.SIM_ROBOT_IP:
+            self._say(f'MIRROR recusado: a força é "{src}". Relance com force_source:=real.', False)
+            return
+        if not on or messagebox.askokcancel(
+                'Modo MIRROR', 'O CR10 REAL passará a seguir o simulado quando a admitância '
+                'estiver ativa. Mão no E-Stop físico?', parent=self.root):
+            self.br.call_bool(C.S_REAL_MODE, on)
 
     def toggle_enable(self):
         self.br.call_enable(not self.enabled)
 
     def reset(self):
         self.br.call_trigger(C.S_RESET)
-
-    def home(self):
-        if messagebox.askokcancel('Levar à pose inicial',
-                                  'O braço vai à pose inicial em 4 s.\n'
-                                  'Mantenha a área livre. Continuar?', parent=self.root):
-            self.br.call_trigger(C.S_HOME)
 
     def mark(self):
         txt = self.var_mark.get().strip()
@@ -1028,7 +932,7 @@ class RehabGui:
         self.br.publish_meta({'subject_id': sid, 'lado_paretico': self.var_side.get(),
                               'tarefa': self.var_task_meta.get(),
                               'notas': self.txt_notes.get('1.0', 'end').strip()})
-        self.br.call_trigger(C.S_SESSION_START)
+        self.br.start_session()
 
     # ── teclado ─────────────────────────────────────────────────────────
     def _space_on_widget(self, e):
@@ -1037,30 +941,17 @@ class RehabGui:
 
     def _on_key_press(self, e):
         k = e.keysym.lower()
-        if k == 'space' and not self._typing():
+        # com o braço se movendo, Espaço é PARAR até dentro de um campo de texto
+        if k == 'space' and (not self._typing() or self.moving):
             self.estop()
             return 'break'
         if self._typing():
             return None
-        if k in ('w', 'a', 's', 'd', 'q', 'e'):
-            if k in self._rel_ids:
-                self.root.after_cancel(self._rel_ids.pop(k))
-            self.hand_keys.add(k)
-        elif k == 'm':
+        if k == 'm':
             self.mark()
         elif k in ('1', '2', '3', '4', '5'):
             self.nb.select(int(k) - 1)
         return None
-
-    def _on_key_release(self, e):
-        k = e.keysym.lower()
-        if k in self.hand_keys and k not in self._rel_ids:
-            # X11 repete Release/Press no auto-repeat: só solta se não voltar em 40 ms.
-            self._rel_ids[k] = self.root.after(40, lambda: self._release(k))
-
-    def _release(self, k):
-        self._rel_ids.pop(k, None)
-        self.hand_keys.discard(k)
 
     # ── laço periódico ──────────────────────────────────────────────────
     def _poll(self):
@@ -1070,20 +961,31 @@ class RehabGui:
         try:
             self._drain_results()
             self._drain_ticks()
-            self.br.set_hand_force(self._hand_vector())
             if self.task and not self.task.done and self.tick:
                 self._task_housekeeping()
             elif self.task_name and self.task and self.task.done:
                 self._task_finished()
+            if (self.task and not self.task.done and self.tick and
+                    C.STATES[int(self.tick['state'])] in ('PARADO', 'ABORTADO', 'POSICIONANDO')):
+                self.task_stop()         # nada de referência velha ao reabilitar
+            if self._estop_wait and time.monotonic() - self._estop_wait > 0.5:
+                self._estop_wait = 0.0
+                self._say('PARAR SEM RESPOSTA da admitância: use a parada de emergência '
+                          'física do robô.', False)
             if self._n_poll % 3 == 0:
                 self._refresh_ui()
-        except tk.TclError:
-            return
+        except Exception as e:           # o laço nunca morre: congelaria força e estado
+            if self._closing:
+                return
+            traceback.print_exc()
+            self._say(f'Erro interno na tela: {e}', False)
         self.root.after(POLL_MS, self._poll)
 
     def _drain_results(self):
         while self.br.results:
             nome, ok, msg = self.br.results.popleft()
+            if nome == C.S_ESTOP:
+                self._estop_wait = 0.0
             acao, no = ACTION.get(nome, ('Parâmetros' if nome.startswith('params:') else nome,
                                          'rehab_admittance'))
             if ok:
@@ -1112,8 +1014,10 @@ class RehabGui:
                 continue
             d = dict(zip(C.TICK_FIELDS, raw))
             self.tick = d
-            if self.center is None:
+            if not self._center_ok() and math.isfinite(d['x_m']):
                 self.center = (d['x_m'], d['y_m'], d['z_m'])
+            if not self._center_ok():
+                continue                 # ainda sem /joint_states
             cx, cy, cz = self.center
             t = d['t_s']
             fm = math.sqrt(d['fx_n'] ** 2 + d['fy_n'] ** 2 + d['fz_n'] ** 2)
@@ -1137,6 +1041,7 @@ class RehabGui:
         elif isinstance(self.task, T.TunnelTask) and self.var_assist.get():
             rx, ry = self.task.reference()
             self.br.publish_reference((rx, ry), self.center[2])
+            self._ref_sent = True
 
     # ── atualização visual (≈ 10 Hz) ────────────────────────────────────
     def _state_name(self, live_adm):
@@ -1155,27 +1060,47 @@ class RehabGui:
             except (ValueError, KeyError, TypeError):
                 st = None
         if st is None:
+            self.lbl_env.configure(text='SIMULAÇÃO', bg=th.HEADER)
             self.conn['real'].configure(
-                text='○ modo simulação (sem rehab_mirror; control_mode:=mirror liga)',
+                text='○ fora do ar',
                 fg=th.MUTED)
         else:
-            partes = ['conectado' if st.get('conectado') else 'DESCONECTADO']
+            if not self.var_ip.get() and st.get('ip'):
+                self.var_ip.set(st['ip'])
+            ligado = st.get('conectado') or st.get('conectando')
+            real, espelho = st.get('conectado'), st.get('modo') != 'SIM_ONLY'
+            self.lbl_env.configure(
+                text=('⚠ ROBÔ REAL segue o simulado' if real and espelho else
+                      'Robô real conectado (parado: SIM_ONLY)' if real else 'SIMULAÇÃO'),
+                bg=th.DANGER if real and espelho else th.HEADER)
+            self.btn_real.configure(text='Desconectar' if ligado else 'Conectar')
+            self.btn_mode.configure(text=f"Modo: {st.get('modo', 'MIRROR')}")
+            partes = ['conectado' if st.get('conectado') else
+                      'conectando…' if st.get('conectando') else 'DESCONECTADO']
+            if st.get('erro') and not st.get('conectado'):
+                partes.append(str(st['erro'])[:60])
+            if st.get('robot_mode') not in (None, *C.ROBOT_MODES_OK):
+                partes.append(f"RobotMode {st['robot_mode']}")
             if st.get('estop'):
                 partes.append('E-STOP ACIONADO')
             partes.append('em sincronia' if st.get('sync_ok')
                           else 'FORA DE SINCRONIA %.1f°' % st.get('max_dq_deg', 0.0))
             if st.get('armado'):
                 partes.append('ARMADO (o real segue o sim)')
-            bom = (st.get('conectado') and st.get('sync_ok') and not st.get('estop'))
-            self.conn['real'].configure(
-                text=('● ' if bom else '✖ ') + ' · '.join(partes),
-                fg=th.OK if bom else th.DANGER_HV)
+            bom = (st.get('robot_mode') in (None, *C.ROBOT_MODES_OK)
+                   and st.get('conectado') and st.get('sync_ok') and not st.get('estop'))
+            if st.get('modo') == 'SIM_ONLY' and not ligado and not st.get('erro'):
+                self.conn['real'].configure(text='○ SIM_ONLY · desconectado', fg=th.MUTED)
+            else:
+                self.conn['real'].configure(
+                    text=('● ' if bom else '✖ ') + ' · '.join(partes),
+                    fg=th.OK if bom else th.DANGER_HV)
         a = br.age('ftraw')
         if a < LIVE_S:
             self.conn['ftraw'].configure(text=f'● recebendo  · {a:.2f} s', fg=th.OK)
         else:
             self.conn['ftraw'].configure(
-                text='○ sem dados (só com force_source:=real e a célula ligada)',
+                text='○ sem dados',
                 fg=th.MUTED)
 
     def _refresh_ui(self):
@@ -1211,6 +1136,7 @@ class RehabGui:
             self.lbl_force.configure(text='axial %+.1f N   idade %.2f s' % (
                 d['f_axial_n'], d['force_age_s']))
             self.enabled = nome in ('ATIVO', 'SEM_FORCA', 'LIMITE')
+            self.moving = self.enabled or nome == 'POSICIONANDO'
         else:
             self.lbl_fmag.configure(text='—')
             self.lbl_force.configure(text='axial —   idade —')
@@ -1218,11 +1144,9 @@ class RehabGui:
 
         p = br.last.get('params')
         if p:
-            self.lbl_source.configure(text=f"{p.get('force_source', '?')}  (definida no launch)",
+            self.lbl_source.configure(text={'real': 'Célula FA7155', 'sim': 'Simulada'}.get(p.get('force_source'), '?'),
                                       fg=th.TEXT)
-            self.lbl_node_params.configure(
-                text='Parâmetros recebidos do nó. Ao lado de cada valor: o que o nó usa '
-                     'agora (▲ = diferente; clique em Aplicar).')
+            self.lbl_node_params.configure(text='▲ = ainda não aplicado')
             for key, *_r, un in PARAMS:
                 v = p.get(key)
                 if isinstance(v, (int, float)):
@@ -1232,17 +1156,12 @@ class RehabGui:
             if not self._params_loaded:
                 self._params_loaded = True
                 self.load_params()
-        if self._hand_allowed():
-            self.hand_warn.pack_forget()
-        else:
-            src = p.get('force_source') if p else '?'
-            self.lbl_hand.configure(text=f'▲  Mão virtual desativada: a fonte de força é "{src}". '
-                                         'Ela só age com force_source:=virtual no launch.')
-            self.hand_warn.pack(fill='x', before=self._hand_body, padx=th.PAD_S, pady=(th.PAD_S, 0))
-
         s = br.last.get('summary')
         if s and s != self._summary_shown:
             self._summary_shown = s
+            self.session_open = False    # o logger fechou (encerrada ou abortada)
+            self.lbl_session.configure(text='○ Sessão fechada: não está gravando.', fg=th.MUTED)
+            self.lbl_sub.configure(text='Nenhuma sessão de coleta aberta')
             self._show_summary(s)
 
         tab = self._tab()
@@ -1251,17 +1170,10 @@ class RehabGui:
                 ch.redraw()
         elif tab == 2:
             self._draw_game()
-        elif tab == 4:
-            f = self._hand_vector()
-            self.lbl_vec.configure(text='F = (%+.1f, %+.1f, %+.1f) N' % f)
-            self.lbl_hmag.configure(text='%.1f' % math.sqrt(sum(c * c for c in f)))
-            self.lbl_fmax.configure(text=f'{self.fmax.get():.1f} N')
-            self._draw_keys()
-            self._draw_pad_vector(f)
 
     def _set_banner_action(self, nome):
-        act = {'PARADO': ('Habilitar', self.toggle_enable, 'Primary.TButton'),
-               'ATIVO': ('Desabilitar', self.toggle_enable, 'TButton'),
+        # sem Habilitar aqui: um duplo clique em Reset habilitaria o braço
+        act = {'ATIVO': ('Desabilitar', self.toggle_enable, 'TButton'),
                'SEM_FORCA': ('Desabilitar', self.toggle_enable, 'TButton'),
                'LIMITE': ('Desabilitar', self.toggle_enable, 'TButton'),
                'ABORTADO': ('Reset', self.reset, 'TButton')}.get(nome)
@@ -1272,7 +1184,8 @@ class RehabGui:
             self.btn_banner.pack_forget()
         else:
             self.btn_banner.configure(text=act[0], command=act[1], style=act[2])
-            self.btn_banner.pack(side='right', padx=18, pady=4)
+            # antes do texto: senão uma mensagem longa espreme o botão para fora
+            self.btn_banner.pack(side='right', padx=18, pady=4, before=self.lbl_banner)
 
     def _show_summary(self, s):
         tx = self.txt_summary
@@ -1464,8 +1377,10 @@ class RehabGui:
     def close(self):
         if self._closing:
             return
+        if self.enabled:
+            self.estop()                 # sair da tela não pode deixar o braço seguindo a mão
+            time.sleep(0.3)
         self._closing = True
-        self.br.set_hand_force((0.0, 0.0, 0.0))
         self.br.shutdown()
         self.root.destroy()
 

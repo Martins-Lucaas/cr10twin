@@ -44,11 +44,11 @@ def _tool_body(tool_urdf: str, rehab_share: str, sim_ft: bool) -> str:
     return body
 
 
-def _set_home(cr10: str) -> str:
-    """Troca os 6 initial_value do bloco ros2_control por HOME_Q_RAD."""
+def _set_home(cr10: str, home) -> str:
+    """Troca os 6 initial_value do bloco ros2_control pela pose `home`."""
     m = re.search(r'<ros2_control\b.*?</ros2_control>', cr10, re.DOTALL)
     block, n = m.group(0), 0
-    for joint, q in zip(ARM_JOINTS, HOME_Q_RAD):
+    for joint, q in zip(ARM_JOINTS, home):
         block, k = re.subn(
             rf'(<joint name="{joint}"\s*>.*?name="initial_value"\s*>)[^<]*',
             rf'\g<1>{q:.4f}', block, count=1, flags=re.DOTALL)
@@ -60,14 +60,14 @@ def _set_home(cr10: str) -> str:
 
 
 def build_robot_urdf(cra_share: str, rehab_share: str,
-                     sim_ft: bool = False) -> tuple[str, str]:
+                     sim_ft: bool = False, home=HOME_Q_RAD) -> tuple[str, str]:
     """Devolve (urdf completo, urdf mínimo do robot_state_publisher)."""
     controllers_yaml = os.path.join(rehab_share, 'config',
                                     'rehab_controllers.yaml')
 
     doc = xacro.parse(open(os.path.join(cra_share, 'urdf', 'cr10_robot.xacro')))
     xacro.process_doc(doc)
-    cr10 = _set_home(doc.toxml())
+    cr10 = _set_home(doc.toxml(), home)
     cr10 = re.sub(r'<parameters>[^<]*/ros2_controllers\.yaml</parameters>',
                   f'<parameters>{controllers_yaml}</parameters>', cr10)
 

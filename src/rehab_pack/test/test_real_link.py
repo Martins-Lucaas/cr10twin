@@ -7,7 +7,8 @@ import pytest
 
 from rehab_pack.constants import SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD
 from rehab_pack.real_link import (DEADBAND_RAD, RealLink, SimulatedDriver,
-                                  real_ok, robot_ip, sync_error_rad)
+                                  real_ok, robot_ip, save_robot_ip,
+                                  sync_error_rad)
 
 OK = {'conectado': True, 'estop': False, 'sync_ok': True, 'max_dq_deg': 0.4}
 
@@ -21,6 +22,8 @@ def test_real_ok_so_com_tudo_certo():
     (OK, 5.0, 'sem status'),                                   # status velho
     ({**OK, 'conectado': False}, 0.1, 'desconectado'),
     ({**OK, 'estop': True}, 0.1, 'E-Stop'),
+    ({**OK, 'robot_mode': 9}, 0.1, 'RobotMode 9'),              # E-Stop físico / alarme
+    ({**OK, 'robot_mode': 11}, 0.1, 'RobotMode 11'),           # colisão
     ({**OK, 'sync_ok': False, 'max_dq_deg': 7.5}, 0.1, '7.5'),
 ])
 def test_real_ok_recusa(st, age, trecho):
@@ -186,3 +189,29 @@ def test_assinante_de_forca_aceita_o_qos_do_ft_receiver_do_touch_pack():
     for pub in (ft_receiver, reliavel):        # FA7155 real e (sim | mão virtual)
         comp, _ = qos_check_compatible(pub, WRENCH_QOS)
         assert comp != QoSCompatibility.ERROR
+
+
+def test_erro_de_servoj_no_meio_do_movimento_nao_limpa_alarme():
+    d = Falso(); l = link(d); l.connect_once()
+    l.stream(np.zeros(6))
+    d.falha_em = 'servo'
+    assert l.stream(np.ones(6)) is False
+    assert 'prepare' not in d.log and not l.connected
+
+
+def test_queda_de_driver_antigo_nao_derruba_a_conexao_nova():
+    velho, novo = Falso(), Falso()
+    l = link(novo); l.connect_once()
+    l.drop('erro atrasado', only=velho)
+    assert l.connected
+
+
+def test_salvar_ip_preserva_o_resto_e_nao_apaga_arquivo_ruim(tmp_path):
+    f = tmp_path / 'robot.json'
+    f.write_text(json.dumps({'hand_ip': '1.1.1.1', 'robot_ip': 'a'}))
+    save_robot_ip('10.0.0.9', str(f))
+    assert json.loads(f.read_text()) == {'hand_ip': '1.1.1.1', 'robot_ip': '10.0.0.9'}
+    f.write_text('{ ruim')
+    with pytest.raises(ValueError):
+        save_robot_ip('b', str(f))
+    assert f.read_text() == '{ ruim'

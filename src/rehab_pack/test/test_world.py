@@ -92,7 +92,7 @@ def test_gz_sdf_valido():
 
 
 VOLUNTARIO_XY = (1.20, 0.0)
-RAIO_VOLUNTARIO = 0.6     # m, cadeira + manequim (pés em x ~ 0,76)
+RAIO_VOLUNTARIO = 0.6     # m, área da cadeira do voluntário (vazia)
 
 
 def _rot(r, p, y):
@@ -162,7 +162,7 @@ def atores(world):
 
 
 def test_atores_existem_em_laco(atores):
-    assert len(atores) >= 6
+    assert len(atores) == 5
     for a in atores:
         nome = a.get('name')
         assert a.findtext('script/loop') == 'true', nome
@@ -172,6 +172,13 @@ def test_atores_existem_em_laco(atores):
         ts = [t for t, _ in _waypoints(a)]
         assert len(ts) >= 2 and ts[0] == 0, nome
         assert all(t1 > t0 for t0, t1 in zip(ts, ts[1:])), nome
+
+
+def test_sem_pessoas_e_com_cadeira(world):
+    nomes = {e.get('name') for e in world.findall('model') + world.findall('actor')}
+    assert not nomes & {'terapeuta', 'seated_mannequin', 'ventilador_teto', 'bola_suica',
+                        'monitor_traco', 'vital_monitor'}
+    assert 'volunteer_chair' in nomes
 
 
 def test_atores_sem_colisao(atores):

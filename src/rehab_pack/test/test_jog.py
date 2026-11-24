@@ -28,12 +28,14 @@ def test_limites_de_software_sao_mais_estreitos_que_os_do_urdf():
 def test_movimento_valido():
     goal = HOME.copy(); goal[0] += math.radians(30)
     ok, motivo, dur = plan_jog(HOME, goal, alto)
-    assert ok and dur == pytest.approx(30 / JOG_MAX_DEG_S) and 'J1' in motivo
+    assert ok and dur == pytest.approx(30 / (JOG_MAX_DEG_S * 0.5)) and 'J1' in motivo
 
 
 def test_duracao_minima_em_movimento_curto():
     goal = HOME.copy(); goal[3] += math.radians(2)
     assert duration_s(HOME, goal) == JOG_MIN_S
+    goal[3] += math.radians(40)
+    assert duration_s(HOME, goal, 100) == pytest.approx(duration_s(HOME, goal, 50) / 2)
 
 
 def test_maior_movimento_e_a_junta_certa():
