@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rehab_pack</name>
+  <version>0.1.0</version>
+  <description>
+    Reabilitação de membro superior com o CR10: mastro (cad/Joystick.step)
+    acoplado à célula FA7155, para o voluntário guiar o robô por admitância.
+    Independente de touch_pack, hand_pack e grasp_ml_pack.
+  </description>
+  <maintainer email="lucaspmartins14@gmail.com">Lucas Martins</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>cra_description</exec_depend>
+  <!-- só para o hardware real: real_driver (CR10), ft_receiver (FA7155) e
+       real_pose_sync. O modo sim não os importa. -->
+  <exec_depend>touch_pack</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_ros2_control</exec_depend>
+  <!-- libgazebo_ros_ft_sensor.so (sim_ft:=true) -->
+  <exec_depend>gazebo_plugins</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

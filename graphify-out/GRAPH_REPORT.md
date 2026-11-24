@@ -1,1353 +1,1192 @@
-# Graph Report - cr10twin  (2026-09-17)
+# Graph Report - cr10twin  (2026-10-13)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 329 files · ~2,147,596 words
+- Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 543 file(s) not represented in the graph (top: .STL 138, .csv 137, .msg 113)
 
 ## Summary
-- 5605 nodes · 11348 edges · 287 communities (250 shown, 37 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 303 edges (avg confidence: 0.89)
+- 6449 nodes · 13802 edges · 351 communities (205 shown, 146 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 583 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `68c888e7`
+- Built from commit: `198872d7`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- Community 0
-- Community 1
-- Community 2
-- Community 3
-- Community 4
-- Community 5
-- Community 6
-- Community 7
-- Community 8
-- Community 9
-- Community 10
-- Community 11
-- Community 12
-- Community 13
-- Community 14
-- Community 15
-- Community 16
-- Community 17
-- Community 18
-- Community 19
-- Community 20
-- Community 21
-- Community 22
-- Community 23
-- Community 24
-- Community 25
-- Community 26
-- Community 27
-- Community 28
-- Community 29
-- Community 30
-- Community 31
-- Community 32
-- Community 33
-- Community 34
-- Community 35
-- Community 36
-- Community 37
-- Community 38
-- Community 39
-- Community 40
-- Community 41
-- Community 42
-- Community 43
-- Community 44
-- Community 45
-- Community 46
-- Community 47
-- Community 48
-- Community 49
-- Community 50
-- Community 51
-- Community 52
-- Community 53
-- Community 54
-- Community 55
-- Community 56
-- Community 57
-- Community 58
-- Community 59
-- Community 60
-- Community 61
-- Community 62
-- Community 63
-- Community 64
-- Community 65
-- Community 66
-- Community 67
-- Community 68
-- Community 69
-- Community 70
-- Community 71
-- Community 72
-- Community 73
-- Community 74
-- Community 75
-- Community 76
-- Community 77
-- Community 78
-- Community 79
-- Community 80
-- Community 81
-- Community 82
-- Community 83
-- Community 84
-- Community 85
-- Community 86
-- Community 87
-- Community 88
-- Community 89
-- Community 90
-- Community 91
-- Community 92
-- Community 93
-- Community 94
-- Community 95
-- Community 96
-- Community 97
-- Community 98
-- Community 99
-- Community 100
-- Community 101
-- Community 102
-- Community 103
-- Community 104
-- Community 105
-- Community 106
-- Community 107
-- Community 108
-- Community 109
-- Community 110
-- Community 111
-- Community 112
-- Community 113
-- Community 114
-- Community 115
-- Community 116
-- Community 117
-- Community 118
-- Community 119
-- Community 120
-- Community 121
-- Community 122
-- Community 123
-- Community 124
-- Community 125
-- Community 126
-- Community 127
-- Community 128
-- Community 129
-- Community 130
-- Community 131
-- Community 132
-- Community 133
-- Community 134
-- Community 135
-- Community 136
-- Community 137
-- Community 138
-- Community 139
-- Community 140
-- Community 141
-- Community 142
-- Community 143
-- Community 144
-- Community 145
-- Community 146
-- Community 147
-- Community 148
-- Community 149
-- Community 150
-- Community 151
-- Community 152
-- Community 153
-- Community 154
-- Community 155
-- Community 156
-- Community 157
-- Community 158
-- Community 159
-- Community 160
-- Community 161
-- Community 162
-- Community 163
-- Community 164
-- Community 165
-- Community 166
-- Community 167
-- Community 168
-- Community 169
-- Community 170
-- Community 171
-- Community 172
-- Community 173
-- Community 174
-- Community 175
-- Community 176
-- Community 177
-- Community 178
-- Community 179
-- Community 180
-- Community 181
-- Community 182
-- Community 183
-- Community 184
-- Community 185
-- Community 186
-- Community 187
-- Community 188
-- Community 189
-- Community 190
-- Community 191
-- Community 192
-- Community 193
-- Community 194
-- Community 195
-- Community 196
-- Community 197
-- Community 198
-- Community 199
-- Community 200
-- Community 201
-- Community 202
-- Community 203
-- Community 204
-- Community 205
-- Community 206
-- Community 207
-- Community 208
-- Community 209
-- Community 210
-- Community 211
-- Community 212
-- Community 213
-- Community 214
-- Community 215
-- Community 216
-- Community 217
-- Community 218
-- Community 219
-- Community 220
-- Community 221
-- Community 222
-- Community 223
-- Community 224
-- Community 225
-- Community 226
-- Community 227
-- Community 228
-- Community 229
-- Community 230
-- Community 231
-- Community 232
-- Community 233
-- Community 234
-- Community 235
-- Community 236
-- Community 237
-- Community 238
-- Community 239
-- Community 240
-- Community 241
-- Community 242
-- Community 243
-- Community 244
-- Community 245
-- Community 246
-- Community 247
-- Community 248
-- Community 249
-- Community 250
-- Community 251
-- Community 252
-- Community 253
-- Community 254
-- Community 255
-- Community 256
-- Community 257
-- Community 258
-- Community 259
-- Community 260
-- Community 261
-- Community 262
-- Community 263
-- Community 264
-- Community 265
-- Community 266
-- Community 267
-- Community 268
-- Community 269
-- Community 271
-- Community 272
-- Community 273
-- Community 274
-- Community 275
-- Community 276
-- Community 277
-- Community 278
-- Community 279
-- Community 280
-- Community 281
-- Community 282
-- Community 283
-- Community 284
-- Community 285
+- palpation_gui.py
+- urdf_scene.py
+- main.c
+- test_fmod_phase.py
+- touch_sensor5x5.py
+- GraspExecutorNode
+- test_kinematic_attacher.py
+- latency_report.py
+- test_ft_receiver_node.py
+- forward_kinematics
+- TactileExplorer
+- test_lc_health_probe.py
+- test_force_receiver.py
+- constants.py
+- grasp_ml_pack/kinematics.py
+- numpy
+- HandMixin
+- Manip3DView
+- math
+- PalpationGUI
+- ._build_palpation_tab
+- TouchSensorSource
+- test_plane_probe.py
+- test_ft_modbus.py
+- test_hand_latency_probe.py
+- RobotMixin
+- test_fmod_wave_quality.py
+- test_lc_serial.py
+- test_matrix_gui.py
+- test_touch_receiver_node.py
+- ManualControlNode
+- test_ft_hkvl56.py
+- test_fmod_ilc.py
+- CombinedControlGUI
+- IMUMixin
+- test_contact_curve.py
+- test_no_overshoot.py
+- Manip3DTabMixin
+- Time
+- test_ft_frame.py
+- LcAxialMixin
+- test_lc_slow_channel.py
+- ._set_status
+- test_manip3d.py
+- test_run_layout.py
+- test_mode_feature_contract.py
+- test_real_driver_proto.py
+- CovviServerNode
+- test_vtk_render.py
+- FtReceiverNode
+- test_explorer_logic.py
+- palpation_report.py
+- PalpationLogger
+- GazeboMimicJointPlugin
+- ft_modbus.py
+- test_line_source.py
+- test_prehome_before_start.py
+- pytest
+- covvi_client_node.py
+- _WaveLockIn
+- ._build_hand_tab
+- CellControlApp
+- FtDevice
+- test_ft_polled.py
+- CR10RealDriver
+- typing
+- test_sim_force_bridge.py
+- fk_partial
+- ft_probe.py
+- test_explorer_split.py
+- test_servoj_descent.py
+- ForceReceiverNode
+- .stop
+- gen_tcp_meshes_from_step.py
+- test_gui_imu.py
+- test_sim_wrist_rigidity.py
+- CR10RealDriverError
+- test_logger_columns.py
+- test_matrix_map.py
+- PosesMixin
+- ReconnectingSource
+- _fingertips_world
+- urdf_helpers.py
+- test_audit_20260824.py
+- test_descent_profile.py
+- test_ft_axes.py
+- test_settle_still.py
+- test_gui_split.py
+- FtSerialSource
+- test_transit_guards.py
+- FtAxesMixin
+- intensity_classifier_force.py
+- covvi_hand_driver/__init__.py
+- .__init__
+- test_lc_axial_gui.py
+- Camera
+- test_lc_tab_selection.py
+- ._build_cell_tab
+- test_estop_reconnect.py
+- struct
+- test_real_pose_sync.py
+- cr10_covvi_gazebo.launch.py
+- sys
+- test_adc_frame_integrity.py
+- test_ft_gui_smoke.py
+- ft_stats.py
+- test_hand_camera_teleop.py
+- pair_if_fresh
+- test_ft_arrow.py
+- FalsoFA7155
+- MatrixMixin
+- VtkRobotRenderer
+- tactile_cell.launch.py
+- test_planefit_antigo_continua_construivel
+- PerfectGrasp
+- _ForceProfile
+- test_ft_stats.py
+- CameraMixin
+- object_detector.py
+- get_motor_current_client_node.py
+- SerialSource
+- test_matrix_grid_order.py
+- test_setpoint_band.py
+- MirrorNode
+- _ContactCurve
+- HandControlGUI
+- _alimenta
+- test_ft_charts.py
+- _reta_boa
+- test_imu_math.py
+- f
+- PipelineNode
+- test_sockreader_guarda_o_resto_do_bloco
+- test_estop_button.py
+- StreamingSavGol
+- test_fk_pointing_pose_is_perpendicular
+- _Host
+- ImuCalibWizard
+- test_stiffness_soft.py
+- ConveyorControllerNode
+- test_traj_record.py
+- _ordem
+- test_tcp_calib.py
+- HandCameraTeleop
+- main.cpp
+- statistics
+- .__init__
+- covvi_interfaces_msg
+- ._smart_close
+- re
+- _FakeGUI
+- ._suppress
+- _ponto
+- test_imu_node_e2e.py
+- test_slide_contact_watch.py
+- touch_pack
+- ._build_header
+- dash_error_text
+- argparse
+- test_controller_config.py
+- scan_registers
+- TeleopBridge
+- _Shape
+- test_urdf_scene.py
+- SensorsMixin
+- grasp_executor.py
+- _is_active
+- _tare_result
+- Plano de correção do artigo + protocolo de coleta
+- _Grade
+- FtModbusClient
+- main
+- main
+- P
+- send_user_grip_client_node.py
+- solve_grasp_poses_at_world
+- generate_training_data.py
+- _passos_de_alivio
+- _SemAfter
+- .connect
+- get_current_grip_client_node.py
+- get_digit_config_client_node.py
+- get_grip_name_client_node.py
+- get_digit_posn_all_client_node.py
+- get_environmental_client_node.py
+- get_hand_product_i_d_client_node.py
+- remove_user_grip_client_node.py
+- set_direct_control_close_client_node.py
+- set_direct_control_open_client_node.py
+- GraspSense
+- _cb_start
+- test_taxel_orientation.py
+- rclpy
+- CovviBaseClientNode
+- set_digit_move_client_node.py
+- get_firmware_p_i_c_e_c_i_client_node.py
+- get_firmware_p_i_c_h_a_n_d_client_node.py
+- get_hello_client_node.py
+- get_pinch_config_client_node.py
+- public
+- rclpy_executors
+- get_digit_status_all_client_node.py
+- get_eci_device_class_type_client_node.py
+- get_eci_product_i_d_client_node.py
+- get_hand_device_class_type_client_node.py
+- get_motor_current_all_client_node.py
+- get_motor_limits_client_node.py
+- get_orientation_client_node.py
+- get_system_status_client_node.py
+- set_digit_posn_stop_client_node.py
+- set_direct_control_stop_client_node.py
+- test_fw.c
+- set_hand_power_on_client_node.py
+- set_realtime_cfg_client_node.py
+- wrist_pronation_j6_deg
+- ._matrix_serpentine
+- select_row
+- test_jog_cartesiano.py
+- ._run_movement_once
+- ._qs_measure_settled
+- get_hand_error_client_node.py
+- get_hand_manufacturer_i_d_client_node.py
+- _hand_envelope_aabb_world
+- test_hold_dwell_window.py
+- test_connection_failure_closes_the_driver
+- _pre
+- _OneEuro
+- set_current_grip_client_node.py
+- get_digit_error_client_node.py
+- get_digit_posn_client_node.py
+- set_digit_posn_client_node.py
+- HandLatencyProbe
+- explorer
+- LatencyProbe
+- test_successful_read_returns_six_floats
+- touch_sensor5x5_windows.py
+- touch_source.py
+- hand_camera_teleop.py
+- Firmware do sensor tátil 5×5 + HX711 — correções da cadeia USB
+- LcHealthProbe
+- _start
+- cr10twin
+- Real-time messages
+- hand_pack
+- code-review-graph
+- GUI (`palpation_gui`)
+- ._ft_feed_processing
+- load_calibration
+- _Host
+- grasp_ml_pack
+- decimate
+- Behavioral Guidelines
+- README.md
+- ._update_fmod_preview
+- ManualExtrasMixin
+- test_default_do_parametro_sensor
+- _tool_chain
+- load_stl
+- covvi_hand_driver/test/test_pep257.py
+- migrate_runs_layout.py
+- COVVI ROS2 Interface
+- Discovery and device messages
+- Medições de latência da MÃO COVVI (Real-to-Sim)
+- MX_DMA_Init
+- touch_sensor4x4.py
+- Connecting the real COVVI hand
+- _enche
+- generate_report
+- _LoadCellFilter
+- _load_rows
+- LoadCellFilter
+- get_eci_serial_number_client_node.py
+- System and status messages
+- Pegar objetos no Gazebo — preensão POR FÍSICA (tactile cell)
+- .q
+- UrdfSceneError
+- Medições de latência Sim-to-Real / Real-to-Sim
+- DigitMove
+- DigitPosn
+- Firmware update messages
+- detect_serial_port
+- ._save_home_pose
+- _ContactWatch
+- imu_arm_teleop
+- 8.1 Bloco A — Real-to-Sim repetido
+- SystemClock_Config
+- Full dependency list
+- Digit configuration messages
+- RealtimeCfg
+- Kinematics
+- CurrentGrip
+- _build_rtcp_by_obj
+- test_lock_in_por_amostra_recupera_a_amplitude_aliasada
+- _Pub
+- test_bins_do_ilc_acompanham_os_pontos_comandados
+- test_autozero_phases_are_the_ones_with_no_experiment_running
+- tessellate_box
+- _finger_tip_hand
+- test_the_host_is_smaller_than_it_was
+- test_drift_ignores_a_spike_that_peak_to_peak_would_reject
+- test_the_absurd_thresholds_sit_above_the_rated_range
+- test_fk_tool_offsets_along_approach
 
 ## God Nodes (most connected - your core abstractions)
-1. `TactileExplorer` - 134 edges
+1. `TactileExplorer` - 136 edges
 2. `CovviBaseClientNode` - 126 edges
-3. `PalpationGUI` - 104 edges
+3. `PalpationGUI` - 108 edges
 4. `public()` - 101 edges
 5. `ManualControlNode` - 84 edges
-6. `CR10RealDriver` - 77 edges
+6. `CR10RealDriver` - 82 edges
 7. `CovviServerNode` - 68 edges
 8. `CovviClientNode` - 65 edges
 9. `Manip3DView` - 55 edges
-10. `fit_plane()` - 42 edges
+10. `forward_kinematics()` - 47 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_phase_hold_consulta_o_pedido_da_gui()` --uses--> `TactileExplorer`  [INFERRED]
-  src/touch_pack/test/test_hold_dwell_window.py → src/touch_pack/touch_pack/tactile_explorer.py
-- `test_drift_of_a_flat_window_is_zero()` --uses--> `FtReceiverNode`  [INFERRED]
-  src/touch_pack/test/test_ft_receiver_node.py → src/touch_pack/touch_pack/ft_receiver_node.py
-- `test_drift_sees_a_ramp_that_peak_to_peak_would_also_see()` --uses--> `FtReceiverNode`  [INFERRED]
-  src/touch_pack/test/test_ft_receiver_node.py → src/touch_pack/touch_pack/ft_receiver_node.py
-- `load_calibration()` --indirect_call--> `f()`  [INFERRED]
-  sensors/Touch_sensor/intensity_classifier_force.py → src/touch_pack/touch_pack/palpation_logger.py
-- `RobotMixin` --uses--> `CR10RealDriverConfig`  [INFERRED]
-  src/touch_pack/touch_pack/gui_robot.py → src/touch_pack/touch_pack/real_driver.py
+- `Histórico: o bug de escala (resolvido em 10/09/2026)` --references--> `hand_deg_to_driver_rad()`  [INFERRED]
+  data/latency_hand/README.md → src/touch_pack/touch_pack/constants.py
+- `Mapeamento (fase 1 — só posição)` --references--> `ik_step()`  [INFERRED]
+  tools/imu_arm_teleop/README.md → src/touch_pack/touch_pack/manip3d.py
+- `6. Preparação da bancada (checklist de sessão)` --references--> `taxel_frame_to_physical()`  [INFERRED]
+  Docs/protocolo_coleta_textura.md → src/touch_pack/touch_pack/constants.py
+- `6. Preparação da bancada (checklist de sessão)` --references--> `tool_tcp_mm()`  [INFERRED]
+  Docs/protocolo_coleta_textura.md → src/touch_pack/touch_pack/constants.py
+- `Depois de montada` --references--> `_StiffnessEstimator`  [INFERRED]
+  Docs/molde_capa_silicone_D.md → src/touch_pack/touch_pack/stiffness.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (287 total, 37 thin omitted)
+## Communities (351 total, 146 thin omitted)
 
-### Community 0 - "Community 0"
+### Community 0 - "palpation_gui.py"
 Cohesion: 0.05
-Nodes (72): builtin_interfaces_msg, collections_abc, dataclasses, hashlib, logging, math, matplotlib_backends_backend_tkagg, numpy (+64 more)
+Nodes (18): _grip_frac_to_slider(), main(), main(), new_run_id(), tool_stamp_mismatch(), urdf_to_dobot(), rpy_deg(), main() (+10 more)
 
-### Community 1 - "Community 1"
-Cohesion: 0.04
-Nodes (81): Element, _controllers_yaml_path(), fixture, parametrize, Testes do touch_pack.urdf_scene — parser de URDF, malhas e FK da árvore., A malha reduzida tem de continuar ocupando o mesmo volume — é a silhueta que a…, Triângulos de área zero seriam invisíveis e só custariam tempo., Peças pequenas (as falanges da COVVI) também têm de encolher: a busca de… (+73 more)
-
-### Community 2 - "Community 2"
-Cohesion: 0.05
-Nodes (83): ADC_ChannelConfTypeDef, assert, DMA_HandleTypeDef, GPIO_InitTypeDef, GPIO_PinState, GPIO_TypeDef, IRQn_Type, RCC_ClkInitTypeDef (+75 more)
-
-### Community 3 - "Community 3"
-Cohesion: 0.03
-Nodes (74): _errs(), P(), _pre(), fixture, Fase MODULATING e o arranque em fase da onda trigonométrica. Antes, a onda…, O curso da onda é amp/K: com a ponteira de silicone medida em bancada ele é…, O tick do QS (30 ms) existe porque ele MEDE — congela o braço para o pipeline…, Publicar mais rápido que o laço ServoJ não entrega mais onda — o mirror amostra… (+66 more)
-
-### Community 4 - "Community 4"
-Cohesion: 0.04
-Nodes (54): argparse, matplotlib_animation, matplotlib_pyplot, matplotlib_ticker, re, Repinta apenas os artistas dinamicos sobre o fundo cacheado (blitting)., update_plots(), Teste mínimo da recepção UDP da célula de carga (sem GUI, sem serial). Rode no… (+46 more)
-
-### Community 5 - "Community 5"
-Cohesion: 0.04
-Nodes (47): control_msgs_action, Goal, rclpy_action, _cartesian_arm_goal(), _close_extra(), _deg_dict_to_rad(), GraspExecutorNode, _do() (+39 more)
-
-### Community 6 - "Community 6"
-Cohesion: 0.07
-Nodes (47): gazebo_msgs_msg, gazebo_msgs_srv, _Attacher, _Cli, _pose(), _pose_enviada(), ndarray, parametrize (+39 more)
-
-### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (49): parametrize, Testes do touch_pack.latency_report — estimativa de atraso e agregação. O…, Captura da mão: mesma estimativa, rotulada com o nome do dedo., Grau de ponta de dedo → junta driver: extremos e ausência de saturação. O bug…, O clamp do URDF e a conversão TÊM de usar o mesmo número. Foi a divergência…, Fim de curso aberto → 0°, fechado → curso total; o meio é linear., Grava um *_raw.csv sintético: o REAL é o SIM deslocado de `lag_s`. lag_s > 0 →…, A cópia no relatório tem de devolver o MESMO lag que a do probe. (+41 more)
-
-### Community 8 - "Community 8"
-Cohesion: 0.06
-Nodes (53): _enche(), _linha(), _Pub, parametrize, O receiver da célula FA7155 — tare, auto-zero e o filtro de quadros. Este é o…, Enche o buffer com uma janela estável no valor pedido., A razão de ser mediana e não ptp: um único pico não é instabilidade. Com ptp,…, Zerar só o eixo de controle deixaria o wrench publicado com os outros cinco… (+45 more)
-
-### Community 9 - "Community 9"
-Cohesion: 0.08
-Nodes (30): test_jacobian_translational_matches_finite_differences(), forward_kinematics(), jacobian(), FK completa: base → flange Link6 (opcionalmente até TCP do efector). Args: q:…, Jacobiano geométrico 6×6 do TCP no frame da base. Args: T_end: transform fixo…, ndarray, Força de contato tare-compensada (N), COM SINAL: + compressão, − tração. Para a…, True se a MAGNITUDE da força cruzou a margem de segurança. (+22 more)
-
-### Community 10 - "Community 10"
-Cohesion: 0.04
-Nodes (30): Sem amostra não há taxa medida. O fallback é o pior caso (maior atraso) e, na…, test_a_taxa_cai_no_nominal_enquanto_nenhuma_leitura_chegou(), Bool, Float32, JointState, LoadCellSample, Node, String (+22 more)
-
-### Community 11 - "Community 11"
-Cohesion: 0.06
-Nodes (47): _com_amostras(), _Health, _Msg, _Probe, A sonda de saúde do link da célula axial — o que ela conta e o que ignora. Este…, Sem par anterior não há período; inventar um a partir do t0 do nó colocaria o…, O dt através de um buraco cobriria DUAS conversões e entraria na estatística…, Placa reiniciada zera o seq. Contar isso como perda inventaria milhões de… (+39 more)
-
-### Community 12 - "Community 12"
-Cohesion: 0.05
-Nodes (54): _calib_do_repo(), _grava(), load_calibration(), parametrize, Lógica do `force_receiver` que decide se a força vale alguma coisa. O nó em si…, A força de cada ponto é DERIVADA da massa pelo leitor, não lida do arquivo — e…, O TESTE QUE IMPORTA nesta calibração. O wizard reajusta os pontos que carrega…, Guarda do teste acima: se um dia os dois métodos derem o mesmo número, o teste… (+46 more)
-
-### Community 13 - "Community 13"
-Cohesion: 0.07
-Nodes (39): collections, csv, cv2, cv_bridge, datetime, Enum, geometry_msgs_msg, json (+31 more)
-
-### Community 14 - "Community 14"
-Cohesion: 0.10
-Nodes (50): pickle, build_feature_vector_with_ik(), grasp_quality_net.py — modelo de qualidade de grasp. API pública: N_FEATURES =…, Constrói vetor de 26 features para um grasp candidato., approach_to_Rtcp(), _axis_rot(), finger_fk(), _finger_tip_in_hand() (+42 more)
-
-### Community 15 - "Community 15"
-Cohesion: 0.05
-Nodes (41): _cfg(), node(), fixture, Testes da fase CALIBRATING no tactile_explorer — saturação dos parâmetros,…, Mesmo contrato de force_mod_shape: com o campo preenchido, a GUI manda e os…, 0 no campo numérico = 'usar o default', como nos demais campos da…, Só o que _align_offsets consome de _align_params()., Waypoints como o explorer os recebe: grade regular SEM a origem. (+33 more)
-
-### Community 16 - "Community 16"
-Cohesion: 0.05
-Nodes (24): HandMixin, Publica a trajetória da mão no Gazebo a partir das 6 juntas primárias (rad),…, True se o mirror real→sim está ativo E recebeu telemetria DigitPosnAll há menos…, Callback do tópico DigitPosnAll: converte a posição MEDIDA dos dedos (escala…, Habilita o streaming digit_posn no driver e assina o tópico DigitPosnAll para…, Desliga o mirror real→sim e devolve o comando do sim ao slider., Debounce de 60 ms para SetDigitPosn — evita flood de serviço., Envia SetDigitPosn convertendo graus → escala ECI 0-200. (+16 more)
-
-### Community 17 - "Community 17"
-Cohesion: 0.06
-Nodes (15): Manip3DView, Aplica a FK do quadro → (tris (M,3,3) no mundo, cores (M,3))., Canvas 3D com o CR10 renderizado e alça arrastável no TCP., Define a pose desenhada. Ignorado durante o arrasto (a não ser com force=True)…, True quando o que está na tela é a malha exata do URDF., Ângulos das juntas que NÃO são do braço (mão COVVI), vindos de /joint_states.…, Presets de câmera: 'iso' | 'top' | 'front' | 'side'., Cancela o arrasto em curso (o caller perdeu a permissão de mover o braço no… (+7 more)
-
-### Community 18 - "Community 18"
-Cohesion: 0.08
-Nodes (48): approach_to_Rtcp(), finger_fk(), _finger_ik(), _finger_tip_in_hand_long(), fk_partial(), _geometric_guess(), grasp_center_in_hand(), hand_fk() (+40 more)
-
-### Community 19 - "Community 19"
-Cohesion: 0.05
-Nodes (26): test_a_taxa_vem_da_celula_configurada_e_prefere_a_medida(), fmod_max_freq_hz(), main(), PalpationGUI, Float32, JointTrajectory, Node, PalpationStatus (+18 more)
-
-### Community 20 - "Community 20"
-Cohesion: 0.06
-Nodes (21): Label, _render(), _toggle(), Frame, Envolve `parent` num Canvas com scrollbar vertical e retorna o Frame interno…, Constrói a aba de jog manual: tempo de movimento + 6 sliders do braço + 6…, Coluna direita do Controle Manual no modo `hand`: sliders da mão COVVI +…, Coluna direita do Controle Manual no modo `touch_tool`: leitura ao vivo da… (+13 more)
-
-### Community 21 - "Community 21"
-Cohesion: 0.06
-Nodes (35): Orientação da grade do touch sensor 5×5. Conferido na bancada em 18/08/2026,…, snapshot() (tela) sai girado 180° em relação a latest_voltages_and_time()…, A inversão é SÓ do desenho: o taxel físico 00 continua caindo em v00., A inversão da tela vale para os DOIS artistas: se o heatmap acende a célula k,…, O requisito literal, sobre um frame cujo valor denuncia a origem., A reordenação não pode perder nem duplicar taxel., O raster RA/SA usa `idx=` da linha do firmware; se ele não seguir a mesma…, O 4×4 legado nunca foi medido na bancada — sem medida, não se gira. (+27 more)
-
-### Community 22 - "Community 22"
-Cohesion: 0.06
-Nodes (44): _calota(), _ligar_verify(), node(), _plano(), fixture, O ângulo de ataque é CONFERIDO no braço, não só comandado. Até 15/09/2026 a…, Quatro contatos num anel, sobre um plano inclinado de `tilt_deg`., O default não pode custar uma rodada de toques a mais nem mudar o contrato de… (+36 more)
-
-### Community 23 - "Community 23"
-Cohesion: 0.08
-Nodes (40): _client(), _crc(), _FakeLine, Enquadramento Modbus RTU do canal de comando do FA7155. O que estes testes…, Dois sensores na mesma linha: a resposta do vizinho não pode valer., A razão de existir da trava: endereço adivinhado pode custar o node ID ou um…, Ler é inofensivo: no pior caso o escravo devolve exceção 0x02., Transporte de mentira com a mesma mecânica de FtSerialSource. (+32 more)
-
-### Community 24 - "Community 24"
-Cohesion: 0.06
-Nodes (38): probe(), fixture, parametrize, A medida de atraso SIM↔REAL da mão COVVI. A saída deste nó é um número que vai…, Um lag calculado sobre 10 amostras é ruído com cara de medida. Melhor devolver…, As duas séries vêm de relógios que começaram em momentos diferentes. Com menos…, O teste que dá sentido ao nó: atraso injetado tem de voltar na saída, dentro de…, Sinal do lag = quem lidera. O caso físico real é este: a mão de verdade segue a… (+30 more)
-
-### Community 25 - "Community 25"
-Cohesion: 0.06
-Nodes (22): Converte URDF→DOBOT, define SpeedFactor e envia MovJ ao braço real., Envia ServoJ ao braço real a 33 Hz APENAS durante palpação ativa., Espelha o feedback do braço real → Gazebo durante um MovJ de jog., Carrega `_robot_cfg` (mescla defaults com JSON salvo). Silencioso se o arquivo…, Persiste `_robot_cfg` em `ROBOT_CONFIG_FILE`. Atualiza os campos a partir dos…, Fecha um driver que não chegou a ser publicado. connect() pode ter aberto os…, Roda em thread daemon — conecta e habilita o CR10 sem bloquear a GUI., Callback no thread Tkinter após conexão bem-sucedida. (+14 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.06
-Nodes (45): parametrize, 6,7 Hz com os 30 ms padrão; 10 Hz exige o mirror no piso do firmware (20 ms). É…, Até o teto do FIRMWARE a onda COMANDADA tem os pontos por período que…, O painel não pode oferecer frequência que o CR10 não executa. Com t mínimo de…, test_gui_nao_deixa_pedir_o_que_o_firmware_recusa(), test_pontos_por_periodo_suficientes_ate_o_teto_do_servoj(), test_teto_de_frequencia_segue_o_periodo_do_servoj(), _gain() (+37 more)
-
-### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (40): _feed(), parametrize, Parser do quadro da célula axial (XIAO + HX711) e a conta de força. O que estes…, Um NaN envenena o x_prev do One-Euro PARA SEMPRE: toda saída seguinte é NaN até…, O firmware manda `micros()`, que estoura a cada ~71 min. O parser entrega o…, Outro firmware na placa, ou outro programa na mesma tty: chegam bytes e nunca…, `COUNTS_TO_V` do main.cpp e `LC_FW_VOLTAGE_SCALE` do constants.py são o MESMO…, O formato mora num comentário do main.cpp porque é ele que o gera. (+32 more)
-
-### Community 28 - "Community 28"
+### Community 1 - "urdf_scene.py"
 Cohesion: 0.11
-Nodes (41): _align_ring(), _FakeGUI, _nodes(), fixture, Testes do gerador de waypoints do configurador MATRIX_MAP da GUI., O nó (0,0) é medido na descida de descoberta da origem — reenviá-lo faria o…, Portador das variáveis Tk que o gerador de grade consulta., Com 1 linha o SPAN em Y é 0, mas o objeto continua tendo altura — o preview… (+33 more)
+Nodes (13): test_fk_resolves_mimic_joints(), test_sphere_points_lie_on_the_radius(), test_urdf_without_visuals_raises(), axis_angle_to_matrix(), default_search_dirs(), Joint, _origin_to_T(), _parse_color() (+5 more)
 
-### Community 29 - "Community 29"
-Cohesion: 0.07
-Nodes (34): OSError, _FakeSocket, node(), _pkt(), fixture, parametrize, O receptor UDP do sensor de toque — o que ele aceita e o que ele descarta. A…, Pacote truncado desempacotaria lixo como float. (+26 more)
-
-### Community 30 - "Community 30"
-Cohesion: 0.06
-Nodes (17): _card(), main(), ManualControlNode, Detection2DArray, Node, String, Tk, Garante que o subprocesso do driver morra junto com a GUI. (+9 more)
-
-### Community 31 - "Community 31"
-Cohesion: 0.07
-Nodes (34): _crc(), _HkvlSlave, Vetores DOURADOS do manual do HKVL-56 (Suzhou Hangkai), §4.2. Estes testes não…, Escravo de mentira que responde EXATAMENTE como o manual descreve., Guarda contra escolher o estilo errado: com a peneira do padrão a resposta de…, ...the default baud rate when powering on ... is 1 Mbps" — o mesmo baud do…, O manual só documenta 0x03 e 0x06-ID. Zero, taxa e baud continuam…, A nota do §4.2 lista: slave(1) + func(1) + endereço inicial(2) + dados(24) +… (+26 more)
-
-### Community 32 - "Community 32"
-Cohesion: 0.05
-Nodes (35): _lockin_lag(), parametrize, Controle repetitivo (ILC) da onda de força: o que ele exige para funcionar. O…, Reproduz o cálculo do laço: fase entre o fasor da FORÇA e o da penetração…, O atraso sai da fase entre dois lock-ins que o laço já acumula — não custa…, A 10 Hz o atraso de 154 ms vale 1,54 ciclos. O ILC indexa por FASE, então o que…, fmod_measure_lag_s responde o atraso do FILTRO. Com o sinal cru o filtro sai do…, Só o termo da mediana muda com a célula; o do One-Euro não, porque o cutoff… (+27 more)
-
-### Community 33 - "Community 33"
-Cohesion: 0.08
-Nodes (18): clamp_finger_interference(), CombinedControlGUI, _grip_label_to_obj(), main(), JointState, Node, _rad_to_slider(), Slider 0..HAND_SLIDER_MAX → rad em [MIN_RAD[j], MAX_RAD[j]]. (+10 more)
-
-### Community 34 - "Community 34"
-Cohesion: 0.11
-Nodes (39): _grid(), _plane_points(), Testes da geometria da calibração dinâmica do ângulo de ataque. O módulo…, Mesma exigência do polígono: nenhuma direção do plano fica indeterminada — é o…, Braço de alavanca curto é pior que o polígono, não melhor: 2×2 de 1 mm dá um…, Uma coluna só: sem passo em X, o anel degenera numa linha e a normal ficaria…, Pontos EXATAMENTE sobre o plano de normal `normal` que passa por (0, 0, z0),…, Normal unitária a `tilt_deg` da vertical, girada `azim_deg` em XY. (+31 more)
-
-### Community 35 - "Community 35"
-Cohesion: 0.08
-Nodes (38): _amp_scale(), C(), _monta(), fixture, Curva F(x) medida na descida (_ContactCurve) e o que a onda faz com ela. O…, O caso concreto: K=0,70 N/mm (secante do curso inteiro) pedia 4,14 mm p-p para…, Sem extrapolação — a faixa que a descida realmente percorreu — a curva pede…, A onda pede até 3,0 N mas a descida parou em 1,5 N (o alvo). O trecho acima é… (+30 more)
-
-### Community 36 - "Community 36"
-Cohesion: 0.07
-Nodes (36): f_rigido(), f_silicone(), _FakeEst, m(), fixture, parametrize, _ramp_step(), Não-ultrapassagem do setpoint na regulação quase-estática por RAMPA. Contexto… (+28 more)
-
-### Community 37 - "Community 37"
-Cohesion: 0.08
-Nodes (18): BooleanVar, Checkbutton, Manip3DTabMixin, _manip_vtk_available(), Frame, ndarray, Reflete os widgets do painel no estado da viewport., Motivo pelo qual o arrasto está bloqueado ('' = liberado). (+10 more)
-
-### Community 38 - "Community 38"
-Cohesion: 0.08
-Nodes (20): public(), GetEciPowerOnClientNode, main(), Any, GetEciSerialNumberClientNode, main(), Any, GetHandPowerOnClientNode (+12 more)
-
-### Community 39 - "Community 39"
-Cohesion: 0.08
-Nodes (32): _FimDoFluxo, montar(), Exception, Quadro de 28 bytes do FA7155: CRC, parsing e ressincronização. Sem rclpy de…, Um NaN envenena o One-Euro do receiver para sempre — ele morre aqui., Serial de mentira: entrega blocos na ordem e encerra o laço no fim., Carimbar os k quadros de um bloco com o MESMO instante daria dt=0, e o One-Euro…, Um quadro válido (ou com CRC forçado, para o teste negativo). (+24 more)
-
-### Community 40 - "Community 40"
-Cohesion: 0.09
-Nodes (15): LcAxialMixin, Float32, Frame, Mixin de `PalpationGUI` — a aba da célula axial de 100 kg., Traz a calibração EM VIGOR do arquivo para dentro do wizard. A aba abria em…, O rótulo do ajuste só existe depois do card — e a carga do arquivo roda na…, `/load_cell/voltage` — tensão da ponte JÁ filtrada, publicada pelo…, `/load_cell/calibrated` — o receiver dizendo se tem reta. Vem do NÓ e não do… (+7 more)
-
-### Community 41 - "Community 41"
-Cohesion: 0.07
-Nodes (28): random, _noise(), Canal LENTO da célula (`/load_cell/force_net_slow`). O canal existe porque um…, dt gigante (link mudo e religando) não pode zerar a janela e devolver divisão…, Encadear somaria a latência do One-Euro à da janela sem ganho de σ. O nó tem de…, Zeros diferentes fariam o regulador trocar de referência ao passar de um canal…, O ft_receiver não publica o par; sem fallback o HOLD travaria., σ = 114,8 mN: o ruído CRU medido em 32,6 s de ar livre do run… (+20 more)
-
-### Community 42 - "Community 42"
-Cohesion: 0.12
-Nodes (24): _phase_descend(), _phase_done(), _phase_release(), _phase_retreat(), _done(), _f1(), _f2(), _f3() (+16 more)
-
-### Community 43 - "Community 43"
-Cohesion: 0.09
-Nodes (34): parametrize, Testes do touch_pack.manip3d — câmera, projeção e IK diferencial., Um alvo a 30 mm é alcançado dentro de poucos ticks — é o regime normal do…, Alvo absurdamente longe: o TCP anda no máximo max_lin_m por iteração, então um…, Mesmo perseguindo um alvo inalcançável a pose devolvida é válida — a viewport…, Com a trava ligada o arrasto move o PONTO: a atitude da ferramenta volta para…, Sem trava a IK usa os 6 graus de liberdade só para a posição — chega mais…, O ponto do desenho: perseguindo um alvo que caminha, a pose nunca salta de ramo… (+26 more)
-
-### Community 44 - "Community 44"
-Cohesion: 0.08
-Nodes (33): _FakeStamp, _FakeStart, Layout dos dados em disco: uma pasta por MODO, uma por RUN. Cobre as duas…, samples.csv e params.json na MESMA pasta — é o ponto da mudança., O botão "Record data" grava fora de qualquer run: sem modo, mas também sem cair…, mode/run_id vêm de mensagem: `ros2 topic pub` pode mandar qualquer string, e…, O bug de origem: com use_sim_time o carimbo ROS reinicia do zero a cada launch,…, Compatibilidade: `ros2 topic pub` sem o campo cai no carimbo. (+25 more)
-
-### Community 45 - "Community 45"
-Cohesion: 0.07
-Nodes (33): inspect, _hold_sintetico(), _janela(), O dwell do HOLD é o que a GUI pede, e é ele que a estatística mede. Até…, O teto era 5,0 s — o mesmo valor do default, então não havia como pedir uma…, `dwell_s=None` = use a GUI; ausência de pedido = default do código., Quem passa `dwell_s` explícito não é sobrescrito pela GUI. A escada mede cada…, HOLD de 6 s: barulhento nos 4 s iniciais, quieto no último 1 s. (+25 more)
-
-### Community 46 - "Community 46"
-Cohesion: 0.10
-Nodes (9): Request, Response, Read system status Critical error flags Non-fatal errors Bluetooth Status…, Set the digit movement to stop, Get the manufacturer ID of the ECI, Get the 'power on' status of the ECI, Get the connected status of the Hand, Get the manufacturer ID of the Hand (+1 more)
-
-### Community 47 - "Community 47"
-Cohesion: 0.10
-Nodes (27): _driver_with(), _FakeSock, Testes do protocolo ASCII do CR10RealDriver (porta 29999). O driver não importa…, Melhor devolver vazio que devolver meia resposta: quem parseia trata vazio como…, Regressão do casamento comando↔resposta: um ACK velho parado no socket não pode…, Sem esta espera o ACK em voo virava a resposta do PRÓXIMO comando — e…, Socket de mentira: entrega `chunks` em sequência; None = timeout., O controlador da bancada responde -10000 a RequestControl() — o mesmo código… (+19 more)
-
-### Community 48 - "Community 48"
-Cohesion: 0.07
-Nodes (16): Lê `var`, força-o ao intervalo [vmin, vmax] (re-escreve no var se necessário) e…, Duração da trajetória Gazebo derivada do slider de velocidade. Inversamente…, Espera o braço real chegar à home e concordar com o simulador. Com `sync_only`…, Solver de pulso: dado joint1-3 dos sliders, calcula joint4/joint5 para que o…, Lê a posição atual do robô real, atualiza os sliders e salva como Home. O…, Checkbox "Home conhecida". A marcação é AUTOMÁTICA (vem do status home_known);…, Garante um palpation_logger vivo — é ele quem grava o run em ~/touch_pack_runs.…, Publica estado do drag em /palpation/drag_mode (latched, thread-safe). (+8 more)
-
-### Community 49 - "Community 49"
-Cohesion: 0.06
-Nodes (15): CurrentGripMsg, DigitTouchAllMsg, ElectrodeValueMsg, FourOctetAddress, InputStatusMsg, CovviServerNode, main(), Any (+7 more)
-
-### Community 50 - "Community 50"
-Cohesion: 0.10
-Nodes (30): fixture, W(), _ink_centroid(), _marker_scene(), parametrize, Testes do backend de GPU da viewport 3D (touch_pack.vtk_render)., A FK entra como UserMatrix por ator — é o que anima a cena., Regressão: `SetUserMatrix` guarda a REFERÊNCIA da matriz. Com uma instância… (+22 more)
-
-### Community 51 - "Community 51"
-Cohesion: 0.08
-Nodes (15): FtReceiverNode, main(), Empty, Node, String, Zera os SEIS eixos pela média da janela. Devolve (ok, deriva_N). A estabilidade…, Tare PEDIDO (botão da GUI): exige dados e estabilidade., `/load_cell/rezero` da GUI. No HX711 isto ia para o firmware; o FA7155 em modo… (+7 more)
-
-### Community 52 - "Community 52"
-Cohesion: 0.09
-Nodes (25): _default_start(), _feed_force(), _ForceKeeper, _keep_force_fresh(), _run(), node(), fixture, PalpationStart (+17 more)
-
-### Community 53 - "Community 53"
-Cohesion: 0.09
-Nodes (32): Um run antigo passado na linha de comando continua gerando os derivados com o…, test_report_siblings_live_in_the_run_folder(), test_report_still_reads_the_old_flat_layout(), generate_report(), _load_params(), _load_rows(), main(), _make_plot() (+24 more)
-
-### Community 54 - "Community 54"
-Cohesion: 0.07
-Nodes (19): MatrixPoint, main(), PalpationLogger, Float32, JointState, LoadCellSample, Node, PalpationStatus (+11 more)
-
-### Community 55 - "Community 55"
-Cohesion: 0.07
-Nodes (27): cmath, ConnectionPtr, ElementPtr, events, functional, JointPtr, ModelPlugin, ModelPtr (+19 more)
-
-### Community 56 - "Community 56"
-Cohesion: 0.09
-Nodes (27): contextlib, test_format_scan_sai_colavel(), test_resposta_com_crc_errado_nao_passa(), ft_cmd_channel.py — derivação da linha 485 para o canal de comando. O problema…, _check_crc(), find_response(), format_scan(), FtModbusMapUnconfirmed (+19 more)
-
-### Community 57 - "Community 57"
-Cohesion: 0.10
-Nodes (25): _espera(), _Fonte, fixture, O ciclo de vida compartilhado pelos três transportes. `FtSerialSource`,…, A GUI chama `start()` ao reconectar. Uma segunda thread lendo a mesma porta…, `connected`/`error` são o que a GUI mostra ao operador. Um erro velho…, Replug, cabo, peer fechando: a queda é o caso NORMAL. Sair da thread deixaria o…, Fechar duas vezes esconde erro de handle já fechado; não fechar vaza um fd por… (+17 more)
-
-### Community 58 - "Community 58"
-Cohesion: 0.10
-Nodes (24): _chamar(), _Fake, O Start da palpação não publica antes de o braço real estar na home. Regressão…, O que o pré-home protege continua valendo: o degrau de ServoJ no primeiro tick…, A exceção é só do MATRIX: TOUCH, SLIDE e MANUAL descem a partir da home e têm…, Segundo clique durante o homing não dispara um segundo MovJ., A banda de aceite tem de RECUSAR o que causou o solavanco. Se a tolerância…, `_do_palpation_start` precisa consultar o pré-home ANTES de publicar. Teste de… (+16 more)
-
-### Community 59 - "Community 59"
-Cohesion: 0.07
-Nodes (24): ament_copyright_main, ament_flake8_main, ament_pep257_main, pytest, copyright, linter, skip, test_copyright() (+16 more)
-
-### Community 60 - "Community 60"
-Cohesion: 0.10
-Nodes (18): CovviClientNode, main(), Any, DigitPosnAllMsgSubscriberNode, main(), Any, DigitTouchAllMsgSubscriberNode, main() (+10 more)
-
-### Community 61 - "Community 61"
-Cohesion: 0.09
-Nodes (20): O limite REAL de amplitude a 10 Hz não é força nem firmware: é o teto de…, test_teto_de_velocidade_e_o_que_limita_a_amplitude_a_10hz(), explorer_constants.py — os números do protocolo de palpação, e o porquê deles.…, fmod_measure_gain(), fmod_preflight(), _fmod_sampling_gain(), force_wave.py — a onda de força modulada: medida, ganho e correção por ciclo. O…, Tudo o que dá para saber sobre a onda ANTES de o braço se mexer. Devolve… (+12 more)
-
-### Community 62 - "Community 62"
-Cohesion: 0.13
-Nodes (14): staircase_levels(), Trava a posição atual (velocidade zero) e ESPERA a força assentar antes de…, Regulação de força por RAMPA A VELOCIDADE CONSTANTE (quase-estática). Substitui…, HOME — trajectória batch ao JTC (S-curve interna) a ≤ 0.3 rad/s., Roda a calibração e trata o desfecho no padrão das outras fases. Devolve False…, DESCENDING — desce ao longo do approach até a força atingir o setpoint.…, HOLD — a rampa quase-estática leva a compressão ao setpoint, CONFIRMA a chegada…, HOLD INFINITO (modo MANUAL): regula continuamente para o setpoint CORRENTE… (+6 more)
-
-### Community 63 - "Community 63"
-Cohesion: 0.09
-Nodes (8): _hand_slider_to_rad(), _bind_wheel(), _wheel(), Converte slider 0..200 em rad interpolando [MIN, MAX] do driver., Botão de pose com faixa colorida à esquerda, ícone grande e label, com hover de…, Aplica uma pose de HAND_EXTRA_POSES — publica no Gazebo e, se ECI ativo, manda…, No-op — grasp por contato físico não usa attach cinemático., cb()
-
-### Community 64 - "Community 64"
-Cohesion: 0.12
-Nodes (14): Button, CellControlApp, on_result(), GUIControlNode, _done(), main(), Node, String (+6 more)
-
-### Community 65 - "Community 65"
-Cohesion: 0.09
-Nodes (15): test_u32_ida_e_volta(), FtDevice, 32 bits em dois registradores, palavra alta primeiro (big-endian de palavra,…, Os comandos do cliente de fábrica, com nome de gente. Cada método corresponde a…, `Set_Zero` — zera os seis eixos NO SENSOR. Diferente do tare do `ft_receiver`,…, `Send_Frequency`. Só passa a valer depois de religar o sensor., `Send_ModBus_ID`. Só vale após religar — e o escravo passa a responder no ID…, `Send_Baud_rate`. Só vale após religar, e o host tem de reabrir a porta no baud… (+7 more)
-
-### Community 66 - "Community 66"
-Cohesion: 0.13
-Nodes (23): _crc(), _eco_hmi(), FakeLine, Modo POLLED do FA7155 — o caminho que o cliente/HMI de fábrica usa. Os vetores…, Ler é seguro; a trava do FT_MODBUS_MAP guarda só as ESCRITAS., Segurar a sessão aberta faria todo comando da GUI falhar., Sem o handoff, um Set_Zero da GUI falharia de forma intermitente., 20 comandos seguidos, todos têm de entrar. (+15 more)
-
-### Community 67 - "Community 67"
-Cohesion: 0.08
-Nodes (14): RobotMode() — retorna a string crua do dashboard (5 = habilitado)., GetAngle() — útil como sanity check fora do feedback estruturado., ToolDOExecute(idx, 1|0) — DO_1/DO_2 do conector aviation M8., Envia Immediate command ao dashboard (29999) e devolve a resposta., Espera até RobotMode() == target. Retorna True se alcançado., Pressiona a chave de E-Stop — EmergencyStop(1). Idempotente. O braço fica…, Solta a chave e REARMA o braço — EmergencyStop(0) + ClearError + enable(). É o…, Executa a sequência de enable do CR10 (protocolo V4, firmware V4.5.1). (+6 more)
-
-### Community 68 - "Community 68"
-Cohesion: 0.11
-Nodes (15): covvi_interfaces_srv, eci, CovviBaseNode, Any, Node, EnvironmentalMsgSubscriberNode, main(), Any (+7 more)
-
-### Community 69 - "Community 69"
-Cohesion: 0.11
-Nodes (26): pathlib, rclpy_duration, bridge(), _envelhece(), fixture, WrenchStamped, A ponte de força da SIMULAÇÃO — e a razão de ela poder emudecer.…, A janela é um teto, não um ritmo: uma leitura mais nova que `_WRENCH_STALE_S`… (+18 more)
-
-### Community 70 - "Community 70"
-Cohesion: 0.11
-Nodes (23): arm_clears_bbox(), arm_clears_world(), bbox_overlap(), link_world_aabb(), pose_is_safe(), ndarray, collision.py — geometria de colisão compartilhada (mundo + links). Centraliza:…, True se nenhum dos `links` colide com `bbox`. (+15 more)
-
-### Community 71 - "Community 71"
-Cohesion: 0.12
-Nodes (19): cmd_list(), cmd_raw(), cmd_stream(), main(), socket, Hexdump do que chega. Linha vazia por segundo = nada na linha: célula sem 24 V,…, ft_probe.py — Bancada da célula FA7155, SEM ROS. É o equivalente do env…, Faz o socket da 60000 parecer um serial.Serial. cmd_raw e cmd_stream só usam… (+11 more)
-
-### Community 72 - "Community 72"
-Cohesion: 0.12
-Nodes (26): _arvore(), _de_onde_importa(), _definidos(), _importados(), parametrize, Guarda do recorte de `tactile_explorer.py`. O arquivo tinha 7052 linhas e…, Meia dúzia de testes e o `palpation_logger` importam esses nomes de…, Uma constante com dois valores é o pior resultado possível deste recorte: a FSM… (+18 more)
-
-### Community 73 - "Community 73"
-Cohesion: 0.10
-Nodes (25): DESCENDING em streaming (ServoJ): pico = v·T_halt·K, e a velocidade sai dele.…, A zona lenta é `max(3 mm, frenagem + margem)`. O clip antigo em `0,5 x…, O ACHADO que motivou `impact_peak_n`: `crawl_v_ms` clipa, e acima da rigidez em…, Guarda de regressão do valor em produção: se `_K_RIGID_REF_NM` subir acima da…, O aviso tem de existir no caminho da descida, não só na matemática., A latência da cadeia é o que sobra para medir: v é LINEAR em 1/T_halt. Travar…, A razão de existir de crawl_v_ms: contra a ponta RÍGIDA o transiente do toque…, 0,1 N contra ponta rígida: em MovL o piso de 30 µm dava 0,84 N (8x o alvo) e… (+17 more)
-
-### Community 74 - "Community 74"
-Cohesion: 0.11
-Nodes (12): ForceReceiverNode, main(), Empty, Node, Zera pela média da janela. Devolve (ok, deriva_N). O tare é guardado em…, Tare PEDIDO (botão da GUI): exige calibração, dados e estabilidade., `/load_cell/rezero`: o zero do FIRMWARE, não o tare do host. O byte `'Z'` manda…, Continuidade do contador do firmware. Um salto de 1 é o caso normal. Um salto… (+4 more)
-
-### Community 75 - "Community 75"
-Cohesion: 0.11
-Nodes (12): CR10RealDriver, Encapsula os dois sockets TCP do controlador CR10., Tenta obter o token de controle exclusivo, com backoff entre tentativas.…, True se dashboard (29999) e feedback (30004) estão abertos., Abre as conexões TCP nas portas 29999 e 30004. Idempotente., Fecha as conexões TCP. Não desabilita o robô — chame stop() antes., Inicia thread daemon que envia RobotMode() a cada 50 s., Descarta o banner inicial enviado pelo dashboard (porta 29999). (+4 more)
-
-### Community 76 - "Community 76"
-Cohesion: 0.10
-Nodes (24): ocp_bnd, ocp_brep, ocp_brepbndlib, ocp_brepbuilderapi, ocp_brepgprop, ocp_brepmesh, ocp_gp, ocp_gprop (+16 more)
-
-### Community 77 - "Community 77"
-Cohesion: 0.10
-Nodes (26): 4 pontos exatos sobre um plano que sobe `tilt_deg` ao longo de `axis`., A declaração do usuário fica de reserva — a medição entra por um canal próprio,…, O avanço sobe: é isso que faz o curso ser distância sobre a SUPERFÍCIE em vez…, A medição não pode ser descartada: 1,9° esgotam a reserva de indentação em…, test_declared_slope_is_not_overwritten(), test_frame_advance_climbs_the_measured_tilt(), test_frame_advance_lies_in_the_measured_plane(), test_frame_normal_always_points_away_from_the_surface() (+18 more)
-
-### Community 78 - "Community 78"
-Cohesion: 0.10
-Nodes (23): importlib_util, launch_mod(), fixture, Rigidez do punho no sim — a baseline que produz descida VERTICAL. Contexto…, O que importa para a descida. Abaixo de 0,25 a correção de erro de restrição de…, Não foram mexidos pela regressão (70aabbf já tinha revertido iters); ficam aqui…, kp 1e6 / minDepth 0,05 mm entraram no mesmo commit que quebrou a descida. Re-…, f934d4e removeu `min/max ±1 rad` dos <command_interface>. Parece grande, mas… (+15 more)
-
-### Community 79 - "Community 79"
-Cohesion: 0.11
-Nodes (18): Soltar os freios do arrasto com a chave pressionada é exatamente o movimento…, test_drag_teach_recusado_com_estop_pressionado(), test_urdf_dobot_roundtrip(), dobot_to_urdf(), Converte ângulos lidos do controlador CR10 para a convenção URDF., CR10RealDriverError, ndarray, RuntimeError (+10 more)
-
-### Community 80 - "Community 80"
-Cohesion: 0.13
-Nodes (24): _params_do_run(), parametrize, Gravação do palpation_logger: cabeçalho por modo + carimbos de hardware. Cobre…, seq/t_us dos dois firmwares + tensão crua, na mesma linha., O ensaio senoidal não tem alvo único: min/max/hz precisam estar no CSV., Com sensor='4' o logger deve ACEITAR 16 taxels — antes exigia 25 fixo e o run…, É ESTE campo que desambigua o CSV: na axial as colunas lc_voltage_* são volts,…, O TCP mudou de 67,7 para 162,2 mm com a troca de célula, e ele reinterpreta… (+16 more)
-
-### Community 81 - "Community 81"
-Cohesion: 0.15
-Nodes (23): node(), fixture, PalpationStart, Testes do modo MATRIX_MAP do tactile_explorer — validação da grade, descoberta…, Regra de Ouro: STOP no HOLD do 2º ponto aborta o resto da matriz, alivia o…, `repeats` não multiplica a matriz — o número de identações é o número de…, Stuba tudo que move o braço; registra a sequência em `calls`., _ros() (+15 more)
-
-### Community 82 - "Community 82"
-Cohesion: 0.12
-Nodes (7): PosesMixin, Frame, Retorna {junta: graus} dos sliders da mão se disponíveis, else None., Executa uma passagem completa pelo movimento., Aplica a pose da mão COVVI armazenada na pose (thread-safe via after). No-op se…, gui_poses.py — poses guardadas e as sequências que as encadeiam., Layout dois-colunas: esquerda=Poses (fixa 310px), direita=Movimentos.
-
-### Community 83 - "Community 83"
-Cohesion: 0.11
-Nodes (9): Fecha o handle POR FORA antes do join: sem isso a thread só acordaria no…, Transporte sobre porta serial com detecção automática e hot-plug. Quem herda…, Escreve no handle aberto. `vazio` é a mensagem de erro quando a porta não está…, Thread de fundo que mantém um transporte vivo através de quedas., Motivo pelo qual nem vale armar a thread, ou '' se vale. Distinto de `_open()`…, Handle aberto, ou None com o motivo já posto em `self.error`., Arma a thread. False só quando falta dependência — dispositivo ausente NÃO é…, ReconnectingSource (+1 more)
-
-### Community 84 - "Community 84"
-Cohesion: 0.10
-Nodes (15): _finger_tip_hand(), _fingers_clear_objects(), _fingertips_world(), _point_in_bbox(), Ponta do dedo em hand_base_link, dado ângulo primário (rad)., Atualiza um bargraph: largura proporcional ao valor 0..255., Retorna dict {finger: pos_world (3,)} para as 5 pontas dos dedos., Testa se um ponto cai dentro de um AABB world (cx,cy,cz,sx,sy,sz). (+7 more)
-
-### Community 85 - "Community 85"
-Cohesion: 0.11
-Nodes (19): apply_all(), clamp_hand_joint_limits(), enable_inter_finger_self_collision(), fix_virtual_link_inertia(), inject_mimic_joint_plugins(), inject_skin_layer(), _patch_finger_link(), inject_visual_skin_layer() (+11 more)
-
-### Community 86 - "Community 86"
-Cohesion: 0.09
-Nodes (21): Regressões da auditoria de 24/08/2026 (controle de força, movimentação, GUI).…, O 0,15 N cravado na GUI sobrescrevia a banda derivada do ruído da célula em…, Sem a poda, o conserto não teria efeito nenhum em quem já usou a GUI uma vez: o…, A trava local vale sempre (ela bloqueia o Start e o driver), mas o texto não…, O bridge do CR10 estava desligado desde 12/08 mas a máquina inteira continuava…, FROZEN é um fim de run (E-STOP congela no lugar). Enquanto ficava de fora da…, Nenhuma fase do PHASE_CODES pode ficar sem decisão explícita., Os dois espelhos divergiam: a GUI usava o complemento e o mirror_node uma… (+13 more)
-
-### Community 87 - "Community 87"
-Cohesion: 0.14
-Nodes (23): _cenario(), m(), perfil(), fixture, Perfil de velocidade do DESCENDING em ar livre — três estágios. Contexto…, Com >= _CONTACT_MARGIN_MIN_PTS contatos e dispersão apertada a margem cai ao…, A frenagem existe para dar curso ao braço largar v_fast em _ZONE_REACTION_S. A…, Sem contato aprendido o contato pode vir a qualquer momento, então a descida… (+15 more)
-
-### Community 88 - "Community 88"
-Cohesion: 0.12
-Nodes (23): _gui(), Aba "6 Axes" da célula FA7155 e as colunas ft_* da planilha. A célula de 6…, NaN entrando no estado envenenaria o tare e a coluna da planilha sem deixar…, dt instantâneo de serial oscila demais; a taxa sai da janela., As colunas ft_* têm de existir e vir ANTES das tensões do toque, para o layout…, Os rótulos da GUI têm de seguir a ordem do quadro binário — é ela que dá nome…, A unidade montada traz na PLAQUETA "FA7155D-400N/20NM" — a FA7155D. A variante…, 28 bytes × 10 bits por quadro: acima disto o quadro não cabe no baud em uso e… (+15 more)
-
-### Community 89 - "Community 89"
-Cohesion: 0.11
-Nodes (22): _feed(), _sample(), m(), node(), fixture, Parada VERIFICADA na entrada do DESCENDING (`_settle_until_still`). Contexto…, A tolerância existe para limitar o ERRO DE TCP, não a velocidade de junta: J4…, /joint_states chega a ~24 Hz contra os 33 Hz do laço: um tick em cada quatro… (+14 more)
-
-### Community 90 - "Community 90"
-Cohesion: 0.12
-Nodes (22): ClassDef, _bases(), _class_node(), _methods(), parametrize, Guarda do recorte de `palpation_gui.py` em mixins. A classe tinha 234 métodos…, O ganho do recorte é o host encolher. Se os métodos continuarem lá, o arquivo…, As constantes usadas pelo host E pelas fatias moram em `gui_constants.py`.… (+14 more)
-
-### Community 91 - "Community 91"
-Cohesion: 0.10
-Nodes (13): Robô inalcançável é estado normal de partida, não exceção., test_sem_servidor_nao_explode_e_reporta_erro(), A guarda do refactor: se alguém reintroduzir um `start`/`stop`/ `_worker`…, O carimbo retro-data os quadros de um bloco pelo período nominal. Duas cópias…, test_all_three_transports_share_one_lifecycle(), test_the_two_ft_transports_stamp_frames_with_the_same_code(), FtSerialSource, Leitor do FA7155 em thread de fundo. Mesma API do LoadCellSerialSource… (+5 more)
-
-### Community 92 - "Community 92"
-Cohesion: 0.11
-Nodes (19): node(), fixture, Os trânsitos em ar livre também vigiam força, célula e pausa. Até 15/09/2026…, paused' não é falha: é "o goal se perdeu, replaneje o que faltava"., E o replanejamento mira o ALVO, não o deslocamento original: reemitir `delta_m`…, Mesmo buraco no espaço de juntas: o ⏸ no meio de um retorno à HOME deixava o…, O braço não pode terminar a trajetória para só então acusar: o `_settle` do…, `_force_over_limit` compara MAGNITUDE: a ponteira enganchando e sendo puxada é… (+11 more)
-
-### Community 93 - "Community 93"
-Cohesion: 0.17
-Nodes (7): FtAxesMixin, Bool, Frame, Seis eixos ao vivo, saúde do link e o painel de comando., Stream x polled — o par do painel "Serial communication" da FIBOS. O cliente de…, Os seis canais como TEXTO grande, em grade 3x2. As barras bipolares por eixo…, Mixin de `PalpationGUI` — todo o estado vive no host, como no resto dos…
-
-### Community 94 - "Community 94"
-Cohesion: 0.13
-Nodes (17): class_color(), classify_force(), copy_plot_data(), draw_cn_raster(), draw_force(), LoadCellFilter, normalize_neuron_name(), process_line() (+9 more)
-
-### Community 95 - "Community 95"
-Cohesion: 0.13
-Nodes (13): CovviBaseClientNode, CurrentGripMsgSubscriberNode, main(), Any, ElectrodeValueMsgSubscriberNode, main(), Any, GetDigitPosnClientNode (+5 more)
-
-### Community 96 - "Community 96"
-Cohesion: 0.10
-Nodes (14): LC_NOMINAL_RATE_HZ não é decorativo: a janela do tare e o τ do auto-zero saem…, Com o pino RATE do HX711 em GND (10 Hz) a janela de 2 s daria 20 amostras; o…, test_a_janela_do_tare_tem_piso_para_taxas_muito_baixas(), test_a_taxa_nominal_governa_as_janelas_do_receiver(), autozero_step(), Relê o JSON quando ele muda no disco. Existe para o wizard da GUI valer SEM…, Quantas amostras cabem na janela de _TARE_WIN_S segundos., Passo do auto-zero para uma constante de tempo de _AUTOZERO_TAU_S. (+6 more)
-
-### Community 97 - "Community 97"
-Cohesion: 0.11
-Nodes (16): Smoke test da aba da célula axial de 100 kg (Reading + Calibration). Mesmo…, O estado que o gate do force_receiver produz: chegam amostras, mas sem…, Força além do aborto (ou negativa, em tração) não pode desenhar fora do canvas…, O estado em que a aba passa a maior parte do tempo: com a FA7155 no ar ninguém…, Sem o force_receiver no ar a coleta mediria o silêncio e gravaria um ponto em…, Publicar no tópico não põe o 'Z' no fio — quem escreve é o receiver, e ele pode…, test_a_barra_nao_sai_do_canvas(), test_reading_acusa_contato_no_limiar() (+8 more)
-
-### Community 98 - "Community 98"
-Cohesion: 0.12
-Nodes (13): Corpo rígido: girar as juntas não estica os elos., test_skeleton_segment_lengths_are_pose_invariant(), test_skeleton_starts_at_base_and_ends_at_tcp(), Contrato central do nó: sem braço na mesa o Gazebo fica na pose do URDF e o…, test_robot_offline_is_a_successful_run(), ndarray, Retorna (right, up, forward) unitários no frame do mundo., Projeta pontos do mundo (N,3) → (uv (N,2) px, depth (N,) m). (+5 more)
-
-### Community 99 - "Community 99"
-Cohesion: 0.12
-Nodes (20): AST, FunctionDef, build_tab(), _func(), fixture, A aba "Load Cell" tem de ser a da célula que está no cabo. Duas células…, Todo `self.X` LIDO dentro do nó — chamado ou só referenciado. Os dois contam:…, Sem o teste de `_force_sensor` a função volta a montar sempre a mesma coisa, e… (+12 more)
-
-### Community 100 - "Community 100"
-Cohesion: 0.12
-Nodes (12): _flat_btn(), _hdr_btn(), _on_enter(), set_state(), Faixa fina sob o header com 5 bargraphs (T/I/M/R/L)., Modo Hover (T29): executa F1-F4 (pre, approach, preshape, descida) e PARA —…, Botão chato sem borda, com efeito de hover sutil., Botão estilizado para a barra superior: ícone Unicode + label. (+4 more)
-
-### Community 101 - "Community 101"
-Cohesion: 0.11
-Nodes (16): _corpo(), O E-STOP sobrevive à queda e à volta da conexão. Duas falhas encontradas em…, `hw_ok = True` como default fazia todo caminho que não falou com o controlador…, `enable()` faz PowerOn + EnableRobot e espera o modo 5 — rodar isso com a trava…, `_estop_engaged` mora no objeto do driver. Um driver novo nasce com ela False,…, É ela que faz `_send_motion`, `servo_j` e `drag_teach` recusarem na mesma hora…, Sem dashboard o comando NÃO chega ao controlador, e dizer que chegou é afirmar…, O E-STOP não pode levantar exceção e abortar o resto da sequência (mão aberta,… (+8 more)
-
-### Community 102 - "Community 102"
-Cohesion: 0.11
-Nodes (20): Se este teste cair, o crc16_modbus do repo divergiu do do sensor — e nada mais…, test_crc_publicado_pelo_fabricante_confere(), test_requisicao_de_escrita_de_id_bate_com_o_manual(), test_requisicao_de_leitura_bate_com_o_manual(), test_read_holding_bate_com_o_quadro_do_manual(), test_valor_fora_de_16_bits_e_recusado(), test_write_multiple_carrega_bytecount_correto(), test_write_single_tem_8_bytes_e_crc_valido() (+12 more)
-
-### Community 103 - "Community 103"
-Cohesion: 0.11
-Nodes (18): node(), fixture, Resolução do IP e política de falha do `real_pose_sync`. Este nó roda UMA vez…, `real_driver` pode nem importar (sem dependência do robô instalada). Esse caso…, `Duration(sec=int(...))` descarta a parte fracionária em silêncio. Com o valor…, O parâmetro é o override do launch — tem de vencer o arquivo, senão não há como…, REGRESSÃO: `.value` vem None quando o launch declara o parâmetro como null, e o…, String vazia é 'não configurado', não 'IP vazio'. (+10 more)
-
-### Community 104 - "Community 104"
-Cohesion: 0.17
-Nodes (15): ament_index_python_packages, launch, launch_actions, launch_event_handlers, launch_launch_description_sources, launch_ros_actions, launch_substitutions, _build_gazebo_urdf() (+7 more)
-
-### Community 105 - "Community 105"
-Cohesion: 0.13
-Nodes (12): covvi_interfaces_msg, rclpy, GetDigitErrorClientNode, main(), Any, GetEciManufacturerIDClientNode, main(), Any (+4 more)
-
-### Community 106 - "Community 106"
-Cohesion: 0.13
-Nodes (16): Integridade do frame ADC do touch sensor. Regressão da coleta de 07/08/2026:…, A placa expõe duas portas. A do ST-Link é ponte UART presa ao baud: a 115200 dá…, Logger mínimo: os nós são criados por __new__ (sem rclpy.init), então…, Bytes emendados podem produzir uma linha com valores A MAIS., O publicador ROS (_parse_adc_frame) e a fonte têm de concordar sobre o que é um…, _src(), _StubLog, test_autodeteccao_prefere_a_cdc_nativa_a_vcp_do_stlink() (+8 more)
-
-### Community 107 - "Community 107"
-Cohesion: 0.16
-Nodes (15): _alimenta(), _mostrado(), Smoke test dos painéis novos da aba "6 Axes" (gráficos e vista 3D). Por que…, Primeiro quadro depois de abrir a aba: ainda não chegou amostra., |F| = 0 não tem direção: a seta some em vez de apontar para um lugar…, O caso degenerado da rotação, e o mais comum da bancada., Valor muito além da escala satura no gráfico; deixar o Tk desenhar em…, test_buffer_respeita_a_janela_de_fabrica() (+7 more)
-
-### Community 108 - "Community 108"
-Cohesion: 0.12
-Nodes (18): Ganho DC unitário: um sinal constante tem de sair intacto., Um cúbico puro passa por um SG de ordem 3 sem alteração alguma., Espelhar o sinal criaria um pico no degrau de contato — por isso as bordas usam…, test_bordas_nao_inventam_pico(), test_coeficientes_somam_um(), test_janela_par_e_recusada_com_a_frase_do_fabricante(), test_ordem_maior_ou_igual_a_janela_e_recusada(), test_preserva_polinomio_ate_a_ordem() (+10 more)
-
-### Community 109 - "Community 109"
-Cohesion: 0.19
-Nodes (17): _chain(), _hand(), Testes do touch_pack.hand_camera_teleop — o núcleo puro de mapeamento landmarks…, Rotate (oposição) sobe quando a ponta do polegar se aproxima do lado do dedo…, Cadeia planar: devolve [p0(base), p1, p2, p3]. `t` dobra as juntas., Monta os 21 landmarks (x, y em pixels). `t_long` fecha os 4 dedos longos;…, test_curl_is_monotonic_in_bend(), test_fist_curls_near_one() (+9 more)
-
-### Community 110 - "Community 110"
-Cohesion: 0.17
-Nodes (12): Sample, Testes do pareamento célula de carga × touch sensor (force_sync_node)., test_boundary_age_is_accepted(), test_none_when_either_stale(), test_none_when_missing_source(), test_pair_when_both_fresh(), ForceSyncNode, main() (+4 more)
-
-### Community 111 - "Community 111"
-Cohesion: 0.17
-Nodes (15): skipif, Geometria da vista 3D do vetor de força. Só as funções puras — o resto do mixin…, test_normalizacao_centra_os_eixos_curtos(), test_normalizacao_poe_comprimento_1_em_z_com_base_na_origem(), test_obj_ausente_levanta_em_vez_de_devolver_malha_vazia(), test_obj_do_fabricante_carrega_e_tria_ngula(), test_obj_do_fabricante_normaliza_para_a_mesma_forma_da_procedural(), test_seta_procedural_aponta_para_mais_z() (+7 more)
-
-### Community 112 - "Community 112"
-Cohesion: 0.19
-Nodes (14): coletar(), FalsoFA7155, montar(), Transporte da 60000 (RS485 do flange): entrega de quadros e reconexão. Sem…, seq incrementa de 1 em 1 e t_us não anda para trás dentro do bloco. Se todos os…, O servidor fecha depois de cada rajada; a fonte tem de voltar sozinha. É o caso…, Servidor local que despeja `payload` em pedaços de `chunk` bytes., Roda a fonte até juntar `esperado` amostras (ou estourar o timeout). (+6 more)
-
-### Community 113 - "Community 113"
-Cohesion: 0.16
-Nodes (13): (0,0) → (max,0) → (max,max) → (0,max): volta pela borda. A ordem "diagonal"…, Grade 1×N não tem quatro cantos. Devolver quatro repetiria dois pontos e faria…, test_a_single_column_has_only_two_extremes(), test_a_single_point_grid_has_one_corner(), test_a_single_row_has_only_two_extremes(), test_corners_walk_the_shortest_loop(), MatrixMixin, Mixin de `PalpationGUI` — todo o estado vive no host. (+5 more)
-
-### Community 114 - "Community 114"
-Cohesion: 0.15
-Nodes (8): Em SQUARE, copia os valores do eixo X para o Y — inclusive nos campos ocultos,…, Mostra só as linhas que mandam na grade atual., Aplica o formato: destaca o botão, reordena as linhas visíveis e, em SQUARE,…, Alterna entre dimensionar por passo e pelas dimensões do alvo., Bloco do MATRIX_MAP: formato + passos/linhas/colunas + Safe Z + velocidade de…, Alterna a ordem de visita. Só reordena — a geometria da grade (e portanto o…, Trace dos parâmetros da grade: em SQUARE mantém Y == X e redesenha. Debounce…, Desenha a grade no Canvas: origem, ordem de visita e ponto ativo. Escala…
-
-### Community 115 - "Community 115"
-Cohesion: 0.16
-Nodes (10): _line_polydata(), _polydata(), ndarray, Instala a grade do chão como geometria da cena — assim ela passa pelo mesmo…, Espelha a `manip3d.Camera` no vtkCamera (ver o docstring do módulo para a…, Um quadro → array (H, W, 3) uint8 pronto para virar PIL.Image., (N,3,3) → vtkPolyData de triângulos independentes., (2S,3) em pares consecutivos → vtkPolyData de segmentos. (+2 more)
-
-### Community 116 - "Community 116"
+### Community 2 - "main.c"
 Cohesion: 0.18
-Nodes (15): launch_conditions, _build_hand_suffix(), _build_robot_urdf(), _build_touch_tool_suffix(), _fix_virtual_link_inertia(), generate_launch_description(), _inject_hand_initial_values(), launch_setup() (+7 more)
+Nodes (18): [10] Retorno de `snprintf` não clampeado, [2] Ring buffer sem seção crítica, append_ts(), irq_restore(), irq_save(), izhikevich_step(), micros64(), process_spikes() (+10 more)
 
-### Community 117 - "Community 117"
-Cohesion: 0.15
-Nodes (15): NamedTuple, `lever_m` entrou com default para não quebrar quem constrói o PlaneFit por…, test_planefit_antigo_continua_construivel(), _fit(), test_near_collinear_points_are_refused(), test_non_planar_surface_is_refused(), test_tilt_is_checked_before_the_other_guards(), test_tilt_over_the_safety_limit_is_refused() (+7 more)
+### Community 3 - "test_fmod_phase.py"
+Cohesion: 0.04
+Nodes (20): test_banda_morta_do_servoj_nao_engole_a_onda(), test_banda_morta_tem_fonte_unica(), test_corte_por_passo_se_cala_quando_a_medida_sai_de_fase(), test_guarda_de_excursao_sobrevive_ao_corte_calado(), test_gui_nao_prende_o_servoj_em_30ms(), test_launch_expoe_servoj_period_s(), test_limites_de_seguranca_da_onda_seguem_ativos(), test_medida_e_drenada_por_amostra_e_nao_por_tick() (+12 more)
 
-### Community 118 - "Community 118"
-Cohesion: 0.13
-Nodes (10): GraspResult, PerfectGrasp, JointState, Node, Wrapper de fechamento incremental com contact-detection., Args: node: rclpy Node (para logger + clock) send_hand_fn: callable(cfg_dict,…, Chamar a partir do callback /joint_states do nó hospedeiro., Fecha a mão em direção ao `target_cfg_rad` (junta primária → radianos, mesmo… (+2 more)
-
-### Community 119 - "Community 119"
+### Community 4 - "touch_sensor5x5.py"
 Cohesion: 0.12
-Nodes (8): A regra do explorer, aplicada ao pior caso que a GUI consegue montar: a onda…, test_a_wave_at_the_gui_floor_is_accepted_by_the_explorer_rule(), _ForceProfile, Setpoint de força variável no tempo: F(t) = média + amp·trig(2πf·t). Só…, Amostras por período NO TICK DO QS (_CTRL_DT). Mantido porque é o número que…, Amostras por período com um tick de `dt` segundos., Tick que dá _FMOD_MIN_PTS_PER_CYCLE pontos por período nesta frequência,…, Força pedida em t segundos do início da modulação.
+Nodes (4): update_plots(), note_time(), process_line(), serial_reader_loop()
 
-### Community 120 - "Community 120"
+### Community 5 - "GraspExecutorNode"
+Cohesion: 0.05
+Nodes (8): _cartesian_arm_goal(), _deg_dict_to_rad(), GraspExecutorNode, _do(), _do(), _make_hand_goal(), _make_smooth_arm_goal(), _w2r()
+
+### Community 6 - "test_kinematic_attacher.py"
+Cohesion: 0.07
+Nodes (26): _Attacher, _Cli, _pose(), _pose_enviada(), _quat_z(), _Resp, test_attach_without_poses_is_refused(), test_attach_without_the_gazebo_service_is_refused() (+18 more)
+
+### Community 7 - "latency_report.py"
+Cohesion: 0.07
+Nodes (22): test_real_joints_are_polled_and_failures_become_nan(), _synth_hand_raw(), _synth_raw(), test_agg_uses_lag_magnitude(), test_analyze_reads_hand_captures(), test_analyze_recovers_known_lag(), test_compensation_collapses_the_error(), test_eci_posn_to_deg_matches_the_calibrated_span() (+14 more)
+
+### Community 8 - "test_ft_receiver_node.py"
+Cohesion: 0.09
+Nodes (21): _linha(), _Recv, test_absurd_force_frame_is_dropped_before_the_filter(), test_absurd_torque_frame_is_dropped_too(), test_autozero_creeps_towards_the_reading_when_idle_and_inside_the_band(), test_autozero_does_not_run_during_a_hold(), test_autozero_does_not_run_outside_the_dead_band(), test_autozero_stays_off_when_disabled() (+13 more)
+
+### Community 9 - "forward_kinematics"
+Cohesion: 0.08
+Nodes (5): Tactile mapping — `MATRIX_MAP`, test_jacobian_translational_matches_finite_differences(), forward_kinematics(), jacobian(), _sp_executed()
+
+### Community 10 - "TactileExplorer"
+Cohesion: 0.04
+Nodes (3): node(), main(), TactileExplorer
+
+### Community 11 - "test_lc_health_probe.py"
+Cohesion: 0.07
+Nodes (22): _com_amostras(), _Health, _Msg, _Probe, test_a_gap_is_counted_and_does_not_produce_a_dt(), test_a_huge_jump_is_a_resync_not_lost_samples(), test_a_line_with_nothing_usable_does_not_become_the_baseline(), test_consecutive_samples_measure_one_conversion_period() (+14 more)
+
+### Community 12 - "test_force_receiver.py"
+Cohesion: 0.08
+Nodes (15): _calib_do_repo(), test_a_calibracao_do_repo_tem_impressao_estavel(), test_a_calibracao_e_instalada_com_o_pacote(), test_a_flat_window_has_no_drift(), test_an_odd_window_still_works(), test_config_nao_conta_como_origem_que_se_propaga(), test_force_from_the_repo_line_matches_the_masses(), test_refitting_the_stored_points_reproduces_the_stored_line() (+7 more)
+
+### Community 13 - "constants.py"
+Cohesion: 0.04
+Nodes (25): main(), main(), AutoState, Load cell (XIAO ESP32C6 + HX711), test_a_impressao_digital_e_dos_numeros_nao_do_arquivo(), test_a_impressao_digital_muda_com_a_reta(), ft_max_rate_hz(), hand_deg_to_driver_rad() (+17 more)
+
+### Community 14 - "grasp_ml_pack/kinematics.py"
+Cohesion: 0.08
+Nodes (27): approach_to_Rtcp(), _axis_rot(), finger_fk(), _finger_tip_in_hand(), forward_kinematics(), _geometric_guess(), grasp_center_in_hand(), hand_fk() (+19 more)
+
+### Community 15 - "numpy"
+Cohesion: 0.05
+Nodes (44): _cfg(), node(), _ros(), _set(), test_declared_slope_is_not_overwritten(), test_descending_falls_back_to_vertical(), test_descending_uses_the_calibrated_axis(), test_frame_advance_climbs_the_measured_tilt() (+36 more)
+
+### Community 18 - "math"
+Cohesion: 0.06
+Nodes (31): _solve_perpendicular_wrist(), test_ik_roundtrip(), test_perpendicular_wrist_both_branches_exact(), test_perpendicular_wrist_ur_closed_form(), test_urdf_dobot_roundtrip(), test_rpy_deg_matches_pointing_pose(), test_real_cell_scene_matches_kinematics_fk(), approach_to_Rtcp() (+23 more)
+
+### Community 21 - "TouchSensorSource"
+Cohesion: 0.09
+Nodes (5): test_fonte_e_gui_concordam_sobre_a_orientacao(), test_heatmap_e_raster_continuam_coerentes_entre_si(), test_planilha_continua_fisica_apesar_da_tela(), test_visualizador_diverge_das_planilhas_de_proposito(), TouchSensorSource
+
+### Community 22 - "test_plane_probe.py"
+Cohesion: 0.05
+Nodes (56): _calota(), _ligar_verify(), node(), _plano(), _ros(), test_a_sagitta_mede_a_calota_que_o_anel_nao_ve(), test_ataque_perpendicular_a_face_e_aprovado(), test_braco_de_alavanca_e_medido_no_plano() (+48 more)
+
+### Community 23 - "test_ft_modbus.py"
+Cohesion: 0.09
+Nodes (22): _crc(), _FakeLine, _stream_frame(), _Tapped, test_acha_resposta_cercada_de_quadros_de_stream(), test_buffer_da_derivacao_e_limpo_ao_fechar(), test_derivacao_nao_cresce_sem_limite(), test_escravo_mudo_da_timeout_e_conta() (+14 more)
+
+### Community 24 - "test_hand_latency_probe.py"
+Cohesion: 0.08
+Nodes (15): _serie(), test_an_explicit_joint_index_overrides_the_variance_pick(), test_an_out_of_range_joint_index_falls_back_to_the_variance_pick(), test_arm_only_joint_state_is_ignored(), test_hand_joint_state_is_collected(), test_insufficient_overlap_returns_none(), test_peak_correlation_is_high_for_a_clean_shift(), test_position_shorter_than_name_does_not_raise() (+7 more)
+
+### Community 26 - "test_fmod_wave_quality.py"
+Cohesion: 0.09
+Nodes (18): _gain(), _lockin(), _onda(), test_a_frase_nao_afirma_taxa_medida_quando_e_nominal(), test_a_frase_separa_o_que_o_braco_comanda_do_que_a_celula_mede(), test_a_frequencia_maxima_nao_passou_do_hardware(), test_compensacao_devolve_a_amplitude_pedida(), test_dez_hz_com_servoj_de_30ms_continua_recusado() (+10 more)
+
+### Community 27 - "test_lc_serial.py"
+Cohesion: 0.05
+Nodes (26): _calibracao_do_repo(), _feed(), test_a_heartbeat_in_prose_is_not_an_error(), test_a_line_split_across_two_reads_still_closes(), test_boot_noise_before_the_first_frame_is_not_an_error(), test_compression_is_positive_whatever_the_wiring_polarity(), test_force_is_zero_at_the_intercept(), test_full_scale_of_the_adc_is_below_the_cell_full_scale() (+18 more)
+
+### Community 28 - "test_matrix_gui.py"
+Cohesion: 0.11
+Nodes (34): _align_ring(), _FakeGUI, _nodes(), _root(), test_1x1_grid_is_rejected(), test_align_ring_wraps_the_grid_half_a_step_out(), test_corners_and_serpentine_cover_the_same_points(), test_corners_are_not_re_touched_in_the_sweep() (+26 more)
+
+### Community 29 - "test_touch_receiver_node.py"
+Cohesion: 0.07
+Nodes (18): _FakeSocket, node(), _pkt(), _roda(), _ros(), test_any_source_is_accepted_by_default(), test_consecutive_sequence_counts_no_drops(), test_failed_bind_closes_the_socket() (+10 more)
+
+### Community 31 - "test_ft_hkvl56.py"
+Cohesion: 0.10
+Nodes (14): _crc(), _HkvlSlave, _resposta(), test_floats_do_exemplo_do_manual(), test_number_of_reads_conta_bytes_e_nao_registradores(), test_o_estilo_padrao_nao_le_a_resposta_do_hkvl(), test_payload_curto_e_recusado_em_vez_de_devolver_lixo(), test_perfil_nao_finge_conhecer_o_que_o_manual_nao_traz() (+6 more)
+
+### Community 32 - "test_fmod_ilc.py"
+Cohesion: 0.05
+Nodes (15): _lockin_lag(), test_a_correcao_respeita_o_teto(), test_a_formula_analitica_so_vale_onde_o_filtro_domina(), test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula(), test_a_taxa_cai_no_nominal_enquanto_nenhuma_leitura_chegou(), test_a_taxa_medida_acompanha_a_cadencia_que_chega(), test_commit_move_a_correcao_no_sentido_do_erro(), test_discard_nao_move_a_correcao_e_limpa_o_ciclo() (+7 more)
+
+### Community 33 - "CombinedControlGUI"
+Cohesion: 0.09
+Nodes (5): clamp_finger_interference(), CombinedControlGUI, _grip_label_to_obj(), _rad_to_slider(), _slider_to_rad()
+
+### Community 34 - "IMUMixin"
+Cohesion: 0.06
+Nodes (3): test_recorder_flushes_while_running(), IMUMixin, TrackingRecorder
+
+### Community 35 - "test_contact_curve.py"
+Cohesion: 0.08
+Nodes (23): _amp_scale(), C(), _monta(), test_banda_estreita_passa_sem_reclamar(), test_curva_pede_menos_curso_que_o_escalar_do_pe(), test_curva_real_e_usavel(), test_curva_vazia_nao_explode(), test_dentro_do_medido_a_curva_diverge_do_escalar() (+15 more)
+
+### Community 36 - "test_no_overshoot.py"
+Cohesion: 0.07
+Nodes (17): f_rigido(), f_silicone(), _FakeEst, m(), _ramp_step(), _run_ramp(), test_a_deriva_ve_tendencia_e_ignora_ruido(), test_a_espera_assentada_so_vale_perto_do_alvo() (+9 more)
+
+### Community 38 - "Time"
+Cohesion: 0.16
+Nodes (4): GetEciPowerOnClientNode, main(), main(), ResetUserGripsClientNode
+
+### Community 39 - "test_ft_frame.py"
+Cohesion: 0.09
+Nodes (20): _FimDoFluxo, montar(), _rodar(), _SerialFalsa, test_cabecalho_falso_dentro_dos_dados_nao_come_o_quadro_seguinte(), test_crc_cobre_o_cabecalho(), test_crc_errado_e_descartado(), test_crc_vetor_padrao() (+12 more)
+
+### Community 41 - "test_lc_slow_channel.py"
+Cohesion: 0.08
+Nodes (13): domain(), _noise(), _sigma(), test_a_janela_e_em_segundos_e_nao_em_amostras(), test_a_media_so_esta_limpa_depois_da_janela_inteira(), test_media_de_constante_e_a_constante(), test_o_canal_lento_e_mais_quieto_que_o_rapido(), test_o_canal_lento_usa_o_mesmo_tare_do_rapido() (+5 more)
+
+### Community 42 - "._set_status"
+Cohesion: 0.12
+Nodes (13): _phase_descend(), _phase_done(), _phase_release(), _phase_retreat(), _done(), _f1(), _f2(), _f3() (+5 more)
+
+### Community 43 - "test_manip3d.py"
+Cohesion: 0.11
+Nodes (18): _tcp(), test_ik_step_converges_to_a_nearby_target(), test_ik_step_flags_unreachable_target(), test_ik_step_is_a_no_op_when_already_on_target(), test_ik_step_is_continuous_no_configuration_jumps(), test_ik_step_keeps_locked_joints_fixed(), test_ik_step_never_leaves_joint_limits(), test_ik_step_orientation_lock_preserves_attitude() (+10 more)
+
+### Community 44 - "test_run_layout.py"
+Cohesion: 0.07
+Nodes (19): 3.1 ~~Ponteira H — corpo de dedo com faceta plana inclinada~~ (descartada), _FakeStamp, _FakeStart, test_every_mode_gets_its_own_folder(), test_message_run_id_wins_over_the_stamp(), test_modeless_recording_has_a_home_of_its_own(), test_old_publisher_without_run_id_still_names_the_run(), test_run_dir_is_mode_then_run_id() (+11 more)
+
+### Community 45 - "test_mode_feature_contract.py"
+Cohesion: 0.16
+Nodes (8): test_a_escada_continua_mandando_no_seu_dwell(), _codigo(), _fonte(), test_a_escada_roda_exatamente_nos_modos_declarados(), test_a_onda_roda_so_nos_modos_declarados(), test_o_painel_e_o_payload_consultam_o_mesmo_conjunto(), test_o_start_aceita_toda_fase_encerrada(), test_recurso_pedido_fora_do_modo_avisa_antes_de_mover()
+
+### Community 47 - "test_real_driver_proto.py"
+Cohesion: 0.10
+Nodes (18): _driver_with(), _FakeSock, test_complete_line_terminated_by_newline(), test_complete_line_terminated_by_semicolon(), test_drain_clears_the_servoj_flag(), test_drain_is_non_blocking_without_servoj(), test_drain_restores_the_normal_timeout(), test_drain_waits_for_in_flight_acks_after_servoj() (+10 more)
+
+### Community 50 - "test_vtk_render.py"
+Cohesion: 0.16
+Nodes (11): W(), _ink_centroid(), _marker_scene(), _renderer(), test_alignment_holds_across_camera_poses(), test_alignment_holds_after_resize(), test_each_part_gets_its_own_matrix(), test_gpu_projection_matches_camera_project() (+3 more)
+
+### Community 51 - "FtReceiverNode"
+Cohesion: 0.10
+Nodes (3): test_autozero_is_slow_enough_not_to_eat_a_real_contact(), FtReceiverNode, main()
+
+### Community 52 - "test_explorer_logic.py"
+Cohesion: 0.09
+Nodes (18): _default_start(), _feed_force(), _ForceKeeper, _keep_force_fresh(), _run(), node(), _ros(), _stub_protocol() (+10 more)
+
+### Community 53 - "palpation_report.py"
+Cohesion: 0.20
+Nodes (8): main(), _make_plot(), _plot_force(), _plot_touch(), _print_summary(), _segments(), _target_band(), _taxel_baseline()
+
+### Community 54 - "PalpationLogger"
+Cohesion: 0.07
+Nodes (3): test_logger_writes_the_whole_run_into_one_folder(), PalpationLogger, _rel()
+
+### Community 55 - "GazeboMimicJointPlugin"
+Cohesion: 0.07
+Nodes (13): GazeboMimicJointPlugin, has_pid_, last_update_, master_joint_, max_effort_, mimic_joint_, model_, multiplier_ (+5 more)
+
+### Community 56 - "ft_modbus.py"
+Cohesion: 0.14
+Nodes (8): _check_crc(), find_response(), FtModbusMapUnconfirmed, ModbusCrcError, ModbusError, ModbusExceptionResponse, ModbusTimeout, read_payload()
+
+### Community 57 - "test_line_source.py"
+Cohesion: 0.06
+Nodes (24): _espera(), _Fonte, _sem_espera(), _Ser, _SerialFake, test_a_failed_open_reports_the_reason_and_retries(), test_a_missing_dependency_refuses_to_start_and_says_why(), test_a_missing_device_is_not_a_startup_failure() (+16 more)
+
+### Community 58 - "test_prehome_before_start.py"
+Cohesion: 0.10
+Nodes (12): _chamar(), _Fake, test_matrix_ainda_verifica_o_sincronismo(), test_matrix_nao_passa_pela_home(), test_mirror_conectado_segura_o_start(), test_mirror_desconectado_publica_direto(), test_nao_reentra_enquanto_faz_home(), test_o_gate_esta_no_unico_ponto_de_publicacao() (+4 more)
+
+### Community 59 - "pytest"
+Cohesion: 0.04
+Nodes (35): test_copyright(), test_flake8(), test_copyright(), test_flake8(), test_disabled_calibration_moves_nothing(), test_reapply_is_a_noop_without_calibration(), test_zero_fields_from_message_fall_back_to_defaults(), test_desligada_nao_sonda_nada() (+27 more)
+
+### Community 60 - "covvi_client_node.py"
+Cohesion: 0.11
+Nodes (10): CovviClientNode, main(), DigitPosnAllMsgSubscriberNode, main(), GetHandConnectedClientNode, main(), GetHandSerialNumberClientNode, main() (+2 more)
+
+### Community 63 - "._build_hand_tab"
+Cohesion: 0.10
+Nodes (3): _bind_wheel(), _wheel(), cb()
+
+### Community 64 - "CellControlApp"
+Cohesion: 0.12
+Nodes (4): CellControlApp, on_result(), GUIControlNode, _done()
+
+### Community 65 - "FtDevice"
+Cohesion: 0.10
+Nodes (9): _client(), test_leitura_continua_liberada_sem_o_mapa(), test_node_id_fora_da_faixa_e_recusado_antes_da_trava(), test_toda_escrita_e_recusada_enquanto_o_mapa_nao_for_confirmado(), test_trava_barra_antes_de_qualquer_byte_sair_na_linha(), test_u32_ida_e_volta(), FtDevice, _regs_to_u32() (+1 more)
+
+### Community 66 - "test_ft_polled.py"
+Cohesion: 0.09
+Nodes (16): _eco_hmi(), FakeLine, _roda_driver(), test_comando_sempre_ganha_a_linha_do_laco(), test_driver_abre_uma_sessao_por_amostra(), test_driver_conta_timeout_sem_morrer(), test_driver_entrega_amostras_com_seq_crescente(), test_laco_nao_mata_o_comando_de_fome_sob_disputa() (+8 more)
+
+### Community 67 - "CR10RealDriver"
+Cohesion: 0.07
+Nodes (4): Protocol / FSM, What is pushed to the controller on connect, test_drag_teach_recusado_com_estop_pressionado(), CR10RealDriver
+
+### Community 68 - "typing"
+Cohesion: 0.17
+Nodes (5): CovviBaseNode, ElectrodeValueMsgSubscriberNode, main(), main(), MotorLimitsMsgSubscriberNode
+
+### Community 69 - "test_sim_force_bridge.py"
+Cohesion: 0.08
+Nodes (14): bridge(), _envelhece(), _ros(), test_a_reading_just_inside_the_window_still_publishes(), test_filter_state_is_dropped_when_the_plugin_goes_quiet(), test_offset_is_subtracted_after_the_sign(), test_publishes_nothing_before_the_first_wrench(), test_recovers_when_the_plugin_comes_back() (+6 more)
+
+### Community 70 - "fk_partial"
+Cohesion: 0.11
+Nodes (11): arm_clears_bbox(), arm_clears_world(), bbox_overlap(), link_world_aabb(), pose_is_safe(), fk_partial(), adjusted_pick_pose(), main() (+3 more)
+
+### Community 71 - "ft_probe.py"
+Cohesion: 0.11
+Nodes (9): cmd_list(), cmd_raw(), cmd_stream(), main(), _SockReader, detect_ft_serial_port(), configure_cabinet_485(), configure_tool_485() (+1 more)
+
+### Community 72 - "test_explorer_split.py"
+Cohesion: 0.13
+Nodes (13): _arvore(), _de_onde_importa(), _definidos(), _importados(), test_a_slice_never_imports_the_host(), test_each_slice_is_navigable_on_its_own(), test_no_constant_is_defined_in_two_places(), test_the_constants_module_carries_no_ros_message_types() (+5 more)
+
+### Community 73 - "test_servoj_descent.py"
+Cohesion: 0.06
+Nodes (28): 10. Segurança, 11. Pendências antes da primeira coleta, 1. Por que o setup atual não serve para textura, 2. Parâmetros da referência (Gupta et al., 2021, §II-B e §II-D), 3.2 Capa de silicone (Dragon Skin) e o molde, 3.3 Fixação do laminado na ponteira, 3.4 Placa de amostras, 3.5 Decisão de sensor de força: célula axial × FA7155 (+20 more)
+
+### Community 74 - "ForceReceiverNode"
+Cohesion: 0.08
+Nodes (7): test_a_ausencia_de_calibracao_diz_a_consequencia(), test_a_ramp_shows_up_as_drift(), test_o_contador_de_heartbeat_tem_consumidor(), test_the_autotare_guard_is_tighter_than_the_abort(), test_the_autozero_band_alone_does_not_protect_a_hold(), ForceReceiverNode, main()
+
+### Community 76 - "gen_tcp_meshes_from_step.py"
+Cohesion: 0.10
+Nodes (7): bbox(), _combine(), compound(), main(), mass_props(), read_solids(), translate()
+
+### Community 77 - "test_gui_imu.py"
+Cohesion: 0.06
+Nodes (37): _calib_status(), _fk(), _foot_btn(), _guard_state(), _Host, _led(), _Logger, _ori_only() (+29 more)
+
+### Community 78 - "test_sim_wrist_rigidity.py"
+Cohesion: 0.10
+Nodes (12): launch_mod(), share(), test_command_interface_do_braco_sem_clamp_placeholder(), test_erp_global_na_baseline(), test_force_source_real_remove_a_ft_simulada(), test_force_source_sim_mantem_a_ft_simulada(), test_iters_e_step_seguem_nos_valores_originais(), test_os_dois_blocos_andam_juntos() (+4 more)
+
+### Community 80 - "test_logger_columns.py"
+Cohesion: 0.11
+Nodes (18): _params_do_run(), ros(), _run_once(), _spin(), _start_msg(), test_a_unidade_das_colunas_de_tensao_segue_a_celula(), test_carimbos_de_hardware_chegam_ao_csv(), test_celula_desconhecida_cai_no_default_da_bancada() (+10 more)
+
+### Community 81 - "test_matrix_map.py"
 Cohesion: 0.15
-Nodes (11): Savitzky-Golay e estatísticas de janela do painel de 6 eixos. Reproduz o pós-…, Num eixo bipolar o pico que interessa é o de magnitude; um max ingênuo sobre um…, test_estatisticas_da_janela(), test_janela_desliza(), test_max_e_do_valor_absoluto(), test_nan_nao_entra_na_janela(), test_resize_preserva_o_que_couber(), test_snapshot_vazio_nao_explode() (+3 more)
+Nodes (17): node(), _ros(), _start(), _stub_matrix(), test_matrix_force_abort_goes_home(), test_matrix_ignores_repeats(), test_matrix_no_contact_on_origin_aborts(), test_matrix_origin_is_the_first_contact() (+9 more)
 
-### Community 121 - "Community 121"
-Cohesion: 0.15
-Nodes (9): CameraMixin, joint6 ← pronação do punho, palma↔dorso (chave 'ArmJ6'). Sempre move o sim; só…, Janela Tk com o vídeo anotado da câmera. Quem desenha é a GUI (main thread) —…, Puxa o último quadro do teleop e mostra na janela (loop Tk `after`)., Encerra o teleop por câmera: cancela o poll, para a thread, libera a câmera e…, gui_camera.py — teleoperação da mão pela webcam (MediaPipe)., Liga/desliga o controle da mão COVVI pela câmera., Vigia o loop da câmera; se ele morreu sozinho, encerra limpo. (+1 more)
+### Community 82 - "PosesMixin"
+Cohesion: 0.13
+Nodes (8): PosesMixin, _add_pose_to_seq(), _move_down(), _move_up(), _on_dur(), _on_spd(), _refresh_seq(), _remove_pose_from_seq()
 
-### Community 122 - "Community 122"
+### Community 84 - "_fingertips_world"
+Cohesion: 0.10
+Nodes (4): _fingers_clear_objects(), _fingertips_world(), _hand_slider_to_rad(), _point_in_bbox()
+
+### Community 85 - "urdf_helpers.py"
+Cohesion: 0.12
+Nodes (10): apply_all(), clamp_hand_joint_limits(), enable_inter_finger_self_collision(), fix_virtual_link_inertia(), inject_skin_layer(), _patch_finger_link(), inject_visual_skin_layer(), stabilize_hand_joints() (+2 more)
+
+### Community 86 - "test_audit_20260824.py"
+Cohesion: 0.10
+Nodes (10): test_cronometro_para_em_frozen(), test_gui_default_de_banda_e_a_lei_do_explorer(), test_gui_nao_carrega_default_de_banda_proprio(), test_gui_nao_publica_mais_em_ft_sensor_wrench(), test_gui_separa_falha_do_estop_real_do_sucesso(), test_migracao_descarta_hold_tol_persistido_da_v1(), test_mirror_cobre_todas_as_fases_do_explorer(), test_mirror_e_gui_usam_a_mesma_regra() (+2 more)
+
+### Community 87 - "test_descent_profile.py"
+Cohesion: 0.14
+Nodes (12): _cenario(), m(), perfil(), _tempo(), test_a_rampa_e_mais_lenta_que_a_reacao_da_frenagem(), test_home_nova_rasteja_inteira(), test_invariante_do_orcamento(), test_margem_aprendida_fecha_em_dez_segundos() (+4 more)
+
+### Community 88 - "test_ft_axes.py"
+Cohesion: 0.12
+Nodes (13): _gui(), test_baud_e_taxa_sao_os_do_exemplar_da_bancada(), test_cabecalho_da_planilha_tem_os_seis_eixos(), test_fundo_de_escala_separa_forca_de_torque(), test_ordem_dos_eixos_bate_com_o_quadro(), test_os_seis_eixos_chegam_na_ordem_certa(), test_quadro_com_nan_e_descartado_e_contado(), test_taxa_fica_none_ate_ter_amostras_suficientes() (+5 more)
+
+### Community 89 - "test_settle_still.py"
+Cohesion: 0.13
+Nodes (9): _feed(), _sample(), test_braco_parado_sai_em_quiet_ticks(), test_espera_a_frenagem_do_home_terminar(), test_leitura_repetida_nao_conta_como_parado(), test_segura_a_pose_de_entrada_e_nao_persegue_a_deriva(), test_settle_fixo_teria_liberado_com_velocidade_residual(), test_teto_devolve_false_sem_travar() (+1 more)
+
+### Community 90 - "test_gui_split.py"
+Cohesion: 0.12
+Nodes (11): _bases(), _class_node(), _methods(), _self_attrs(), test_every_self_reference_in_the_mixin_resolves(), test_load_cell_group_left_the_host(), test_mixin_does_not_shadow_the_host(), test_mixin_is_actually_mixed_in() (+3 more)
+
+### Community 91 - "FtSerialSource"
+Cohesion: 0.07
+Nodes (5): test_sem_servidor_nao_explode_e_reporta_erro(), test_the_two_ft_transports_stamp_frames_with_the_same_code(), LineTapMixin, FtSerialSource, FtTcpSource
+
+### Community 92 - "test_transit_guards.py"
+Cohesion: 0.14
+Nodes (10): _ros(), test_carga_no_meio_do_transito_para_o_braco(), test_celula_muda_aborta_o_transito(), test_home_replaneja_depois_da_pausa(), test_pausa_eterna_nao_vira_movimento_eterno(), test_pausa_no_transito_devolve_paused(), test_stop_continua_parando(), test_tracao_tambem_dispara() (+2 more)
+
+### Community 94 - "intensity_classifier_force.py"
 Cohesion: 0.21
-Nodes (9): Detection2D, Image, _contour_shape_ok(), main(), ObjectDetectorNode, _pixel_to_world(), ndarray, Node (+1 more)
+Nodes (12): class_color(), classify_force(), copy_plot_data(), draw_cn_raster(), draw_force(), normalize_neuron_name(), process_line(), read_serial() (+4 more)
 
-### Community 123 - "Community 123"
-Cohesion: 0.17
-Nodes (9): DigitStatusAllMsgSubscriberNode, main(), Any, GetMotorCurrentClientNode, main(), Any, main(), MotorLimitsMsgSubscriberNode (+1 more)
-
-### Community 124 - "Community 124"
-Cohesion: 0.12
-Nodes (10): A GUI mostra esse campo. Ficar em None com a placa conectada faz o operador…, Com dois conversores genéricos no mesmo PC o auto-detect escolhe o errado — o…, Porta ocupada por outro processo é o caso comum. A mensagem do sistema é o que…, Melhor um RuntimeError com a placa nomeada do que um AttributeError em None no…, _SerialFake, test_a_failed_open_reports_the_reason_and_retries(), test_an_explicit_port_wins_over_detection(), test_serial_open_publishes_the_port_it_actually_used() (+2 more)
-
-### Community 125 - "Community 125"
-Cohesion: 0.18
-Nodes (13): _Anel, _grade_mm(), A ORDEM de visita da grade MATRIX_MAP e o anel de calibração.…, São os quatro toques que medem a inclinação do plano. Menos que quatro não…, A grade está em mm e o `probe_ring_from_grid` trabalha em metros. Um fator 1000…, O anel desenhado e o que o explorer executa TÊM de sair da mesma função — duas…, Guarda de ciclo: o host importa o mixin, então o mixin não pode importar o host…, test_mixin_declares_no_import_from_the_host() (+5 more)
-
-### Community 126 - "Community 126"
+### Community 95 - "covvi_hand_driver/__init__.py"
 Cohesion: 0.16
-Nodes (15): Banda de chegada derivada do RUÍDO da célula, e setpoints degenerados. Contexto…, Espelho da conta que os cinco call sites do explorer fazem., O piso não é arbitrário: é múltiplo de σ. Re-medir a célula tem de ser mudar UM…, Borda inferior <= 0 significa que "cheguei ao setpoint" é satisfeito sem tocar…, Contrapositivo do teste acima: com a banda larga o bastante para cruzar o…, Sair da banda RESETA a janela de _HOLD_STABLE_S. A 3σ esperam-se ~0,5 excursões…, O piso prático do setpoint é limiar de contato + banda. Se algum dia ele cair…, test_banda_a_4_sigma_sobrevive_a_janela_de_estabilidade() (+7 more)
+Nodes (6): DigitTouchAllMsgSubscriberNode, main(), GetHandPowerOnClientNode, main(), InputStatusMsgSubscriberNode, main()
 
-### Community 127 - "Community 127"
-Cohesion: 0.15
-Nodes (7): main(), MirrorNode, Exception, JointState, Node, PalpationStatus, Conecta (e reconecta com backoff) ao controlador CR10.
+### Community 96 - ".__init__"
+Cohesion: 0.20
+Nodes (4): test_a_janela_do_tare_tem_piso_para_taxas_muito_baixas(), test_a_taxa_nominal_governa_as_janelas_do_receiver(), autozero_step(), tare_window_n()
 
-### Community 128 - "Community 128"
-Cohesion: 0.17
-Nodes (8): _ContactCurve, Curva F(x) MEDIDA: pares (penetração comandada, força em REPOUSO) coletados…, Registra um par. `x_m` é a penetração COMANDADA acumulada e `f_n` a força lida…, Pares ordenados por força, com penetração monotônica. Ordenar por força é o que…, Rigidez do segmento da ponta — usada para EXTRAPOLAR fora do medido. A onda…, Penetração (m) que corresponde a esta força, na mesma origem em que os pares…, Penetração que separa duas forças (m). A origem se cancela, então não importa…, Rigidez secante (N/m) entre duas forças — só para log.
+### Community 97 - "test_lc_axial_gui.py"
+Cohesion: 0.08
+Nodes (13): test_a_barra_nao_sai_do_canvas(), test_a_taxa_medida_sai_das_chegadas(), test_os_dois_zeros_sao_botoes_diferentes(), test_reading_acusa_contato_no_limiar(), test_reading_avisa_perto_do_aborto(), test_reading_com_ponte_viva_mas_sem_forca(), test_reading_mostra_os_tres_estagios(), test_reading_sem_dado_nenhum() (+5 more)
 
-### Community 129 - "Community 129"
-Cohesion: 0.23
-Nodes (4): HandControlGUI, main(), Node, _slider_to_rad()
-
-### Community 130 - "Community 130"
-Cohesion: 0.19
-Nodes (15): _alimenta(), _contador(), Instância mínima para exercitar `_conta_lacuna` sem subir o nó (ele abriria a…, A porta abre no meio do stream: o primeiro seq que chega é sempre arbitrário, e…, O que este contador existe para tornar visível: uma amostra que se perde no USB…, O contador do firmware recomeça em 0 a cada boot. Sem esta guarda, um replug…, Linha duplicada (eco de monitor, retransmissão) daria delta 0. Contar isso como…, Dois pares de contadores, e eles NÃO são redundantes: o log de 10 s quer o… (+7 more)
-
-### Community 131 - "Community 131"
-Cohesion: 0.22
-Nodes (14): Decimação dos gráficos da aba "6 Axes". O que estes testes protegem é a única…, 1 pico em 2000 amostras, reduzido a 360 colunas: tem de aparecer., Justifica o min/max: a alternativa ingênua falha neste mesmo dado., test_amostra_unica_vira_um_ponto_em_x_zero(), test_coluna_com_variacao_gera_dois_pontos(), test_custo_depende_das_colunas_e_nao_das_amostras(), test_pico_de_uma_amostra_sobrevive_a_decimacao(), test_serie_menor_que_as_colunas_sai_intacta() (+6 more)
-
-### Community 132 - "Community 132"
+### Community 98 - "Camera"
 Cohesion: 0.13
-Nodes (15): V₀ + n pontos sobre a reta NOMINAL da placa — o caso que tem de passar., O erro está na TENSÃO (a massa padrão é conhecida). Regredir F sobre V…, O V₀ vai junto: mantê-lo sob pontos novos misturaria duas sessões de bancada, e…, O alvo do Save é `sensors/load_cell_calib.json`, que é VERSIONADO — então há…, Primeira calibração de uma máquina nova: não existe nada a preservar, e o…, Backup é rede de segurança, não pré-requisito: um CONFIG_DIR sem permissão não…, _reta_boa(), test_a_regressao_e_de_V_em_funcao_de_F() (+7 more)
+Nodes (10): test_basis_is_orthonormal_right_handed(), test_orbit_elevation_is_clamped(), test_orbit_keeps_target_and_distance(), test_pan_moves_target_on_camera_plane(), test_point_behind_camera_has_negative_depth(), test_target_projects_to_screen_center(), test_unproject_delta_is_inverse_of_project(), test_zoom_is_clamped() (+2 more)
 
-### Community 133 - "Community 133"
-Cohesion: 0.29
-Nodes (7): _add_pose_to_seq(), _move_down(), _move_up(), _on_dur(), _on_spd(), _refresh_seq(), _remove_pose_from_seq()
+### Community 99 - "test_lc_tab_selection.py"
+Cohesion: 0.12
+Nodes (10): build_tab(), _func(), test_a_aba_olha_para_a_celula_selecionada(), test_monta_a_aba_de_seis_eixos_da_fa7155(), test_monta_as_duas_abas_da_celula_axial(), test_o_default_do_parametro_e_a_celula_da_bancada(), test_o_launch_manda_o_mesmo_valor_para_a_gui_e_para_o_driver(), test_o_ramo_da_fa7155_nao_cai_no_da_axial() (+2 more)
 
-### Community 134 - "Community 134"
+### Community 100 - "._build_cell_tab"
+Cohesion: 0.13
+Nodes (6): _flat_btn(), _hdr_btn(), _on_enter(), set_state(), _shade(), StatusLED
+
+### Community 101 - "test_estop_reconnect.py"
+Cohesion: 0.11
+Nodes (8): _corpo(), test_a_trava_arma_antes_de_qualquer_io(), test_driver_novo_recebe_a_trava_de_volta(), test_engage_nao_exige_conexao_viva(), test_engage_nasce_pessimista(), test_estop_distingue_trava_local_de_controlador_alarmado(), test_reconexao_nao_reabilita_com_estop_travado(), test_socket_perdido_nao_impede_a_trava()
+
+### Community 102 - "struct"
+Cohesion: 0.12
+Nodes (14): test_requisicao_de_escrita_de_id_bate_com_o_manual(), test_requisicao_de_leitura_bate_com_o_manual(), test_read_holding_bate_com_o_quadro_do_manual(), test_resposta_com_crc_errado_nao_passa(), test_valor_fora_de_16_bits_e_recusado(), test_write_multiple_carrega_bytecount_correto(), test_write_single_tem_8_bytes_e_crc_valido(), _crc() (+6 more)
+
+### Community 103 - "test_real_pose_sync.py"
+Cohesion: 0.11
+Nodes (10): node(), _robot_json(), _ros(), test_blank_parameter_falls_through_to_the_file(), test_config_file_without_the_key_falls_back(), test_corrupt_config_file_falls_back_instead_of_raising(), test_driver_unavailable_is_reported_as_offline(), test_move_duration_survives_the_integer_conversion() (+2 more)
+
+### Community 104 - "cr10_covvi_gazebo.launch.py"
+Cohesion: 0.21
+Nodes (4): _build_gazebo_urdf(), generate_launch_description(), _build_combined_urdf(), generate_launch_description()
+
+### Community 105 - "sys"
 Cohesion: 0.16
-Nodes (8): PalpationStart, Valida e converte `msg.waypoints` (geometry_msgs/Point[], metros, RELATIVOS à…, Porta de entrada do /palpation/start: recusa comando repetido e comando VELHO,…, True para um start LATCHED de outra sessão. /palpation/start é TRANSIENT_LOCAL…, Aplica os parâmetros e arranca a thread do protocolo. Devolve True se a thread…, Chave de aprendizado a partir de uma posição de TCP (m). A indexação do contato…, Chave da home: a POSIÇÃO DO TCP (mm, 0,1 mm) via FK, não os ângulos., Profundidade aprendida para `key`, aceitando home VIZINHA.
+Nodes (4): GetEciManufacturerIDClientNode, main(), main(), ResetRealtimeCfgClientNode
 
-### Community 135 - "Community 135"
-Cohesion: 0.15
-Nodes (7): load_calibration(), slope/intercept do JSON, na MESMA ordem de precedência da GUI do touch_pack…, main(), Node, String, TestRunner, f()
+### Community 106 - "test_adc_frame_integrity.py"
+Cohesion: 0.20
+Nodes (7): _src(), _StubLog, test_frame_completo_e_aceito(), test_frame_longo_demais_tambem_e_descartado(), test_frame_truncado_e_descartado_e_contado(), test_logger_nao_completa_frame_curto_com_colunas_vazias(), test_publicador_da_gui_rejeita_o_mesmo_que_a_fonte()
 
-### Community 136 - "Community 136"
+### Community 107 - "test_ft_gui_smoke.py"
+Cohesion: 0.11
+Nodes (13): _alimenta(), _Host, _mostrado(), raiz(), test_buffer_respeita_a_janela_de_fabrica(), test_freeze_para_de_acumular(), test_repinta_com_buffer_vazio(), test_repinta_com_dados_vivos() (+5 more)
+
+### Community 108 - "ft_stats.py"
+Cohesion: 0.11
+Nodes (10): test_bordas_nao_inventam_pico(), test_coeficientes_somam_um(), test_janela_par_e_recusada_com_a_frase_do_fabricante(), test_ordem_maior_ou_igual_a_janela_e_recusada(), test_preserva_polinomio_ate_a_ordem(), test_serie_menor_que_a_janela_volta_intacta(), test_suaviza_ruido_branco(), savgol_coeffs() (+2 more)
+
+### Community 109 - "test_hand_camera_teleop.py"
 Cohesion: 0.19
-Nodes (6): main(), PipelineNode, Detection2DArray, Node, String, FSM autônoma para processar a fila de objetos sem GUI.
+Nodes (11): _chain(), _hand(), test_curl_is_monotonic_in_bend(), test_fist_curls_near_one(), test_lerp01_saturates(), test_open_hand_curls_near_zero(), test_returns_all_six_joints_in_unit_range(), test_rotate_tracks_thumb_to_pinky_distance() (+3 more)
 
-### Community 137 - "Community 137"
-Cohesion: 0.14
-Nodes (7): _ft_probe(), recv() devolvendo b'' fazia read() voltar vazio para sempre, e os dois laços…, in_waiting é o que faz os laços drenarem o recv inteiro; sem ele a leitura…, Importa scripts/ft_probe.py, que não é módulo do pacote., test_sockreader_guarda_o_resto_do_bloco(), test_sockreader_nao_marca_eof_em_timeout(), test_sockreader_sinaliza_eof_em_vez_de_girar()
+### Community 110 - "pair_if_fresh"
+Cohesion: 0.17
+Nodes (7): test_boundary_age_is_accepted(), test_none_when_either_stale(), test_none_when_missing_source(), test_pair_when_both_fresh(), ForceSyncNode, main(), pair_if_fresh()
 
-### Community 138 - "Community 138"
-Cohesion: 0.18
-Nodes (10): _FakeGUI, fixture, Testes do rótulo do botão de E-STOP no header da GUI. O botão é uma CHAVE COM…, Portador do botão; `_refresh_estop_button` só toca em `_estop_btn`., Regressão: o refresh escrevia só o ícone e apagava o nome — e como ele roda no…, O <Leave> do _hdr_btn repõe a cor GUARDADA no estado do widget. Se o refresh…, _root(), test_armed_button_keeps_the_estop_name() (+2 more)
+### Community 111 - "test_ft_arrow.py"
+Cohesion: 0.09
+Nodes (21): _quase(), test_nenhum_eixo_do_sensor_degenera_na_projecao(), test_normalizacao_centra_os_eixos_curtos(), test_normalizacao_poe_comprimento_1_em_z_com_base_na_origem(), test_obj_ausente_levanta_em_vez_de_devolver_malha_vazia(), test_obj_do_fabricante_carrega_e_tria_ngula(), test_obj_do_fabricante_normaliza_para_a_mesma_forma_da_procedural(), test_origem_projeta_no_centro() (+13 more)
 
-### Community 139 - "Community 139"
-Cohesion: 0.15
-Nodes (9): Avaliado na PONTA: sobre uma reta o SG devolve o valor corrente, não o do…, Mesmo motivo do FtFrameParser: um NaN no buffer contamina toda saída seguinte., test_reconfigurar_limpa_o_buffer(), test_stream_devolve_a_amostra_ate_encher_a_janela(), test_stream_ignora_nan_sem_envenenar(), test_stream_nao_atrasa_uma_rampa(), SG em tempo real, avaliado na PONTA da janela (sem atraso). Enquanto a janela…, StreamingSavGol (+1 more)
+### Community 112 - "FalsoFA7155"
+Cohesion: 0.21
+Nodes (7): coletar(), FalsoFA7155, montar(), test_entrega_valores_corretos(), test_quadro_partido_entre_recv(), test_reconecta_quando_o_peer_fecha(), test_seq_e_carimbo_monotonicos()
 
-### Community 140 - "Community 140"
+### Community 113 - "MatrixMixin"
 Cohesion: 0.16
-Nodes (13): parametrize, Testes do touch_pack.kinematics — FK, Jacobiano, solver de pulso e IK., Na pose POINTING (0,0,-90,0,90,0) o eixo z do flange aponta para baixo (−Z…, T_end desloca o TCP pela translação do attach expressa no frame do flange…, Réplica da solução analítica usada em palpation_gui _solve_tcp_perpendicular:…, Para cinemática tipo UR: j4 = −90° − (q2+q3), j5 = ±90°., FK(q0) → IK → FK reproduz a posição e o eixo de abordagem., _solve_perpendicular_wrist() (+5 more)
+Nodes (5): test_a_single_column_has_only_two_extremes(), test_a_single_point_grid_has_one_corner(), test_a_single_row_has_only_two_extremes(), test_corners_walk_the_shortest_loop(), MatrixMixin
 
-### Community 141 - "Community 141"
-Cohesion: 0.15
-Nodes (10): _Host, leitura(), fixture, raiz(), Aba de calibração sobre um arquivo VAZIO. O caminho é trocado ANTES de montar:…, Hospedeiro com a aba READING montada (a outra metade da aba)., Com force_source:=sim quem publica /load_cell/force_net é o sim_force_bridge, e…, O mínimo que o mixin espera do PalpationGUI. (+2 more)
+### Community 115 - "VtkRobotRenderer"
+Cohesion: 0.11
+Nodes (5): _hex_rgb(), _line_polydata(), _polydata(), VtkRendererError, VtkRobotRenderer
 
-### Community 142 - "Community 142"
-Cohesion: 0.19
-Nodes (13): test_slope_is_zero_on_a_horizontal_plane(), test_slope_refuses_a_null_direction(), test_slope_refuses_a_vertical_plane(), attack_dir_from_normal(), _axis_geometry(), ndarray, plane_probe.py — geometria da CALIBRAÇÃO DINÂMICA DO ÂNGULO DE ATAQUE. Módulo…, Versor de `v`. Levanta ValueError em vetor nulo — silenciar isso devolveria uma… (+5 more)
+### Community 116 - "tactile_cell.launch.py"
+Cohesion: 0.16
+Nodes (10): _build_hand_suffix(), _build_robot_urdf(), _build_touch_tool_suffix(), _fix_virtual_link_inertia(), generate_launch_description(), _inject_hand_initial_values(), launch_setup(), _stabilize_hand_joints() (+2 more)
 
-### Community 143 - "Community 143"
-Cohesion: 0.14
-Nodes (13): Estimador de rigidez com contato MOLE (ponteira de silicone). Números de…, Par que já cruza o limiar sozinho não precisa de acumulação., ΔF alternando em torno de zero não pode virar uma estimativa., Com K do silicone, o teto absoluto tem de deixar passar um ΔF útil. É a…, O piso não pode excluir a ponteira que está na bancada., O piso tem de cobrir o PÉ da curva, não só a secante perto do alvo. É onde o…, Baixar o piso não pode aumentar passo nenhum: abaixo de ~3.000 N/m quem morde é…, test_passo_do_regulador_cobre_o_silicone() (+5 more)
+### Community 118 - "PerfectGrasp"
+Cohesion: 0.08
+Nodes (13): A fazer com a mão real na frente (precisa de calibração/hardware), Aplicado nesta rodada (aditivo, sem tocar no caminho de comando), Controle da mão COVVI — melhorias, P0 #1 — fechar pelo tátil, não pelo lag, P0 #2 — setpoint de força de preensão por dedo, P1 #6 — usar os 14 grips de fábrica, P2 #10 — `hand_position_controller`, P2 #8 — caminho de servo a 50–100 Hz (+5 more)
 
-### Community 144 - "Community 144"
-Cohesion: 0.27
-Nodes (5): ConveyorControllerNode, main(), Node, Response, Spawna um objeto específico (frasco/tubo/ampola). Se já houver outro objeto na…
+### Community 119 - "_ForceProfile"
+Cohesion: 0.11
+Nodes (4): test_gui_nao_deixa_pedir_o_que_o_firmware_recusa(), test_dez_hz_e_alcancavel_no_piso_do_servoj(), test_a_wave_at_the_gui_floor_is_accepted_by_the_explorer_rule(), _ForceProfile
 
-### Community 145 - "Community 145"
-Cohesion: 0.22
-Nodes (12): P(), fixture, Perfil de força modulada do modo TOUCH (_ForceProfile). A onda é executada por…, min/max trocados descrevem a mesma onda — quem chama não precisa saber., A 10 Hz o laço de 33 Hz dá ~3 pontos por período — abaixo do mínimo. É por isso…, O DEFEITO que este teste existe para impedir que volte. `_force_profile()`…, test_control_rate_is_the_limit_at_10hz(), test_limits_are_order_agnostic() (+4 more)
+### Community 120 - "test_ft_stats.py"
+Cohesion: 0.24
+Nodes (7): test_estatisticas_da_janela(), test_janela_desliza(), test_max_e_do_valor_absoluto(), test_nan_nao_entra_na_janela(), test_resize_preserva_o_que_couber(), test_snapshot_vazio_nao_explode(), RollingStats
 
-### Community 146 - "Community 146"
+### Community 122 - "object_detector.py"
 Cohesion: 0.17
-Nodes (13): _ordem(), parametrize, Invariante que vale para qualquer modo e qualquer tamanho: o ensaio tem de…, A origem é o ponto encontrado pela busca de contato. Começar em outro lugar…, Nome vindo de um preset antigo em disco não pode derrubar a GUI nem devolver…, Grade degenerada tem de sair vazia, não estourar: os limites vêm de campos que…, O contrato do modo CORNERS: os extremos na frente, cada nó uma vez só. Um canto…, test_an_unknown_path_name_falls_back_to_the_serpentine() (+5 more)
+Nodes (4): _contour_shape_ok(), main(), ObjectDetectorNode, _pixel_to_world()
 
-### Community 147 - "Community 147"
+### Community 124 - "SerialSource"
+Cohesion: 0.09
+Nodes (4): test_all_three_transports_share_one_lifecycle(), detect_lc_serial_port(), LoadCellSerialSource, SerialSource
+
+### Community 125 - "test_matrix_grid_order.py"
 Cohesion: 0.18
-Nodes (7): est(), fixture, Estima a rigidez de contato K = ΔF/Δx (N/m) online, por EMA., Incorpora um k_inst medido, com adaptação ASSIMÉTRICA: sobe na hora, desce por…, Par (Δx executado, ΔF medido) com AMBAS as forças lidas em REPOUSO (modo quase-…, Cota SUPERIOR da rigidez local (N/m) — o K que TODO teto de passo de EMPURRAR…, _StiffnessEstimator
+Nodes (8): _Anel, _grade_mm(), test_mixin_declares_no_import_from_the_host(), test_no_ring_when_alignment_is_off(), test_no_ring_when_the_grid_is_in_error(), test_ring_has_four_touch_points(), test_ring_is_returned_in_millimetres(), test_the_preview_ring_matches_the_one_the_robot_will_probe()
 
-### Community 148 - "Community 148"
-Cohesion: 0.27
-Nodes (3): HandCameraTeleop, Gerencia câmera + MediaPipe numa thread e emite flexão 0–1. Uso: cam =…, Filtro leve de joint6 (graus, sem clamp aqui).
+### Community 126 - "test_setpoint_band.py"
+Cohesion: 0.21
+Nodes (5): test_banda_a_4_sigma_sobrevive_a_janela_de_estabilidade(), test_banda_nunca_inclui_forca_zero(), test_menor_alvo_com_sentido_esta_documentado(), test_sigma_alto_demais_e_pego_pelo_aviso(), _tol()
 
-### Community 149 - "Community 149"
+### Community 130 - "_alimenta"
+Cohesion: 0.19
+Nodes (9): _alimenta(), _contador(), test_a_placa_reiniciando_nao_e_bilhoes_de_amostras_perdidas(), test_a_primeira_amostra_nunca_conta_como_perda(), test_os_totais_acumulam_enquanto_o_delta_do_relatorio_zera(), test_um_buraco_no_seq_e_contado_como_amostra_perdida(), test_um_salto_grande_demais_e_ressincronizacao_e_nao_perda(), test_um_seq_repetido_nao_e_perda_negativa() (+1 more)
+
+### Community 131 - "test_ft_charts.py"
+Cohesion: 0.10
+Nodes (11): test_amostra_unica_vira_um_ponto_em_x_zero(), test_coluna_com_variacao_gera_dois_pontos(), test_custo_depende_das_colunas_e_nao_das_amostras(), test_pico_de_uma_amostra_sobrevive_a_decimacao(), test_serie_menor_que_as_colunas_sai_intacta(), test_subamostragem_por_passo_perderia_o_pico(), test_vale_de_uma_amostra_tambem_sobrevive(), test_vazio_nao_explode() (+3 more)
+
+### Community 132 - "_reta_boa"
+Cohesion: 0.13
+Nodes (9): _reta_boa(), test_a_regressao_e_de_V_em_funcao_de_F(), test_a_tabela_de_pontos_repinta(), test_ajusta_a_reta_nominal(), test_falha_no_backup_nao_impede_de_gravar(), test_grava_o_json_que_o_receiver_le(), test_limpar_pontos_zera_o_ajuste_e_o_zero(), test_salvar_guarda_a_calibracao_anterior() (+1 more)
+
+### Community 133 - "test_imu_math.py"
+Cohesion: 0.08
+Nodes (37): _q_axis_angle(), _run(), test_accel_at_rest_learns_gravity_and_does_not_drift(), test_accel_gap_in_samples_zeroes_velocity(), test_accel_no_seed_while_rotating(), test_accel_push_moves_in_the_right_direction(), test_accel_rotates_sensor_frame_to_world(), test_accel_velocity_is_capped() (+29 more)
+
+### Community 135 - "f"
+Cohesion: 0.16
+Nodes (4): load_calibration(), main(), TestRunner, f()
+
+### Community 137 - "test_sockreader_guarda_o_resto_do_bloco"
+Cohesion: 0.14
+Nodes (4): _ft_probe(), test_sockreader_guarda_o_resto_do_bloco(), test_sockreader_nao_marca_eof_em_timeout(), test_sockreader_sinaliza_eof_em_vez_de_girar()
+
+### Community 138 - "test_estop_button.py"
+Cohesion: 0.18
+Nodes (5): _FakeGUI, _root(), test_armed_button_keeps_the_estop_name(), test_hover_after_latching_keeps_the_latched_colour(), test_latched_button_becomes_reconnect()
+
+### Community 139 - "StreamingSavGol"
+Cohesion: 0.21
+Nodes (5): test_reconfigurar_limpa_o_buffer(), test_stream_devolve_a_amostra_ate_encher_a_janela(), test_stream_ignora_nan_sem_envenenar(), test_stream_nao_atrasa_uma_rampa(), StreamingSavGol
+
+### Community 141 - "_Host"
+Cohesion: 0.15
+Nodes (5): _Host, leitura(), raiz(), test_reading_marca_quando_a_forca_e_simulada(), _tk_root()
+
+### Community 142 - "ImuCalibWizard"
+Cohesion: 0.08
+Nodes (8): phase_pose(), _rx(), _ry(), _rz(), Sensor3DAnim, _tint(), ImuCalibWizard, mag_quality()
+
+### Community 143 - "test_stiffness_soft.py"
+Cohesion: 0.05
+Nodes (21): A capa, Arquivos, Capa de silicone da ponteira D — peças e vazamento, Depois de montada, Geometria da ponteira D que o molde reproduz, Impressão, O molde, Vazamento (+13 more)
+
+### Community 145 - "test_traj_record.py"
+Cohesion: 0.07
+Nodes (8): _Host, _SemAfter, test_braco_parado_nao_vira_waypoint(), test_primeira_pose_sempre_entra(), test_uma_junta_que_andou_basta(), _tk_root(), should_keep(), TrajRecMixin
+
+### Community 146 - "_ordem"
 Cohesion: 0.17
-Nodes (6): Configuração saturada da calibração, ou None se desligada. Fonte: os campos…, Onde a sonda vai encostar (offsets XY relativos à referência) e a frase que…, Executa os toques de sonda e devolve ('ok', pontos de contato). Todo o trânsito…, CALIBRATING — palpação espacial do alvo e correção do ataque. Retorna 'ok'…, CONFERÊNCIA de ponta a ponta: re-sonda o plano JÁ com o ataque corrigido e mede…, Entrega ao SLIDING o plano MEDIDO da amostra. O deslize percorre uma reta…
+Nodes (7): _ordem(), test_an_unknown_path_name_falls_back_to_the_serpentine(), test_corners_come_first_and_are_not_repeated(), test_empty_rectangle_gives_no_points(), test_every_order_covers_the_whole_grid_exactly_once(), test_snake_order_is_the_plain_serpentine(), test_the_visit_always_starts_at_the_origin()
 
-### Community 150 - "Community 150"
+### Community 147 - "test_tcp_calib.py"
+Cohesion: 0.09
+Nodes (14): _capturas(), test_captura_escorregada_e_recusada(), test_ida_e_volta_do_arquivo(), test_mesma_orientacao_nao_fecha(), test_pivo_recupera_a_ferramenta(), test_sem_arquivo_a_cinematica_fica_no_cad(), _tool(), _apply_tcp_calib() (+6 more)
+
+### Community 150 - "main.cpp"
 Cohesion: 0.30
-Nodes (11): arduino, hx711, acumula_zero(), em_ensaio(), hx_reset(), le_counts(), loop(), power_cycle() (+3 more)
+Nodes (9): acumula_zero(), em_ensaio(), hx_reset(), le_counts(), loop(), power_cycle(), recusa(), setup() (+1 more)
 
-### Community 151 - "Community 151"
+### Community 151 - "statistics"
+Cohesion: 0.43
+Nodes (5): _find_data_dir(), _load_runs(), main(), _seg_summary(), _stats()
+
+### Community 153 - "covvi_interfaces_msg"
+Cohesion: 0.13
+Nodes (6): DigitStatusAllMsgSubscriberNode, main(), GetEciErrorClientNode, main(), main(), MotorCurrentAllMsgSubscriberNode
+
+### Community 155 - "re"
+Cohesion: 0.26
+Nodes (6): _build_robot_urdf(), _fix_virtual_link_inertia(), generate_launch_description(), _inject_skin_layer(), _patch_finger_link(), _stabilize_hand_joints()
+
+### Community 156 - "_FakeGUI"
+Cohesion: 0.17
+Nodes (3): _FakeGUI, _FakeVar, gui()
+
+### Community 158 - "_ponto"
+Cohesion: 0.20
+Nodes (7): _ponto(), test_ajuste_recusado_nao_grava_nada(), test_massa_repetida_e_recusada_na_coleta(), test_recusa_ajuste_com_menos_pontos_que_o_minimo(), test_recusa_ajuste_sem_o_zero(), test_recusa_slope_fora_da_placa(), _zero()
+
+### Community 159 - "test_imu_node_e2e.py"
+Cohesion: 0.14
+Nodes (11): default_iface_ip(), EspEmulator, main(), still(), yaw_after(), motion(), _iface_ip(), _other_iface_ip() (+3 more)
+
+### Community 160 - "test_slide_contact_watch.py"
 Cohesion: 0.24
-Nodes (7): glob, setuptools, _find_data_dir(), _load_runs(), main(), analyze_force_runs.py — Consistência do setpoint de força entre runs. Agrega…, statistics
+Nodes (7): _floor(), test_contact_in_range_never_trips(), test_floor_scales_with_the_setpoint(), test_replays_the_run_that_was_reported_ok(), test_short_valley_is_data_not_failure(), test_sustained_loss_trips_after_the_budget(), test_tension_counts_as_contact()
 
-### Community 152 - "Community 152"
-Cohesion: 0.20
-Nodes (7): rclpy_executors, GetEciConnectedClientNode, main(), Any, main(), Any, SetDigitMoveClientNode
+### Community 161 - "touch_pack"
+Cohesion: 0.07
+Nodes (28): 6-axis load cell (FA7155 over RS485), Associating force curves with map coordinates, Bench bring-up, Dependencies, Force × touch synchronization, Frame (manual §4.2), How to run, Kinematics (`kinematics.py`) (+20 more)
 
-### Community 153 - "Community 153"
-Cohesion: 0.20
-Nodes (7): GetEciErrorClientNode, main(), Any, main(), Any, SetDigitPosnClientNode, sys
+### Community 166 - "test_controller_config.py"
+Cohesion: 0.09
+Nodes (7): _comandos(), _DashFalso, drv(), test_codigo_de_erro_vira_texto(), test_freio_recusado_com_o_braco_habilitado_vira_erro_legivel(), test_sem_calibracao_o_tool_do_controlador_nao_e_tocado(), test_um_comando_recusado_nao_derruba_os_outros()
 
-### Community 154 - "Community 154"
+### Community 167 - "scan_registers"
+Cohesion: 0.14
+Nodes (7): _EscravoFalso, test_format_scan_sai_colavel(), test_varredura_classifica_ok_ilegal_e_mudo(), test_varredura_nao_escreve_nada(), test_varredura_reporta_progresso_endereco_a_endereco(), format_scan(), scan_registers()
+
+### Community 168 - "TeleopBridge"
+Cohesion: 0.13
+Nodes (4): _inject_sys_path(), _load_config(), main(), TeleopBridge
+
+### Community 169 - "_Shape"
 Cohesion: 0.18
-Nodes (4): _done(), Grips nativos COVVI usam o controlador interno do ECI no real (já tem detecção…, Fechamento incremental com parada em contato., Fecha a mão usando o grip do objeto atualmente detectado. Complementa o modo…
+Nodes (5): _Shape, test_rect_keeps_the_two_axes_independent(), test_square_copies_x_onto_y_including_hidden_fields(), test_the_mirror_does_not_re_enter_through_the_trace(), _Var
 
-### Community 155 - "Community 155"
-Cohesion: 0.23
-Nodes (9): _build_robot_urdf(), _fix_virtual_link_inertia(), generate_launch_description(), _inject_skin_layer(), _patch_finger_link(), Launch file da célula de manufatura com esteira — CR10 + COVVI Hand. Inicia: 1.…, Patcha dinâmica + limites das juntas da mão COVVI para permitir grasp por…, Injeta uma camada de "pele" macia ao redor de cada falange da mão. (+1 more)
+### Community 170 - "test_urdf_scene.py"
+Cohesion: 0.11
+Nodes (11): scene(), test_cylinder_dimensions(), test_fk_is_expressed_in_the_base_link_frame(), test_missing_mesh_is_reported_not_fatal(), test_real_cell_scene_builds(), test_resolve_uri_empty_is_none(), test_resolve_uri_file_scheme(), test_resolve_uri_package_scheme_via_search_dir() (+3 more)
 
-### Community 156 - "Community 156"
-Cohesion: 0.17
-Nodes (6): _FakeGUI, _FakeVar, gui(), fixture, Stand-in de tk.DoubleVar: só get/set., Só o que `_save_home_pose` e `_apply_arm_home` tocam.
+### Community 172 - "grasp_executor.py"
+Cohesion: 0.10
+Nodes (9): cage_status(), CageStatus, _T_hand_base_world(), _close_extra(), main(), _q_conj(), _q_mul(), _q_rot() (+1 more)
 
-### Community 157 - "Community 157"
-Cohesion: 0.17
-Nodes (9): `_arm_home_deg` fica só com juntas, mesmo com o carimbo no arquivo., O carimbo continua indo para o JSON — o fix não pode apagá-lo., O caminho exato do crash: Salvar Home e depois ⌂ Home., test_apply_home_after_save_does_not_raise(), test_save_home_keeps_state_joints_only(), test_save_home_still_stamps_the_file(), Leva o braço real à home antes de publicar /palpation/start. Devolve True se…, Move o braço para a Home customizada do usuário. (+1 more)
-
-### Community 158 - "Community 158"
+### Community 173 - "_is_active"
 Cohesion: 0.20
-Nodes (12): _ponto(), O V₀ medido. O ajuste o segura FIXO, então sem ele não há reta., Injeta um ponto direto na tabela, sem a coleta temporizada., O V₀ é segurado FIXO pelo ajuste, então ele não é opcional: sem o zero medido…, Dois pontos SEMPRE dão uma reta perfeita. É o terceiro que produz resíduo, e o…, O erro clássico: massa em GRAMA onde se pede quilo. A reta continua lindíssima…, test_ajuste_recusado_nao_grava_nada(), test_massa_repetida_e_recusada_na_coleta() (+4 more)
+Nodes (4): test_mirror_conta_fase_desconhecida_como_ativa(), test_mirror_espelha_calibrating_e_transit(), test_mirror_so_solta_o_braco_nas_tres_fases_ociosas(), _is_active()
 
-### Community 159 - "Community 159"
+### Community 174 - "_tare_result"
+Cohesion: 0.20
+Nodes (5): _HostTare, _tare_result(), test_o_texto_de_sem_dado_segue_a_celula(), test_rezero_confirmado_pelo_receiver(), test_rezero_que_nao_chegou_ao_fio_e_denunciado()
+
+### Community 175 - "Plano de correção do artigo + protocolo de coleta"
+Cohesion: 0.10
+Nodes (20): 11. Orçamento de bancada, 1.1 Resultados já disponíveis, 1.2 Unidade de análise, 1. Estado atual — o que já está resolvido, 3.1 Fechado pela reanálise (sem bancada), 3.2 Só texto e figura (sem bancada), 3.3 Precisa de bancada — **em ordem de prioridade**, 3.4 Não fazer (+12 more)
+
+### Community 176 - "_Grade"
+Cohesion: 0.20
+Nodes (4): _Grade, test_a_grid_error_sends_no_waypoints_at_all(), test_a_single_point_grid_sends_nothing_to_probe(), test_the_origin_is_not_sent_as_a_waypoint()
+
+### Community 177 - "FtModbusClient"
+Cohesion: 0.15
+Nodes (8): test_escrita_de_id_ponta_a_ponta(), test_leitura_dos_seis_eixos_ponta_a_ponta(), test_tamanho_esperado_da_resposta(), test_transacao_completa_pela_derivacao(), test_resposta_tem_29_bytes_no_estilo_padrao(), expected_response_len(), FtModbusClient, parse_read_response()
+
+### Community 178 - "main"
+Cohesion: 0.13
+Nodes (11): ImuNode, main(), cancel_calibration(), create_sensor_client(), __init__(), on_calib_finished(), on_client_connected(), remove_sensor_client() (+3 more)
+
+### Community 179 - "main"
+Cohesion: 0.14
+Nodes (15): [12] O boot bloqueava no HX711 antes de o USB falar, init_template(), main(), MX_ADC1_Init(), MX_TIM2_Init(), MX_TIM6_Init(), HAL_ADC_ConfigChannel(), HAL_ADC_Init() (+7 more)
+
+### Community 180 - "P"
+Cohesion: 0.11
+Nodes (9): P(), test_cosseno_abre_no_pico_e_exige_rampa(), test_onda_comandada_nunca_sai_da_faixa(), test_onda_no_silicone_pede_curso_muito_maior(), test_pontos_por_periodo_suficientes_ate_o_teto_do_servoj(), test_seno_abre_na_media_e_nao_precisa_de_rampa(), test_teto_de_10hz_com_o_piso_do_firmware(), test_tick_da_onda_e_derivado_da_frequencia() (+1 more)
+
+### Community 182 - "solve_grasp_poses_at_world"
+Cohesion: 0.22
+Nodes (3): _harmonize_branch_deg(), recenter_tcp_targets(), solve_grasp_poses_at_world()
+
+### Community 183 - "generate_training_data.py"
 Cohesion: 0.17
-Nodes (12): _calibracao_do_repo(), A calibração é feita em compressão, então o slope carrega a polaridade da…, Zero e não um número inventado: sem reta não há força, e o force_receiver trata…, O critério que importa não é o resíduo ABSOLUTO — é o resíduo contra a BANDA…, Não é bug, é a natureza do ajuste — e precisa estar escrito. `lc_fit_slope`…, test_compression_is_positive_whatever_the_wiring_polarity(), test_force_is_zero_at_the_intercept(), test_no_calibration_gives_no_force() (+4 more)
+Nodes (4): build_feature_vector_with_ik(), singularity_distances(), DataCollectorNode, main()
 
-### Community 160 - "Community 160"
+### Community 184 - "_passos_de_alivio"
+Cohesion: 0.22
+Nodes (4): _passos_de_alivio(), test_alivio_nunca_empurra(), test_alivio_respeita_a_nao_ultrapassagem(), test_alivio_respeita_o_teto_por_df()
+
+### Community 197 - "_cb_start"
+Cohesion: 0.25
+Nodes (4): _cb_start(), _msg(), test_freeze_durante_o_parsing_do_start_nao_e_apagado(), test_start_limpa_stop_e_freeze_pendentes()
+
+### Community 198 - "test_taxel_orientation.py"
+Cohesion: 0.16
+Nodes (8): test_a_grade_inteira_e_espelhada_nos_dois_eixos(), test_continua_bijecao(), test_fisico_00_vira_taxel_0_e_fisico_44_vira_taxel_24(), test_frame_de_tamanho_errado_nao_e_reordenado(), test_grade_nao_caracterizada_passa_intacta(), test_indice_solto_dos_spikes_casa_com_o_frame(), taxel_frame_to_physical(), taxel_index_to_physical()
+
+### Community 201 - "rclpy"
+Cohesion: 0.19
+Nodes (4): GetDeviceIdentityClientNode, main(), HandNode, main()
+
+### Community 202 - "CovviBaseClientNode"
+Cohesion: 0.16
+Nodes (7): CovviBaseClientNode, CurrentGripMsgSubscriberNode, main(), GetDeviceProductClientNode, main(), main(), OrientationMsgSubscriberNode
+
+### Community 208 - "public"
+Cohesion: 0.11
+Nodes (7): public(), DisableAllRealtimeCfgClientNode, main(), GetDigitStatusClientNode, main(), main(), SetHandPowerOffClientNode
+
+### Community 209 - "rclpy_executors"
+Cohesion: 0.20
+Nodes (4): EnableAllRealtimeCfgClientNode, main(), EnvironmentalMsgSubscriberNode, main()
+
+### Community 220 - "test_fw.c"
+Cohesion: 0.29
+Nodes (15): usb_buffer_process(), drain_all(), main(), t_adc_frame_matches_old_format(), t_append_ts_never_overruns(), t_never_multiple_of_max_packet(), t_no_inflight_overwrite(), t_not_configured_keeps_data() (+7 more)
+
+### Community 223 - "wrist_pronation_j6_deg"
 Cohesion: 0.24
-Nodes (11): _floor(), Vigia de perda de contato do SLIDING (_ContactWatch)., Vale de 2 mm com o orçamento de 5 mm: não aborta e o contador zera., 20260806_170115: contato bom até 0,74 mm, depois ~0,05 N até 50 mm. A guarda…, A guarda olha |fz|: tração é contato (e é informação), não ausência., test_contact_in_range_never_trips(), test_floor_scales_with_the_setpoint(), test_replays_the_run_that_was_reported_ok() (+3 more)
+Nodes (5): test_j6_back_of_hand_saturates_opposite_to_palm(), test_j6_tracks_pronation_sign_and_monotonic(), test_j6_zero_when_palm_faces_camera(), _wpalm(), wrist_pronation_j6_deg()
 
-### Community 161 - "Community 161"
+### Community 224 - "._matrix_serpentine"
+Cohesion: 0.29
+Nodes (3): test_serpentine_alternates_direction_every_row(), test_serpentine_never_jumps_more_than_one_index(), test_serpentine_visits_every_cell_exactly_once()
+
+### Community 225 - "select_row"
+Cohesion: 0.12
+Nodes (14): [6] HX711: temporização do PD_SCK, NÃO corrigido, de propósito, `select_row()` ignora o parâmetro `row`, Variáveis mortas, Vazão residual, Error_Handler(), HAL_ADC_ConvCpltCallback(), MX_GPIO_Init() (+6 more)
+
+### Community 226 - "test_jog_cartesiano.py"
+Cohesion: 0.12
+Nodes (6): _DriverFalso, raiz(), test_freio_vai_para_o_driver_com_o_braco_conectado(), test_passo_de_um_decimo_de_milimetro_chega_inteiro(), test_passo_que_estoura_limite_de_junta_e_recusado(), _tk_root()
+
+### Community 227 - "._run_movement_once"
+Cohesion: 0.14
+Nodes (8): 10. Ferramentas, 2.1 Onde o Sim-to-Real de verdade acontece, 2.2 O que dá para dizer sobre Sim-to-Real hoje, 2. O achado que obriga a corrigir o texto, 5.1 ⚠️ Bug que contamina este bloco — corrigir ANTES de coletar, 5.2 Preparar o movimento (uma vez; salvo em `~/.config/touch_pack/poses.json`), 5.3 Capturar (5 repetições), 5. Bloco B — Sim-to-Real (prioridade 2)
+
+### Community 231 - "_hand_envelope_aabb_world"
+Cohesion: 0.33
+Nodes (3): _hand_clears_world(), _hand_envelope_aabb_world(), _hand_envelope_bounds()
+
+### Community 232 - "test_hold_dwell_window.py"
+Cohesion: 0.16
+Nodes (10): _hold_sintetico(), _janela(), test_campo_zerado_tambem_cai_na_reserva(), test_dwell_curto_estreita_a_janela(), test_dwell_default_so_vale_sem_pedido(), test_gui_permite_dwell_longo(), test_janela_acompanha_o_dwell_pedido(), test_phase_hold_consulta_o_pedido_da_gui() (+2 more)
+
+### Community 234 - "_pre"
 Cohesion: 0.18
-Nodes (5): FtChartsMixin, Frame, Uma amostra dos seis eixos. Chamado de DENTRO do lock de `_ft_feed_processing`:…, Gráficos de linha, vista de colunas e as escalas do Range.csv., Buffers circulares. Alimentados pela thread do ROS e lidos pela do Tk — sempre…
+Nodes (8): _errs(), _pre(), test_10hz_e_recusado_com_a_celula_lenta(), test_10hz_e_recusado_com_o_servoj_no_padrao(), test_10hz_e_recusado_sem_o_canal_cru(), test_10hz_passa_no_preflight_na_bancada_montada(), test_conselho_de_velocidade_e_executavel(), test_preflight_reporta_tudo_antes_de_recusar()
 
-### Community 162 - "Community 162"
+### Community 244 - "HandLatencyProbe"
+Cohesion: 0.20
+Nodes (4): probe(), _ros(), HandLatencyProbe, main()
+
+### Community 248 - "touch_sensor5x5_windows.py"
+Cohesion: 0.20
+Nodes (7): parse_line(), _prune_rel(), _RE_IDX(), relay_lines(), send_scalar(), serial_reader_loop(), update()
+
+### Community 250 - "touch_source.py"
+Cohesion: 0.11
+Nodes (4): _raster_xy(), _row_xy(), _spike_line(), TouchFigure
+
+### Community 251 - "hand_camera_teleop.py"
+Cohesion: 0.25
+Nodes (3): test_angle_deg_straight_and_right(), _angle_deg(), CameraUnavailable
+
+### Community 252 - "Firmware do sensor tátil 5×5 + HX711 — correções da cadeia USB"
+Cohesion: 0.15
+Nodes (13): [11] `dwt_delay_cycles` podia travar para sempre — **regressão minha**, [1] `packet[]` sobrescrito com a transferência em voo — corrupção, [3] Escrita all-or-nothing, [4] Chunk de transmissão: 64 → 512 B, [5] Descarte deixou de ser mudo, [7] HX711: gate de amostragem truncado, [8] Timestamp de 32 bits dava a volta a cada 71,6 min, [9] `snprintf` de 25 inteiros dentro da ISR (+5 more)
+
+### Community 259 - "cr10twin"
 Cohesion: 0.17
-Nodes (4): _sep(), Header compacto em 2 linhas: título/E-STOP e uma barra única de conexões com os…, Carrega home salvo (sobrescreve `self._arm_home_deg`)., Poda de um arquivo antigo os campos cujo default mudou. `hold_tol` (v1 → v2): o…
+Nodes (12): Connecting the real hardware (optional), cr10twin, Digital Twin · CR10 + COVVI Hand · Biomedical Manufacturing Cell, Hardware, Installation, License, Option A — Docker (reproducible, one command), Option B — native (+4 more)
 
-### Community 163 - "Community 163"
+### Community 260 - "Real-time messages"
 Cohesion: 0.17
-Nodes (6): GetErrorID() — códigos de alarme activos no controlador., Envia comando de motion pela porta 29999 (igual ao SDK de referência). Ponto…, MovJ articular — PTP em GRAUS (convenção DOBOT)., MovJ Cartesiano — PTP até pose (x,y,z,rx,ry,rz) em mm/graus. Usa a sintaxe V4:…, MovL Cartesiano — interpolação linear até pose em mm/graus., RelMovLUser — movimento relativo em mm/graus no frame usuário (User0).
+Nodes (12): DigitError, DigitStatus, DirectControl, getDigitError() - Get the digit error flags of all digits individually, getDigitStatus_all() - Get all digit status flags, getDigitStatus() - Get all digit status flags individually, getMotorCurrent_all() - Get the motor current of all Digits, getMotorCurrent() - Get the motor current of all Digits individually (+4 more)
 
-### Community 164 - "Community 164"
+### Community 261 - "hand_pack"
+Cohesion: 0.17
+Nodes (12): `clamp_hand_joint_limits(urdf_body)`, Contents, Controllers (`cr10_covvi_controllers.yaml`), Dependencies, Executables, hand_pack, How to run, `inject_visual_skin_layer(urdf_body)` (+4 more)
+
+### Community 264 - "GUI (`palpation_gui`)"
+Cohesion: 0.17
+Nodes (12): 3D Manipulation tab, Camera hand control (`CAM`), GUI (`palpation_gui`), Header, Joint brakes, Load Cell tab, Manual Control tab, Palpation tab (+4 more)
+
+### Community 266 - "load_calibration"
+Cohesion: 0.21
+Nodes (8): _grava(), load_calibration(), test_a_corrupt_file_is_not_an_exception(), test_a_missing_file_is_not_an_exception(), test_intercept_wins_over_the_alias(), test_reads_slope_and_intercept(), test_unusable_calibration_is_none_not_a_guess(), test_zero_voltage_is_accepted_as_the_intercept()
+
+### Community 268 - "grasp_ml_pack"
 Cohesion: 0.18
-Nodes (6): Base (e1, e2, n) do plano da grade, no mundo URDF. n vem do eixo de ataque…, Ponto de trânsito do waypoint `wp_xy` (coordenadas do plano, m): o ponto da…, Afasta o TCP do plano ao longo da NORMAL até a folga do Safe Z., Trânsito no ar até a pose de Safe Z do waypoint `wp_xy` (coordenadas DO PLANO,…, Publica o registro da identação para o palpation_logger. `setpoint_n` sobrepõe…, Alívio de emergência do MATRIX_MAP: tira a carga da célula e sobe em +Z.…
+Nodes (11): Architecture, Common problems, Executables, grasp_ml_pack, How to run, Launch arguments, `manual_control` GUI, Objects and grasps (+3 more)
 
-### Community 165 - "Community 165"
-Cohesion: 0.33
-Nodes (5): GraspQualityNet, ndarray, Classificador binário de qualidade de grasp., Probabilidades de sucesso para cada linha de X (shape N×26)., main()
-
-### Community 166 - "Community 166"
-Cohesion: 0.27
-Nodes (10): parametrize, _quase(), Compressão pura em Z é o caso comum da bancada, não um canto raro., Se a matriz não fosse ortonormal, a seta esticaria conforme girasse., test_rot_em_menos_z_nao_divide_por_zero(), test_rot_leva_mais_z_ate_a_direcao_pedida(), test_rot_preserva_norma(), _mul() (+2 more)
-
-### Community 167 - "Community 167"
+### Community 269 - "decimate"
 Cohesion: 0.22
-Nodes (8): _EscravoFalso, Escravo com um mapa conhecido; tudo fora dele devolve exceção 0x02., A trava do mapa protege as escritas; a varredura não pode furá-la., test_varredura_classifica_ok_ilegal_e_mudo(), test_varredura_nao_escreve_nada(), test_varredura_reporta_progresso_endereco_a_endereco(), Varre `start`..`end` (inclusive) lendo UM registrador de cada vez. Devolve…, scan_registers()
+Nodes (6): _sphere_mesh(), test_decimate_emits_no_degenerate_triangles(), test_decimate_keeps_the_silhouette(), test_decimate_respects_the_budget(), test_decimate_shrinks_small_meshes_too(), decimate()
 
-### Community 168 - "Community 168"
+### Community 270 - "Behavioral Guidelines"
 Cohesion: 0.20
-Nodes (5): Na pose apontando para a mesa o eixo z do TCP olha para −Z mundo, o que em RPY…, test_rpy_deg_matches_pointing_pose(), Pose 4×4 do TCP (atalho legível para o caller)., Alça do TCP + triedro dos eixos da ferramenta., tcp_pose()
+Nodes (9): 1. Think Before Coding, 2. Simplicity First, 3. Surgical Changes, 4. Goal-Driven Execution, Behavioral Guidelines, Key Tools, MCP Tools: code-review-graph, When to use graph tools FIRST (+1 more)
 
-### Community 169 - "Community 169"
-Cohesion: 0.18
-Nodes (7): Os campos de Y ficam ocultos em SQUARE, mas guardam o valor de um RECT…, `set()` dispara o trace das variáveis, que chama o espelho de novo. A flag…, _Shape, test_rect_keeps_the_two_axes_independent(), test_square_copies_x_onto_y_including_hidden_fields(), test_the_mirror_does_not_re_enter_through_the_trace(), _Var
-
-### Community 170 - "Community 170"
+### Community 280 - "README.md"
 Cohesion: 0.20
-Nodes (6): gui_sensors.py — o sensor de toque: aquisição, painel ao vivo e gravação., Abre a serial do STM32. Sem ela não há dado tátil — não existe mais queda para…, Assina /touch_sensor/value SÓ quando não há serial local. Esta GUI PUBLICA…, Hot-plug: a cada 2 s reconcilia a fonte do toque com o hardware., Callback da FuncAnimation: fecha a medição do frame anterior e desenha o atual.…, SensorsMixin
+Nodes (5): Contents, cra_description, How to obtain it, Kinematic parameters (joints in URDF convention), Use in the project
 
-### Community 171 - "Community 171"
+### Community 284 - "_tool_chain"
+Cohesion: 0.20
+Nodes (6): _controllers_yaml_path(), test_gravity_compensation_bate_com_a_pilha_do_urdf(), test_tool_urdf_bate_com_T_TOUCH_TOOL_ATTACH(), _tool_chain(), anda(), _tool_urdf_path()
+
+### Community 285 - "load_stl"
 Cohesion: 0.22
-Nodes (5): Abre o sensors.csv + os CSVs crus NA PASTA DO RUN. `run_id`/`mode` vindos do…, Abre os três CSVs crus com o cabeçalho do plotter de coleta standalone (adc,…, Só atualiza o rótulo de status (na thread Tk); as linhas são gravadas pelo…, <MODO>/<run_id>/<arquivo> para mostrar na barra de status — o basename sozinho…, _rel_run()
+Nodes (7): test_glove_layer_replaces_the_inner_visual(), test_load_ascii_stl(), test_load_binary_stl_roundtrip(), test_load_binary_stl_with_solid_header(), test_load_stl_rejects_garbage(), _write_binary_stl(), load_stl()
 
-### Community 172 - "Community 172"
-Cohesion: 0.27
-Nodes (7): cage_status(), CageStatus, ndarray, cage_check.py — verifica geometria de "engaiolamento" antes do fechamento.…, Pose de ``hand_base_link`` no WORLD frame., Avalia se a mão forma uma "gaiola" válida ao redor do objeto. Args: q_arm:…, _T_hand_base_world()
+### Community 288 - "migrate_runs_layout.py"
+Cohesion: 0.33
+Nodes (4): _find_data_dir(), _group(), main(), _mode_of()
 
-### Community 173 - "Community 173"
-Cohesion: 0.20
-Nodes (9): As duas percorrem retas cartesianas publicadas como UMA JointTrajectory. Fora…, A regra é o COMPLEMENTO de propósito. Com allowlist, toda fase nova nascia…, test_mirror_conta_fase_desconhecida_como_ativa(), test_mirror_espelha_calibrating_e_transit(), test_mirror_so_solta_o_braco_nas_tres_fases_ociosas(), _is_active(), JointTrajectory, Jog (fase inativa): MovJ debounced para o último alvo. (+1 more)
-
-### Community 174 - "Community 174"
-Cohesion: 0.20
-Nodes (8): _HostTare, Só o que `_cb_lc_tare_result` (que mora no FtAxesMixin) precisa., O caso que a GUI ANTES escondia: a porta fechada fazia o receiver publicar…, Mandar conferir os 24 V e o par RS485 com a viga S no cabo é conselho para o…, _tare_result(), test_o_texto_de_sem_dado_segue_a_celula(), test_rezero_confirmado_pelo_receiver(), test_rezero_que_nao_chegou_ao_fio_e_denunciado()
-
-### Community 175 - "Community 175"
-Cohesion: 0.24
-Nodes (8): b'' é "linha calada", e o laço tem de voltar a testar `_running` em vez de…, O read(1) dorme até o primeiro byte; o resto do bloco já está no buffer.…, _Ser, test_read_chunk_does_not_ask_for_more_when_nothing_is_waiting(), test_read_chunk_drains_what_the_os_already_had(), test_read_chunk_returns_empty_on_a_silent_line(), `read(1)` bloqueante mais o que já estiver no buffer. Entrega a menor latência…, read_chunk()
-
-### Community 176 - "Community 176"
-Cohesion: 0.20
-Nodes (8): _Grade, Portador que reexpõe `_matrix_waypoints` sobre uma grade fixa., Ela já foi visitada na busca de origem. Reenviá-la faria a primeira identação…, Meia grade é pior que nenhuma: o run pararia no meio com o braço sobre a…, Grade 1×1 é só a origem — não sobra waypoint nenhum, e isso não é erro., test_a_grid_error_sends_no_waypoints_at_all(), test_a_single_point_grid_sends_nothing_to_probe(), test_the_origin_is_not_sent_as_a_waypoint()
-
-### Community 177 - "Community 177"
-Cohesion: 0.20
-Nodes (10): _passos(), Trecho de um contato não pode vazar para o próximo., Aplica `n` micro-passos de `dx_m` contra um contato de rigidez `k_real_nm`,…, O caso do run 20260817_104248: 8 µm produzem 0,0022 N contra o pé., O caso que travava: passos de 8 µm, ΔF de 0,005 N cada. Nenhum par isolado…, A acumulação não pode estragar o caso que já funcionava., test_acumulador_zera_no_reset(), test_ainda_aprende_contato_rigido() (+2 more)
-
-### Community 178 - "Community 178"
-Cohesion: 0.20
-Nodes (5): LineTapMixin, Dá a um transporte o par (write, read) que o cliente Modbus espera. Quem herda…, Chamado pelo laço de leitura. Barato quando não há sessão: um teste de None sob…, Devolve o que houver AGORA (pode ser b''), sem bloquear — o laço de prazo é do…, Abre a derivação e devolve `(write_fn, read_fn)`. Sessões não aninham: a…
-
-### Community 179 - "Community 179"
-Cohesion: 0.24
-Nodes (3): FtPolledDriver, Toma a linha do laço para uma transação de comando. Sem isto o `Set_Zero` da…, Lê os seis eixos em laço, perguntando. Mesma forma do FtSerialSource. `source`…
-
-### Community 180 - "Community 180"
-Cohesion: 0.20
-Nodes (5): Loop da aba Sensores. A figura do toque é desenhada pela FuncAnimation (blit);…, Liga/desliga a animação do touch sensor (idempotente)., Ajusta o intervalo da animação ao custo MEDIDO do frame, para o desenho do…, Texto/cor honestos da fonte do toque, do estado AO VIVO da fonte., Atualiza os números da célula de carga + sparkline na aba Sensores.
-
-### Community 181 - "Community 181"
-Cohesion: 0.25
-Nodes (6): main(), Any, GripNameIndex, UserGripResMsg, SendUserGripClientNode, UserGripID
-
-### Community 182 - "Community 182"
+### Community 289 - "COVVI ROS2 Interface"
 Cohesion: 0.22
-Nodes (6): _harmonize_branch_deg(), TCPs de PRE/APPR/PICK recentrados na posição REAL do objeto. Retorna (tcp_pre,…, Aproxima `sol` de `ref` entre ramos EQUIVALENTES de punho., Resolve PRE/APPR/PICK (dicts em graus) na posição REAL do objeto. Args:…, recenter_tcp_targets(), solve_grasp_poses_at_world()
+Nodes (8): Connecting/Disconnecting the interface, COVVI ROS2 Interface, getGripName, Grip configuration messages, GripName, Hand Power, setHandPowerOff() - Turn the power off to the hand, setHandPowerOn() - Turn the power on to the hand
 
-### Community 183 - "Community 183"
-Cohesion: 0.28
-Nodes (5): DataCollectorNode, main(), Node, String, Coleta de dados de treinamento no Gazebo com features cinemáticas completas.…
-
-### Community 184 - "Community 184"
+### Community 290 - "Discovery and device messages"
 Cohesion: 0.22
-Nodes (8): _passos_de_alivio(), Roda `_qs_regulate` com a força PRESA acima do alvo e devolve (passos…, A invariante que dá nome ao bloco: com a força ACIMA do alvo, todo passo…, Sucessor de `test_alivio_ainda_respeita_o_piso_quando_ha_folga`: com o erro…, O teto por ΔF é o mesmo do empurrar e continua sendo o primeiro a morder quando…, test_alivio_nunca_empurra(), test_alivio_respeita_a_nao_ultrapassagem(), test_alivio_respeita_o_teto_por_df()
+Nodes (9): DeviceIdentity, DeviceProduct, Discovery and device messages, Firmware, getDeviceIdentity() - Get device identity parameters, getDeviceProduct() - Get product, getFirmware_PIC() - Get the PIC Firmware version, getHello() - Get a simple 'hello' response from the ECI (+1 more)
 
-### Community 185 - "Community 185"
-Cohesion: 0.22
-Nodes (3): _PubFalso, Proxy do Frame que engole `after` — ver o cabeçalho., _SemAfter
-
-### Community 186 - "Community 186"
-Cohesion: 0.31
-Nodes (4): main(), Node, Conecta ao robô real e devolve as 6 juntas em rad (URDF)., RealPoseSync
-
-### Community 187 - "Community 187"
-Cohesion: 0.29
-Nodes (5): CurrentGrip, Get the current grip config, GetCurrentGripClientNode, main(), Any
-
-### Community 188 - "Community 188"
-Cohesion: 0.29
-Nodes (5): DigitConfigMsg, GetDigitConfigClientNode, main(), Any, Digit
-
-### Community 189 - "Community 189"
-Cohesion: 0.29
-Nodes (5): GripName, GetGripNameClientNode, main(), Any, GripNameIndex
-
-### Community 190 - "Community 190"
-Cohesion: 0.29
-Nodes (5): Get all digit positions, GetDigitPosnAllClientNode, main(), Any, DigitPosnAllMsg
-
-### Community 191 - "Community 191"
-Cohesion: 0.29
-Nodes (5): Read temperature, battery voltage etc Temperature (C) Humidity (0-100%) Battery…, GetEnvironmentalClientNode, main(), Any, EnvironmentalMsg
-
-### Community 192 - "Community 192"
-Cohesion: 0.29
-Nodes (5): Get the product ID of the Hand, GetHandProductIDClientNode, main(), Any, Product
-
-### Community 193 - "Community 193"
-Cohesion: 0.29
-Nodes (5): main(), Any, GripNameIndex, UserGripResMsg, RemoveUserGripClientNode
-
-### Community 194 - "Community 194"
-Cohesion: 0.29
-Nodes (5): main(), Any, DirectControlMsg, Speed, SetDirectControlCloseClientNode
-
-### Community 195 - "Community 195"
-Cohesion: 0.29
-Nodes (5): main(), Any, DirectControlMsg, Speed, SetDirectControlOpenClientNode
-
-### Community 196 - "Community 196"
-Cohesion: 0.29
-Nodes (3): GraspSense, main(), Node
-
-### Community 197 - "Community 197"
+### Community 291 - "Medições de latência da MÃO COVVI (Real-to-Sim)"
 Cohesion: 0.25
-Nodes (7): _cb_start(), _msg(), Um STOP no fim do run (quando `_joint_batch_to` sai pela porta rápida e não…, A janela que existia: o `_busy` era marcado, o parsing corria ( set_parameters,…, Entra pela porta real (`_cb_start`), que é onde mora o checar-e-marcar do…, test_freeze_durante_o_parsing_do_start_nao_e_apagado(), test_start_limpa_stop_e_freeze_pendentes()
+Nodes (7): Como gerar, Critérios de qualidade de uma captura, Diferenças de instrumentação em relação ao braço, Histórico: o bug de escala (resolvido em 10/09/2026), Medições de latência da MÃO COVVI (Real-to-Sim), O que cada arquivo contém, Resultado (pós-correção — 4 capturas, 24 pares)
 
-### Community 198 - "Community 198"
+### Community 292 - "MX_DMA_Init"
+Cohesion: 0.29
+Nodes (6): DMA2_Stream0_IRQHandler(), MX_DMA_Init(), HAL_DMA_Init(), HAL_DMA_IRQHandler(), HAL_NVIC_EnableIRQ(), HAL_NVIC_SetPriority()
+
+### Community 293 - "touch_sensor4x4.py"
+Cohesion: 0.32
+Nodes (3): process_line(), relay_lines(), serial_reader_loop()
+
+### Community 294 - "Connecting the real COVVI hand"
 Cohesion: 0.25
-Nodes (6): _Host, fixture, raiz(), UM Tk por módulo. Criar e destruir um root por teste falha de forma…, O mínimo que os mixins esperam do PalpationGUI., _tk_root()
+Nodes (8): Connecting the real COVVI hand, ECI server, Motion commands, Power on and verify, Prerequisites, Shutting down safely, Telemetry, Using Real Hand from the GUI
 
-### Community 199 - "Community 199"
+### Community 295 - "_enche"
 Cohesion: 0.25
-Nodes (4): String, ok;<ref_N>;<deriva_N>' ou 'err;<causa>;<valor>'. Os DOIS receivers publicam…, Resposta do ft_receiver. Sempre chega, inclusive na recusa., O Text fica 'disabled' para ser só de leitura, e o Tk recusa insert nesse…
+Nodes (5): _enche(), test_auto_tare_on_a_full_stable_window_succeeds(), test_auto_tare_waits_for_a_full_window(), test_successful_tare_reports_ok_and_the_reference(), test_tare_request_without_data_reports_no_data()
 
-### Community 200 - "Community 200"
-Cohesion: 0.25
-Nodes (4): Tap das linhas brutas do firmware (thread serial, ~1 kHz por chunk)., Extrai os N taxels + o t_us de 'ADC,v0,...,vN-1,t=micros'. Devolve (taxels,…, Parseia UMA linha do firmware e republica em ROS para o logger: frame ADC →…, Parseia UMA linha e grava no CSV cru correspondente (sob self._lock).
-
-### Community 201 - "Community 201"
-Cohesion: 0.33
-Nodes (4): DeviceIdentityMsg, GetDeviceIdentityClientNode, main(), Any
-
-### Community 202 - "Community 202"
-Cohesion: 0.33
-Nodes (4): DeviceProductMsg, GetDeviceProductClientNode, main(), Any
-
-### Community 203 - "Community 203"
+### Community 296 - "generate_report"
 Cohesion: 0.29
-Nodes (5): DigitMoveMsg, Percentage, Command to move a single digit, Digit, Speed
+Nodes (5): test_report_siblings_live_in_the_run_folder(), test_report_still_reads_the_old_flat_layout(), generate_report(), _load_params(), _sibling()
 
-### Community 204 - "Community 204"
-Cohesion: 0.33
-Nodes (4): EciFirmwarePicMsg, GetFirmwarePICECIClientNode, main(), Any
-
-### Community 205 - "Community 205"
-Cohesion: 0.33
-Nodes (4): HandFirmwarePicMsg, GetFirmwarePICHANDClientNode, main(), Any
-
-### Community 206 - "Community 206"
-Cohesion: 0.33
-Nodes (4): HelloMsg, GetHelloClientNode, main(), Any
-
-### Community 207 - "Community 207"
-Cohesion: 0.33
-Nodes (4): PinchConfigMsg, GetPinchConfigClientNode, main(), Any
-
-### Community 208 - "Community 208"
-Cohesion: 0.33
-Nodes (4): DisableAllRealtimeCfgClientNode, main(), Any, RealtimeCfg
-
-### Community 209 - "Community 209"
-Cohesion: 0.33
-Nodes (4): EnableAllRealtimeCfgClientNode, main(), Any, RealtimeCfg
-
-### Community 210 - "Community 210"
-Cohesion: 0.33
-Nodes (4): GetDigitStatusAllClientNode, main(), Any, DigitStatusAllMsg
-
-### Community 211 - "Community 211"
-Cohesion: 0.33
-Nodes (4): GetEciDeviceClassTypeClientNode, main(), Any, DeviceClassType
-
-### Community 212 - "Community 212"
-Cohesion: 0.33
-Nodes (4): GetEciProductIDClientNode, main(), Any, Product
-
-### Community 213 - "Community 213"
-Cohesion: 0.33
-Nodes (4): GetHandDeviceClassTypeClientNode, main(), Any, DeviceClassType
-
-### Community 214 - "Community 214"
-Cohesion: 0.33
-Nodes (4): GetMotorCurrentAllClientNode, main(), Any, MotorCurrentAllMsg
-
-### Community 215 - "Community 215"
-Cohesion: 0.33
-Nodes (4): GetMotorLimitsClientNode, main(), Any, MotorLimitsMsg
-
-### Community 216 - "Community 216"
-Cohesion: 0.33
-Nodes (4): GetOrientationClientNode, main(), Any, OrientationMsg
-
-### Community 217 - "Community 217"
-Cohesion: 0.33
-Nodes (4): GetSystemStatusClientNode, main(), Any, SystemStatusMsg
-
-### Community 218 - "Community 218"
-Cohesion: 0.33
-Nodes (4): main(), Any, DigitPosnSetMsg, SetDigitPosnStopClientNode
-
-### Community 219 - "Community 219"
-Cohesion: 0.33
-Nodes (4): main(), Any, DirectControlMsg, SetDirectControlStopClientNode
-
-### Community 220 - "Community 220"
-Cohesion: 0.33
-Nodes (4): main(), Any, HandPowerMsg, SetHandPowerOffClientNode
-
-### Community 221 - "Community 221"
-Cohesion: 0.33
-Nodes (4): main(), Any, HandPowerMsg, SetHandPowerOnClientNode
-
-### Community 222 - "Community 222"
-Cohesion: 0.33
-Nodes (4): main(), Any, RealtimeCfg, SetRealtimeCfgClientNode
-
-### Community 223 - "Community 223"
-Cohesion: 0.38
-Nodes (7): World-landmarks 3D de uma palma plana (só wrist/index_MCP/pinky_MCP), girada…, test_j6_back_of_hand_saturates_opposite_to_palm(), test_j6_tracks_pronation_sign_and_monotonic(), test_j6_zero_when_palm_faces_camera(), _wpalm(), Pronação/supinação do punho (palma ↔ dorso) → alvo ABSOLUTO em GRAUS para…, wrist_pronation_j6_deg()
-
-### Community 224 - "Community 224"
+### Community 299 - "_load_rows"
 Cohesion: 0.29
-Nodes (6): A propriedade que dá nome à coisa. Sem a alternância, o trânsito da última…, O ganho real: passos consecutivos são sempre vizinhos. Este teste falha no…, test_serpentine_alternates_direction_every_row(), test_serpentine_never_jumps_more_than_one_index(), test_serpentine_visits_every_cell_exactly_once(), Serpentina (boustrophedon) no retângulo de índices [ix0..ix1] × [iy0..iy1]: a…
+Nodes (4): _load_rows(), _phase_name(), _taxel_values(), _touch_proxy()
 
-### Community 225 - "Community 225"
-Cohesion: 0.33
-Nodes (4): _hex_rgb(), Instala a cena de malhas (urdf_scene.RobotScene) ou None., #rrggbb' → (r, g, b) 0..255., Grade do chão (z=0) + eixos X/Y + círculo de alcance, como (pontos (2S,3),…
-
-### Community 226 - "Community 226"
+### Community 302 - "System and status messages"
 Cohesion: 0.29
-Nodes (4): main(), Node, WrenchStamped, SimForceBridge
+Nodes (7): Environmental, getEnvironmental() - Get the temperature, humidity, battery voltage values of the hand, getOrientation() - Get the orientation of the hand, getSystemStatus() - Get the system status, Orientation, System and status messages, SystemStatus
 
-### Community 227 - "Community 227"
+### Community 303 - "Pegar objetos no Gazebo — preensão POR FÍSICA (tactile cell)"
+Cohesion: 0.33
+Nodes (5): Checklist de tuning no Linux (o Gazebo tem de estar rodando — nada disto foi testado no Windows), Fallback — attach cinemático (mantido, DESLIGADO por default), Pegar objetos no Gazebo — preensão POR FÍSICA (tactile cell), inject_mimic_joint_plugins(), strip_mimic_joints_from_ros2_control()
+
+### Community 304 - ".q"
 Cohesion: 0.29
-Nodes (4): Empty, Descarta o contato aprendido da home corrente — a próxima descida volta a…, FREEZE (parada dura): congela a posição atual IMEDIATAMENTE e aborta o…, GUI desmarcou "Home conhecida": descarta o contato aprendido da home corrente…
+Nodes (3): test_robot_offline_is_a_successful_run(), m(), node()
 
-### Community 228 - "Community 228"
+### Community 305 - "UrdfSceneError"
+Cohesion: 0.29
+Nodes (3): _launch_module(), load_cell_urdf(), UrdfSceneError
+
+### Community 306 - "Medições de latência Sim-to-Real / Real-to-Sim"
 Cohesion: 0.33
-Nodes (4): (força, janela_s) do canal LENTO, ou None se ele não está no ar. None cobre…, |mediana da 2ª metade − mediana da 1ª|. Mede TENDÊNCIA, que é o que distingue…, Medida assentada pelo CANAL LENTO. None se ele não está no ar. Congela o braço…, _tick()
+Nodes (5): Como gerar (bancada, versão com a mão — `end_effector:=hand`), Convenção de sinal, Critérios de qualidade de uma captura, Medições de latência Sim-to-Real / Real-to-Sim, O que cada arquivo contém
 
-### Community 229 - "Community 229"
-Cohesion: 0.40
-Nodes (3): GetHandErrorClientNode, main(), Any
-
-### Community 230 - "Community 230"
-Cohesion: 0.40
-Nodes (3): GetHandManufacturerIDClientNode, main(), Any
-
-### Community 231 - "Community 231"
+### Community 308 - "DigitMove"
 Cohesion: 0.33
-Nodes (6): _hand_clears_world(), _hand_envelope_aabb_world(), _hand_envelope_bounds(), Envelope dinâmico: encolhe no eixo Z (comprimento dos dedos) com o fechamento.…, AABB world do envelope da mão+Link6 (depende do estado dos dedos)., True se o envelope da mão não toca nenhum obstáculo estático.
+Nodes (6): DigitMove, setDigitMove() - Close the index digit, setDigitMove() - Command to move each digit individually - Close the whole hand, setDigitMove() - Command to move each digit individually - Open the whole hand, setDigitMove() - Command to move each digit individually - Set the digits to random positions, setDigitMove() - Open the index digit
 
-### Community 232 - "Community 232"
+### Community 309 - "DigitPosn"
 Cohesion: 0.33
-Nodes (5): test_angle_deg_straight_and_right(), _angle_deg(), ndarray, Ângulo ABC (no vértice B), em graus, no plano da imagem., Último quadro anotado (RGB, HxWx3 uint8) ou None. Thread-safe — a GUI Tk chama…
+Nodes (6): DigitPosn, getDigitPosn_all() - Get all digit positions, getDigitPosn() - Get all digit positions individually, setDigitPosn() - Set all digit positions individually - Close the hand fully, setDigitPosn() - Set all digit positions individually - Open the hand fully, setDigitPosn() - Set all digit positions individually - Perform a thumbs up
 
-### Community 234 - "Community 234"
-Cohesion: 0.47
-Nodes (3): FtArrowMixin, Frame, Painel 3D do vetor de força resultante.
-
-### Community 236 - "Community 236"
+### Community 310 - "Firmware update messages"
 Cohesion: 0.33
-Nodes (3): Descarta o socket do dashboard FECHANDO-O antes de soltar a referência. Confiar…, ServoJ — fluxo de setpoints articulares em RADIANO (convenção DOBOT)., Wrapper que aplica `urdf_to_dobot` antes de chamar `servo_j`.
+Nodes (6): Firmware update messages, RemoveUserGrip, removeUserGrip(grip_index) - Remove a User Grip, resetUserGrips() - Reset all the User Grips, SendUserGrip, sendUserGrip(grip_index, grip_path) - Send a User Grip
 
-### Community 237 - "Community 237"
+### Community 316 - "imu_arm_teleop"
+Cohesion: 0.33
+Nodes (5): imu_arm_teleop, Limitações conhecidas (leia antes de usar com o braço real), Mapeamento (fase 1 — só posição), Pré-requisitos, Uso
+
+### Community 317 - "8.1 Bloco A — Real-to-Sim repetido"
 Cohesion: 0.40
-Nodes (3): CurrentGripGripIdMsg, CurrentGripID, Set the current grip via the Grip ID
+Nodes (3): 8.1 Bloco A — Real-to-Sim repetido, 8.2 Bloco C — Sim-to-Real com perfil casado, 8. Blocos A e C (prioridade baixa)
 
-### Community 238 - "Community 238"
+### Community 318 - "SystemClock_Config"
 Cohesion: 0.40
-Nodes (3): Digit5, MotorCurrentMsg, Get motor current Motor current is not available for rotation motor, The…
+Nodes (3): SystemClock_Config(), HAL_RCC_ClockConfig(), HAL_RCC_OscConfig()
 
-### Community 239 - "Community 239"
+### Community 319 - "Full dependency list"
 Cohesion: 0.40
-Nodes (3): DigitErrorMsg, Get digit error flags, Digit
+Nodes (5): apt packages, External dependencies — already handled by the repository, Full dependency list, Operating system, Python
 
-### Community 240 - "Community 240"
+### Community 320 - "Digit configuration messages"
 Cohesion: 0.40
-Nodes (3): DigitPosnMsg, Get the digit position, Digit
+Nodes (5): Digit configuration messages, DigitConfig, getDigitConfig() - Get the limits of each digit individually, getPinchConfig() - Get the pinch points of each digit individually, PinchConfig
 
-### Community 241 - "Community 241"
+### Community 321 - "RealtimeCfg"
 Cohesion: 0.40
-Nodes (3): DigitStatusMsg, Get the digit status flags, Digit
+Nodes (5): RealtimeCfg, resetRealtimeCfg() - Reset the realtime callbacks (and stop streaming realtime messages), setRealtimeCfg() - Set real-time update configuration, Turn all realtime packets off, Turn all realtime packets on
 
-### Community 242 - "Community 242"
+### Community 322 - "Kinematics"
 Cohesion: 0.40
-Nodes (3): Set the digit position to move to and the movement speed for each digit and…, DigitPosnSetMsg, Speed
+Nodes (5): Arm forward kinematics — `forward_kinematics(q)`, Arm inverse kinematics — `inverse_kinematics(p_tcp, approach_vec, ...)`, Checking the IK, Hand kinematics — `hand_fk(hand_state)`, Kinematics
 
-### Community 244 - "Community 244"
+### Community 323 - "CurrentGrip"
 Cohesion: 0.50
-Nodes (3): HandNode, main(), Node
+Nodes (4): CurrentGrip, getCurrentGrip() - Get the current grip, setCurrentGrip(grip_id) - Set the current grip, setCurrentGrip(grip_id) - Set the current grip to <current_grip_id>
 
-### Community 245 - "Community 245"
-Cohesion: 0.40
-Nodes (5): explorer(), fixture, Contexto rclpy DESTE módulo. Init/shutdown emparelhados: cada arquivo de teste…, TactileExplorer com a thread do protocolo neutralizada — o que se testa aqui é…, _ros()
-
-### Community 246 - "Community 246"
-Cohesion: 0.40
-Nodes (5): Com yaw/pitch mal escolhidos um eixo vira um ponto e some da tela., test_nenhum_eixo_do_sensor_degenera_na_projecao(), test_origem_projeta_no_centro(), project(), Ortográfica: devolve (x_px, y_px, profundidade).
-
-### Community 248 - "Community 248"
-Cohesion: 0.40
-Nodes (4): eci_posn_to_deg(), hand_deg_to_driver_rad(), Pose em graus da mão REAL (0–90° dedos, 0–60° Rotate) → radiano da junta driver…, Contagem da telemetria DigitPosnAll → grau da junta primária. Fica aqui, e não…
-
-### Community 249 - "Community 249"
-Cohesion: 0.40
-Nodes (3): Float32, Força do eixo de controle PÓS-tare — a que o explorer regula., A MESMA leitura antes do tare. A diferença entre as duas é o zero corrente — é…
-
-### Community 251 - "Community 251"
-Cohesion: 0.40
-Nodes (4): CameraUnavailable, RuntimeError, Teleoperação da mão COVVI por visão computacional. Captura a webcam USB local…, A câmera USB não pôde ser aberta / não entregou o primeiro quadro.
-
-### Community 252 - "Community 252"
-Cohesion: 0.50
-Nodes (3): _ContactWatch, Vigia de perda de contato do SLIDING., Devolve a extensão contínua SEM contato (m) até aqui.
-
-### Community 257 - "Community 257"
-Cohesion: 0.50
-Nodes (4): Uma banda mais estreita que σ não é um critério mais apertado: é um que a…, Aplica uma PalpationStart mínima e devolve o resultado do parsing., _start(), test_explorer_eleva_banda_abaixo_do_ruido_ao_piso()
-
-### Community 264 - "Community 264"
+### Community 325 - "test_lock_in_por_amostra_recupera_a_amplitude_aliasada"
 Cohesion: 0.67
-Nodes (3): fixture, ros(), tmpdir_runs()
+Nodes (3): test_lock_in_por_amostra_recupera_a_amplitude_aliasada(), fundamental(), wave()
+
+### Community 329 - "tessellate_box"
+Cohesion: 0.67
+Nodes (3): test_box_is_closed_and_correctly_sized(), test_decimate_is_a_no_op_below_budget(), tessellate_box()
 
 ## Knowledge Gaps
-- **13 isolated node(s):** `uvx`, `has_pid_`, `last_update_`, `master_joint_`, `max_effort_` (+8 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2348 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **37 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **13 isolated node(s):** `/home/biolabrobo2/.local/bin/code-review-graph`, `model_`, `world_`, `master_joint_`, `mimic_joint_` (+8 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2700 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **146 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `CovviServerNode` connect `Community 49` to `Community 271`, `Community 272`, `Community 273`, `Community 274`, `Community 275`, `Community 276`, `Community 277`, `Community 278`, `Community 279`, `Community 46`, `Community 68`, `Community 203`, `Community 237`, `Community 238`, `Community 239`, `Community 240`, `Community 241`, `Community 242`, `Community 123`, `Community 255`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
-- **Why does `ManualControlNode` connect `Community 30` to `Community 0`, `Community 256`, `Community 100`, `Community 263`, `Community 42`, `Community 243`, `Community 84`, `Community 154`, `Community 63`?**
-  _High betweenness centrality (0.061) - this node is a cross-community bridge._
-- **Why does `TactileExplorer` connect `Community 10` to `Community 3`, `Community 261`, `Community 134`, `Community 9`, `Community 15`, `Community 149`, `Community 22`, `Community 32`, `Community 160`, `Community 164`, `Community 45`, `Community 50`, `Community 52`, `Community 61`, `Community 62`, `Community 73`, `Community 81`, `Community 86`, `Community 92`, `Community 227`, `Community 228`, `Community 245`, `Community 252`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `CovviServerNode` connect `CovviServerNode` to `.serviceCallbackGetEciConnected`, `.serviceCallbackGetEciDeviceClassType`, `.serviceCallbackGetEciError`, `.serviceCallbackGetEciProductID`, `.serviceCallbackGetEciSerialNumber`, `.serviceCallbackGetHandDeviceClassType`, `.serviceCallbackGetHandError`, `.serviceCallbackGetHandSerialNumber`, `.serviceCallbackGetMotorCurrentAll`, `.__init__`, `covvi_interfaces_msg`, `Request`, `typing`, `.serviceCallbackGetCurrentGrip`, `.serviceCallbackGetDigitError`, `.serviceCallbackGetDigitPosn`, `.serviceCallbackGetDigitPosnAll`, `.serviceCallbackGetEciManufacturerID`, `.serviceCallbackGetEciPowerOn`, `.serviceCallbackGetHandConnected`, `.serviceCallbackGetHandPowerOn`, `.serviceCallbackGetHandProductID`, `.serviceCallbackGetSystemStatus`, `.serviceCallbackSetCurrentGrip`, `.serviceCallbackSetDigitMove`, `.serviceCallbackSetDigitPosn`, `.serviceCallbackSetDigitPosnStop`, `covvi_hand_driver/__init__.py`, `.serviceCallbackGetMotorCurrent`, `.serviceCallbackGetDigitStatus`, `.serviceCallbackGetOrientation`?**
+  _High betweenness centrality (0.055) - this node is a cross-community bridge._
 - **Are the 23 inferred relationships involving `TactileExplorer` (e.g. with `node()` and `node()`) actually correct?**
   _`TactileExplorer` has 23 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 11 inferred relationships involving `PalpationGUI` (e.g. with `test_publicador_da_gui_rejeita_o_mesmo_que_a_fonte()` and `_FakeGUI`) actually correct?**
-  _`PalpationGUI` has 11 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `uvx`, `has_pid_`, `last_update_` to the rest of the system?**
+- **What connects `/home/biolabrobo2/.local/bin/code-review-graph`, `model_`, `world_` to the rest of the system?**
   _13 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.04891089108910891 - nodes in this community are weakly interconnected._
+- **Should `palpation_gui.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.047580860732424485 - nodes in this community are weakly interconnected._
+- **Why does `PalpationGUI` connect `PalpationGUI` to `palpation_gui.py`, `._on_start`, `test_ft_charts.py`, `test_estop_button.py`, `HandMixin`, `test_traj_record.py`, `._build_palpation_tab`, `TouchSensorSource`, `._update_fmod_preview`, `ManualExtrasMixin`, `test_fmod_wave_quality.py`, `test_matrix_gui.py`, `RobotMixin`, `._suppress`, `IMUMixin`, `._build_header`, `Manip3DTabMixin`, `LcAxialMixin`, `SensorsMixin`, `._set_status`, `._save_home_pose`, `._build_palp_mode_selector`, `test_taxel_orientation.py`, `._cb_ft_rate`, `CR10RealDriverError`, `PosesMixin`, `test_ft_axes.py`, `FtAxesMixin`, `test_adc_frame_integrity.py`, `test_ft_arrow.py`, `MatrixMixin`, `CameraMixin`, `._draw_force_spark`?**
+  _High betweenness centrality (0.054) - this node is a cross-community bridge._
+- **Should `urdf_scene.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.1111111111111111 - nodes in this community are weakly interconnected._
+- **Why does `TactileExplorer` connect `TactileExplorer` to `test_fmod_phase.py`, `._start_from_msg`, `forward_kinematics`, `constants.py`, `numpy`, `._set_phase`, `test_plane_probe.py`, `test_fmod_ilc.py`, `test_slide_contact_watch.py`, `._run_matrix_protocol`, `test_vtk_render.py`, `test_explorer_logic.py`, `_ContactWatch`, `._run_protocol`, `test_bins_do_ilc_acompanham_os_pontos_comandados`, `test_servoj_descent.py`, `test_matrix_map.py`, `test_audit_20260824.py`, `test_transit_guards.py`, `._qs_measure_settled`, `test_hold_dwell_window.py`, `explorer`?**
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._

@@ -35,7 +35,7 @@ from std_msgs.msg import String
 
 OBJECTS = ('frasco', 'tubo', 'ampola')
 REPEATS = 3
-TIMEOUT_S = 35.0
+TIMEOUT_S = 90.0
 OUTPUT_CSV = '/tmp/test_9cycles_results.csv'
 
 
@@ -49,6 +49,8 @@ class TestRunner(Node):
         self.reset_cli = self.create_client(Trigger, '/conveyor/reset')
         self.exec_cli  = self.create_client(Trigger, '/cell/execute_grasp')
         self.conveyor_state: dict = {}
+        self.cycle_done: dict = {}
+        self.create_subscription(String, '/cell/status', self._cb_cell, 10)
         self.create_subscription(String, '/conveyor/status',
                                   self._cb_conv, 10)
 
@@ -57,6 +59,14 @@ class TestRunner(Node):
             self.conveyor_state = json.loads(msg.data)
         except Exception:
             pass
+
+    def _cb_cell(self, msg: String):
+        try:
+            d = json.loads(msg.data)
+        except Exception:
+            return
+        if d.get('state') == 'CYCLE_DONE':
+            self.cycle_done = d
 
     def _call(self, cli, label: str, timeout: float = 8.0):
         if not cli.wait_for_service(timeout_sec=4.0):
@@ -87,11 +97,20 @@ class TestRunner(Node):
         else:
             return 'no_object_after_spawn', ''
 
-        ok, msg = self._call(self.exec_cli, 'execute_grasp',
-                              timeout=TIMEOUT_S)
+        self.cycle_done = {}
+        ok, msg = self._call(self.exec_cli, 'execute_grasp', timeout=10.0)
         if ok is None:
             return 'timeout', msg or ''
-        return ('success' if ok else 'exec_fail'), msg or ''
+        if not ok:
+            return 'exec_fail', msg or ''
+        # O serviço só INICIA o ciclo; o resultado vem em /cell/status.
+        deadline = time.time() + TIMEOUT_S
+        while time.time() < deadline and not self.cycle_done:
+            rclpy.spin_once(self, timeout_sec=0.2)
+        if not self.cycle_done:
+            return 'timeout', 'sem CYCLE_DONE'
+        return ('success' if self.cycle_done.get('success') else 'grasp_fail'), \
+            str(self.cycle_done.get('grip', ''))
 
 
 def main():

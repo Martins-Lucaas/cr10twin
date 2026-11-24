@@ -100,6 +100,10 @@ _HSV_RANGES = {
 
 _MIN_AREA = 150   # px² — filtra ruído e reflexos pontuais
 
+# Faixa superior da imagem ignorada: a esteira só começa em y≈155 px, e ali fica
+# o anel azul do pulso do braço (≈900 px², passava como 'tubo').
+_IGNORE_TOP_PX = 140
+
 # Área máxima por objeto — proporcional ao tamanho real
 _MAX_AREA = {
     'frasco': 18000,   # frasco largo → maior projeção na imagem
@@ -211,6 +215,7 @@ class ObjectDetectorNode(Node):
 
         for label, rng in _HSV_RANGES.items():
             mask = cv2.inRange(hsv, rng['lower'], rng['upper'])
+            mask[:_IGNORE_TOP_PX, :] = 0
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel_open)
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
 

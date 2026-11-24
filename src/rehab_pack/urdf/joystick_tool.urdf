@@ -1,0 +1,238 @@
+<?xml version="1.0"?>
+<!--
+  joystick_tool.urdf
+  Mastro de reabilitação (Gazebo Classic): o voluntário segura a empunhadura
+  e a FA7155 mede a força que ele faz sobre o robô. Pilha no eixo +Z do
+  flange do CR10 (Link6), em mm:
+
+      0,0 …   6,0   flange fixo FA7155   (⌀75 alumínio, parafusa no punho)
+      0,4 …  36,9   célula FA7155        (6 eixos, 300 g de catálogo)
+     37,2 …  39,2   placa do mastro      (110 × 50 × 2, impressa)
+     39,2 … 189,2   empunhadura          (⌀35 × 150, SILICONE/BORRACHA, oca)
+
+  A pilha célula → placa reaproveita a altura de montagem do touch_pack
+  (junta em 37,2 mm do flange, onde o acoplador hot-swap encosta na célula).
+  Os meshes do flange e da célula são cópia dos do touch_pack: este pacote
+  não depende dele.
+
+  tcp_link = centro da empunhadura (Z = 114,2 mm do flange), onde a mão
+  fica. A força é medida em load_cell_link; para levá-la ao tcp_link há um
+  braço de 77 mm (M = r × F) — o controlador precisa dessa transformação.
+
+  MASSAS E INÉRCIAS: calculadas da geometria real por
+  scripts/gen_joystick_meshes.py (que também gera os STL). Placa: 950 kg/m³
+  (impressa). Empunhadura: 1100 kg/m³ (silicone) sobre o volume REAL, que é
+  oco. PESE A PEÇA PRONTA e corrija a massa: ela entra na compensação de
+  peso do controlador.
+
+  ATRITO: a "superfície rugosa" da borracha é modelada só como atrito alto
+  (mu 1,2) e acabamento fosco. A rugosidade não existe na geometria.
+
+  O bloco da F/T simulada (no fim do arquivo, entre dois comentários-marcador)
+  é removido pelo builder quando sim_ft=false — ver rehab_pack/urdf_builder.py.
+  Não repita o texto dos marcadores em nenhum outro comentário.
+-->
+<robot name="joystick_tool">
+
+  <!-- Andaime standalone (check_urdf): o CR10 fornece world e Link6. -->
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="Link6"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="Link6">
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="1e-9" ixy="0.0" ixz="0.0" iyy="1e-9" iyz="0.0" izz="1e-9"/>
+    </inertial>
+  </link>
+
+  <material name="printed_blue"><color rgba="0.11 0.35 0.78 1.0"/></material>
+  <material name="steel_grey"><color rgba="0.62 0.63 0.65 1.0"/></material>
+  <material name="silicone_black"><color rgba="0.10 0.10 0.11 1.0"/></material>
+
+  <!-- Flange fixo FA7155 (disco de alumínio ⌀75 × 6). -->
+  <link name="ft_flange_link">
+    <inertial>
+      <origin xyz="0.00018 0.00010 0.00295" rpy="0 0 0"/>
+      <mass value="0.0518"/>
+      <inertia ixx="2.149e-05" ixy="-1.491e-07" ixz="-4.657e-10"
+               iyy="2.224e-05" iyz="-2.689e-10" izz="4.341e-05"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://rehab_pack/meshes/fa7155_flange_fixo.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="steel_grey"/>
+    </visual>
+    <collision name="col_ft_flange">
+      <origin xyz="0 0 0.003" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0375" length="0.006"/></geometry>
+    </collision>
+  </link>
+  <joint name="ft_flange_attach" type="fixed">
+    <parent link="Link6"/>
+    <child link="ft_flange_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Célula FA7155 de 6 eixos. Massa de catálogo (300 g), não a da geometria:
+       o STEP é o envelope externo sem a eletrônica. O saliente em +X é o
+       conector do cabo; a colisão cilíndrica o ignora. -->
+  <link name="load_cell_link">
+    <inertial>
+      <origin xyz="0.00010 0.00008 0.01933" rpy="0 0 0"/>
+      <mass value="0.3000"/>
+      <inertia ixx="1.233e-04" ixy="2.380e-09" ixz="-2.932e-07"
+               iyy="1.258e-04" iyz="2.405e-07" izz="2.059e-04"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://rehab_pack/meshes/fa7155_sensor.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="steel_grey"/>
+    </visual>
+    <collision name="col_load_cell">
+      <origin xyz="0 0 0.02105" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0375" length="0.0309"/></geometry>
+    </collision>
+  </link>
+  <joint name="load_cell_attach" type="fixed">
+    <parent link="ft_flange_link"/>
+    <child link="load_cell_link"/>
+    <origin xyz="0 0 0.0004" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Placa do mastro (Corpo1 do STEP), impressa. Origem no centro da face
+       de baixo, que encosta na face móvel da célula. -->
+  <link name="joystick_plate_link">
+    <inertial>
+      <origin xyz="0.00000 0.00000 0.00100" rpy="0 0 0"/>
+      <mass value="0.0094"/>
+      <inertia ixx="2.137e-06" ixy="0.0" ixz="0.0"
+               iyy="1.046e-05" iyz="0.0" izz="1.259e-05"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://rehab_pack/meshes/joystick_placa.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="printed_blue"/>
+    </visual>
+    <collision name="col_plate">
+      <origin xyz="0 0 0.001" rpy="0 0 0"/>
+      <geometry><box size="0.110 0.050 0.002"/></geometry>
+    </collision>
+  </link>
+  <joint name="joystick_plate_attach" type="fixed">
+    <parent link="load_cell_link"/>
+    <child link="joystick_plate_link"/>
+    <origin xyz="0 0 0.0368" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Empunhadura (Corpo2): silicone/borracha, oca (⌀35 externo). Origem no
+       centro da base, 2 mm acima da face da placa. -->
+  <link name="joystick_grip_link">
+    <inertial>
+      <origin xyz="0.00000 0.00000 0.08925" rpy="0 0 0"/>
+      <mass value="0.0694"/>
+      <inertia ixx="1.018e-04" ixy="0.0" ixz="0.0"
+               iyy="1.018e-04" iyz="0.0" izz="1.524e-05"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://rehab_pack/meshes/joystick_empunhadura.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="silicone_black"/>
+    </visual>
+    <collision name="col_grip">
+      <origin xyz="0 0 0.075" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0175" length="0.150"/></geometry>
+    </collision>
+  </link>
+  <joint name="joystick_grip_attach" type="fixed">
+    <parent link="joystick_plate_link"/>
+    <child link="joystick_grip_link"/>
+    <origin xyz="0 0 0.002" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Centro da empunhadura: onde a mão fica. -->
+  <link name="tcp_link"/>
+  <joint name="tcp_alias_joint" type="fixed">
+    <parent link="joystick_grip_link"/>
+    <child link="tcp_link"/>
+    <origin xyz="0 0 0.075" rpy="0 0 0"/>
+  </joint>
+
+  <gazebo reference="Link6">
+    <self_collide>0</self_collide>
+  </gazebo>
+
+  <gazebo reference="ft_flange_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <visual><material>
+      <ambient>0.40 0.41 0.43 1</ambient>
+      <diffuse>0.62 0.63 0.65 1</diffuse>
+      <specular>0.85 0.85 0.90 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <gazebo reference="load_cell_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <visual><material>
+      <ambient>0.40 0.41 0.43 1</ambient>
+      <diffuse>0.62 0.63 0.65 1</diffuse>
+      <specular>0.85 0.85 0.90 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <gazebo reference="joystick_plate_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>0.40</mu1><mu2>0.40</mu2>
+    <visual><material>
+      <ambient>0.06 0.20 0.45 1</ambient>
+      <diffuse>0.11 0.35 0.78 1</diffuse>
+      <specular>0.25 0.25 0.30 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <!-- Borracha: atrito alto e acabamento fosco (specular baixo). -->
+  <gazebo reference="joystick_grip_link">
+    <self_collide>0</self_collide><gravity>true</gravity>
+    <mu1>1.20</mu1><mu2>1.20</mu2>
+    <visual><material>
+      <ambient>0.05 0.05 0.06 1</ambient>
+      <diffuse>0.10 0.10 0.11 1</diffuse>
+      <specular>0.03 0.03 0.03 1</specular>
+    </material></visual>
+  </gazebo>
+
+  <!-- F/T simulada na junta onde a FA7155 real está montada: a que liga a
+       face móvel da célula à placa, ou seja, mede o que vem de cima (placa,
+       empunhadura e a mão). Preservar a junta tira do lumping esses 79 g, e o
+       touch_pack mediu J4 oscilando por causa disso com a pilha dele — por
+       isso este bloco só entra com sim_ft=true. O plugin publica
+       WrenchStamped em /sim/load_cell/wrench. -->
+  <!--SIM_FT_BEGIN-->
+  <gazebo reference="joystick_plate_attach">
+    <disableFixedJointLumping>true</disableFixedJointLumping>
+    <provideFeedback>true</provideFeedback>
+  </gazebo>
+  <gazebo>
+    <plugin name="sim_load_cell_ft" filename="libgazebo_ros_ft_sensor.so">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>wrench:=/sim/load_cell/wrench</remapping>
+      </ros>
+      <joint_name>joystick_plate_attach</joint_name>
+      <update_rate>80.0</update_rate>
+      <gaussian_noise>0.02</gaussian_noise>
+    </plugin>
+  </gazebo>
+  <!--SIM_FT_END-->
+
+</robot>

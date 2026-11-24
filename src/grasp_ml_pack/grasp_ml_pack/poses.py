@@ -83,7 +83,8 @@ _R_HAND_FROM_TCP = _np.array([[1.0, 0.0,  0.0],
 
 # Sentido do movimento APPROACH→PICK (mundo). Lateral = normal da palma.
 _APPROACH_DIR = {
-    'frasco': (1.0, 0.0, 0.0),    # mão vem do lado do robô, palma em +X
+    # frasco: grasp da busca GPU (data/grasp_search/frasco.json) = eixo z da mão
+    'frasco': (0.7495, 0.1654, -0.6410),
     'tubo':   (0.0, -1.0, 0.0),   # mão vem de +Y, palma em −Y
     'ampola': (0.0, 0.0, -1.0),   # pinça desce na vertical
 }
@@ -98,7 +99,12 @@ _LIFT_DZ = 0.180                  # PRE/lift: sobe na vertical a partir do PICK
 # encosta, 3 dedos envolvem. Ampola: 14 mm para o lado do polegar (antes
 # ficava sob o indicador, que a tombava na descida).
 _OBJ_IN_HAND = {
-    'frasco': (-0.025, 0.060, 0.072),
+    # Frasco (SDF: raio 25 mm, h 90 mm): com (-0.025, 0.060, 0.072) o frasco
+    # ficava ~22 mm longe da palma e as pontas fechavam sem tocar (medido no
+    # Gazebo, 2026-11-17). Varredura hand_fk: 4 dedos tocam em curl ≈0.68.
+    # 2026-11-23: substituído pelo grasp da busca GPU (CEM, 100% c/ ruído 3 mm
+    # no GraspSim; NÃO validado em física até o teste no Gazebo).
+    'frasco': (-0.0179, 0.0879, 0.0429),
     'tubo':   (-0.020, 0.075, 0.045),
     'ampola': (0.0442, 0.1119, 0.0552),
 }
@@ -136,7 +142,10 @@ def _build_rtcp_by_obj():
         # dedos envolvendo). A antiga palma-para-baixo do frasco (Ø84 mm)
         # não cabia: vão da mão aberta ~75 mm, a raiz do polegar ficava
         # DENTRO do frasco (só "funcionava" com dedos teleportados).
-        'frasco': _Rtcp_lateral(_APPROACH_DIR['frasco']),
+        # R_hand do GraspSim (euler ψ,e,ρ = 0.1548,-0.8740,-3.0937) · R_HAND_FROM_TCPᵀ
+        'frasco': _np.array([[0.6341, -0.7495, 0.1903],
+                             [0.0989, -0.1654, -0.9813],
+                             [0.7669, 0.6410, -0.0307]]),
         'ampola': _Rtcp_palm_down(finger_dir=_FINGER_DIR_AMPOLA),
         'tubo':   _Rtcp_lateral(_APPROACH_DIR['tubo']),
         '_finger_dir': {
@@ -304,8 +313,8 @@ HAND_GRIPS = {
     # a geometria de colisão real (ver _OBJ_IN_HAND): frasco 4 dedos, tubo
     # 3 dedos + palma, ampola polegar+indicador. Rotate baixo nas pegas
     # laterais: a palma (lisa) gira junto com o Rotate e empurraria o objeto.
-    'Palm Grip (frasco)':      {'Thumb': 178, 'Index': 200, 'Middle': 200,
-                                 'Ring':  200, 'Little': 200, 'Rotate':   0},
+    'Palm Grip (frasco)':      {'Thumb': 138, 'Index':  94, 'Middle': 169,
+                                 'Ring':  134, 'Little': 118, 'Rotate':  80},
     'Claw Grip (tubo)':        {'Thumb': 178, 'Index': 200, 'Middle': 200,
                                  'Ring':  200, 'Little': 200, 'Rotate':  40},
     'Fingertip Grip (ampola)': {'Thumb': 135, 'Index': 109, 'Middle':   0,
@@ -317,7 +326,7 @@ HAND_GRIPS = {
 # aberto (com curl ele descia a ~3 mm da ampola e a tombava).
 HAND_PRESHAPE = {
     'Palm Grip (frasco)':      {'Thumb':   0, 'Index':   0, 'Middle':   0,
-                                 'Ring':    0, 'Little':   0, 'Rotate':   0},
+                                 'Ring':    0, 'Little':   0, 'Rotate':  80},
     'Claw Grip (tubo)':        {'Thumb':   0, 'Index':   0, 'Middle':   0,
                                  'Ring':    0, 'Little':   0, 'Rotate':   0},
     'Fingertip Grip (ampola)': {'Thumb':  15, 'Index':   0, 'Middle':   0,
@@ -682,24 +691,24 @@ def compute_targets():
 # PRE/APPROACH/PICK regenerados 2026-11-17 para as pegas físicas
 # (_OBJ_IN_HAND) e com o sinal do joint1 corrigido (axis −Z na URDF).
 _CACHED_PRE_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  -33.8048, 'joint2':  -11.4186, 'joint3':  -78.2298,
-               'joint4':  -90.3516, 'joint5':   33.8048, 'joint6':   90.0000},
+    'frasco': {'joint1':  -34.7700, 'joint2':  -11.5831, 'joint3':  -75.4855,
+               'joint4':  -88.5783, 'joint5':   23.8563, 'joint6':   46.1203},
     'ampola': {'joint1':  -18.3182, 'joint2':   12.5507, 'joint3':  -99.7900,
                'joint4':  -92.7606, 'joint5':  -71.6817, 'joint6':   -0.0000},
     'tubo': {'joint1':  -13.6203, 'joint2':  -45.6530, 'joint3':  -25.2976,
                'joint4': -109.0493, 'joint5':  103.6202, 'joint6':   90.0000},
 }
 _CACHED_APPROACH_POSES_DEG = {
-    'frasco': {'joint1':  -39.1445, 'joint2':   -4.8913, 'joint3': -104.1049,
-               'joint4':  -71.0037, 'joint5':   39.1445, 'joint6':   90.0000},
+    'frasco': {'joint1':  -37.5025, 'joint2':   -4.8400, 'joint3':  -95.1148,
+               'joint4':  -76.1114, 'joint5':   26.5816, 'joint6':   46.5844},
     'ampola': {'joint1':  -18.3087, 'joint2':   11.8793, 'joint3': -111.5077,
                'joint4':  -80.3716, 'joint5':  -71.6913, 'joint6':    0.0000},
     'tubo': {'joint1':  -19.3678, 'joint2':  -42.8103, 'joint3':  -48.6766,
                'joint4':  -88.5131, 'joint5':  109.3678, 'joint6':   90.0000},
 }
 _CACHED_PICK_POSES_DEG = {
-    'frasco': {'joint1':  -33.8039, 'joint2':  -13.9498, 'joint3':  -93.5162,
-               'joint4':  -72.5340, 'joint5':   33.8039, 'joint6':   90.0000},
+    'frasco': {'joint1':  -34.7721, 'joint2':  -13.3429, 'joint3':  -91.6236,
+               'joint4':  -70.6808, 'joint5':   23.8583, 'joint6':   46.1207},
     'ampola': {'joint1':  -18.1700, 'joint2':   10.3800, 'joint3': -116.0100,
                'joint4':  -74.3700, 'joint5':  -71.8300, 'joint6':    0.0000},
     'tubo': {'joint1':  -13.8104, 'joint2':  -41.6018, 'joint3':  -50.7123,
