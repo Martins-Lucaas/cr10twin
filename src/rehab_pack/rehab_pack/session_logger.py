@@ -17,7 +17,7 @@ import subprocess
 
 from .constants import (
     ARM_JOINTS, EVENTS_COLUMNS, GRIP_MASS_KG, PLATE_MASS_KG, SAMPLES_COLUMNS,
-    STATES, T_EMG, T_EVENT, T_FT, T_JOINT_STATES, T_PARAMS, T_SESSION_META,
+    STATES, T_EMG, T_EVENT, T_FT, T_FT_CONFIG, T_JOINT_STATES, T_PARAMS, T_SESSION_META,
     T_SESSION_SUMMARY, T_TARGET, T_TICK, TCP_OFFSET_M, S_SESSION_START,
     S_SESSION_STOP, SIM_ROBOT_IP, TICK_FIELDS, T_REAL_STATUS, WRENCH_COLUMNS, runs_dir)
 from .tasks import validate_subject_id
@@ -93,7 +93,7 @@ class SessionWriter:
         self.params = dict(params or {})
         self.emg_canais = int(emg_canais)
         self.meta = {
-            'schema': 1, 'session_id': sid, 'subject_id': sujeito,
+            'schema': 2, 'pack': 'rehab_pack', 'relogio': 'monotonic', 'session_id': sid, 'subject_id': sujeito,
             'lado_paretico': meta_usuario.get('lado_paretico', ''),
             'tarefa': tarefa, 'notas': meta_usuario.get('notas', ''),
             'inicio_iso': agora.isoformat(timespec='seconds'), 'fim_iso': None,
@@ -189,7 +189,20 @@ def _parse_evento(texto):
     return tipo.strip(), detalhe.strip()
 
 
+def ler_ft_config(texto):
+    """{ft_sign, ft_yaw_deg} do JSON do force_source; None no que não se sabe."""
+    try:
+        d = json.loads(texto)
+    except (TypeError, ValueError):
+        d = None
+    d = d if isinstance(d, dict) else {}
+    return {k: d.get(k) for k in ('ft_sign', 'ft_yaw_deg')}
+
+
 def main(args=None):
+    # trava touch_pack × rehab_pack; sem touch_pack o import falha e o nó não sobe
+    from touch_pack.pack_lock import acquire_or_exit
+    acquire_or_exit('rehab_pack')
     import rclpy
     from geometry_msgs.msg import PointStamped, WrenchStamped
     from rclpy.node import Node
@@ -218,12 +231,14 @@ def main(args=None):
             self.create_subscription(String, T_EVENT, self._evento, 50)
             self.create_subscription(String, T_SESSION_META, self._meta, latch)
             self.create_subscription(String, T_PARAMS, self._params, latch)
+            self.ft_config = None
+            self.create_subscription(
+                String, T_FT_CONFIG, lambda m: setattr(self, 'ft_config', m.data), latch)
             self.create_subscription(PointStamped, T_TARGET, self._alvo, 10)
             self.create_subscription(JointState, T_JOINT_STATES, self._js, 20)
             self.create_subscription(Float32MultiArray, T_EMG, self._emg, 50)
             self.pub_resumo = self.create_publisher(String, T_SESSION_SUMMARY, latch)
             self.real, self.real_t = {}, 0.0
-            self._sim_last, self._wall_last = 0.0, time.monotonic()
             self.create_subscription(String, T_REAL_STATUS, self._real, 5)
             self.create_service(Trigger, S_SESSION_START, self._srv_start)
             self.create_service(Trigger, S_SESSION_STOP, self._srv_stop)
@@ -231,11 +246,7 @@ def main(args=None):
             self.get_logger().info(f'rehab_logger pronto; pasta base: {self.w.base_dir}')
 
         def _agora(self):
-            # o /clock sai a ~10 Hz: interpola como o nó de admitância (mesmo t_s)
-            sim, wall = self.get_clock().now().nanoseconds * 1e-9, time.monotonic()
-            if sim != self._sim_last:
-                self._sim_last, self._wall_last = sim, wall
-            return self._sim_last + min(wall - self._wall_last, 0.1)
+            return time.monotonic()     # o mesmo relógio do t_s da admitância
 
         # callbacks de estado
         def _meta(self, m):
@@ -322,6 +333,9 @@ def main(args=None):
                        'real': '/ft_sensor/wrench'}
             forca = {'fonte': fonte, 'topico_origem': topicos.get(fonte, 'desconhecido'),
                      'sim_sign': self.get_parameter('sim_sign').value,
+                     # sem force_source no ar (ou com dois) não se sabe qual valeu: null
+                     **ler_ft_config(self.ft_config
+                                     if self.count_publishers(T_FT_CONFIG) == 1 else None),
                      'robo': {k: self.real.get(k) for k in ('modo', 'conectado', 'ip')}}
             # ensaio com robô e célula reais x qualquer coisa simulada
             forca['simulado'] = not (fonte == 'real' and self.real.get('conectado')

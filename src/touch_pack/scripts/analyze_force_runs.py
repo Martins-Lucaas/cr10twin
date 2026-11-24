@@ -55,6 +55,9 @@ def _load_runs(data_dir: str) -> list[dict]:
              + glob.glob(os.path.join(data_dir, '*', '*', '*', '*',
                                       'summary.json'))
              + glob.glob(os.path.join(data_dir, '*__summary.json')))
+    # REHAB/ é do rehab_pack: mesmo nome de arquivo, outro formato.
+    paths = [p for p in paths
+             if os.path.relpath(p, data_dir).split(os.sep)[0] != 'REHAB']
     for p in sorted(paths, key=os.path.getmtime):
         base = os.path.basename(p)
         ts = (os.path.basename(os.path.dirname(p)) if base == 'summary.json'

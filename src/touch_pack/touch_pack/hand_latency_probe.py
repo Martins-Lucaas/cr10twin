@@ -396,6 +396,8 @@ class HandLatencyProbe(Node):
 
 
 def main(args=None):
+    from .pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     rclpy.init(args=args)
     node = HandLatencyProbe()
     if not node.start_real_stream():

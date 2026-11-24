@@ -7,7 +7,7 @@ import pytest
 
 from rehab_pack.constants import SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD
 from rehab_pack.real_link import (DEADBAND_RAD, RealLink, SimulatedDriver,
-                                  real_ok, robot_ip, save_robot_ip,
+                                  real_ok, robot_ip,
                                   sync_error_rad)
 
 OK = {'conectado': True, 'estop': False, 'sync_ok': True, 'max_dq_deg': 0.4}
@@ -99,21 +99,13 @@ def test_conecta_e_habilita():
 
 
 @pytest.mark.parametrize('onde', ['connect', 'enable'])
-def test_falha_ao_conectar_fecha_o_que_abriu_e_aumenta_o_backoff(onde):
+def test_falha_ao_conectar_fecha_o_que_abriu_e_guarda_o_erro(onde):
     # connect() pode abrir sockets antes de enable() falhar: sem close() sobram
     # sessões do dashboard até esgotá-las.
     d = Falso(onde); l = link(d)
-    b0 = l.backoff_s()
     assert not l.connect_once()
     assert not l.connected and 'close' in d.log
-    assert l.backoff_s() > b0
-
-
-def test_backoff_satura():
-    l = link(Falso('connect'))
-    for _ in range(10):
-        l.connect_once()
-    assert l.backoff_s() == 30.0
+    assert l.last_error
 
 
 def test_servoj_respeita_a_banda_morta():
@@ -134,7 +126,8 @@ def test_reset_stream_reenvia_o_mesmo_ponto():
 def test_falha_de_servoj_derruba_a_conexao():
     d = Falso('servo'); l = link(d); l.connect_once()
     assert l.stream(np.ones(6)) is False
-    assert not l.connected and 'prepare' in d.log          # tentou recuperar antes de desistir
+    assert not l.connected and 'prepare' not in d.log      # não limpa alarme sozinho
+    assert 'socket caiu' in l.last_error
 
 
 def test_falha_de_leitura_derruba_a_conexao():
@@ -206,12 +199,26 @@ def test_queda_de_driver_antigo_nao_derruba_a_conexao_nova():
     assert l.connected
 
 
-def test_salvar_ip_preserva_o_resto_e_nao_apaga_arquivo_ruim(tmp_path):
-    f = tmp_path / 'robot.json'
-    f.write_text(json.dumps({'hand_ip': '1.1.1.1', 'robot_ip': 'a'}))
-    save_robot_ip('10.0.0.9', str(f))
-    assert json.loads(f.read_text()) == {'hand_ip': '1.1.1.1', 'robot_ip': '10.0.0.9'}
-    f.write_text('{ ruim')
-    with pytest.raises(ValueError):
-        save_robot_ip('b', str(f))
-    assert f.read_text() == '{ ruim'
+def test_rehab_nunca_escreve_no_robot_json_do_touch_pack():
+    import pathlib
+    from rehab_pack import real_link as rl
+    for f in pathlib.Path(rl.__file__).parent.glob('*.py'):
+        assert 'ROBOT_CONFIG_FILE' not in f.read_text() or f.name == 'real_link.py'
+    assert not hasattr(rl, 'save_robot_ip')
+
+
+def test_payload_bate_com_o_urdf():
+    import pathlib
+    import xml.etree.ElementTree as ET
+    from rehab_pack import real_link as rl
+    r = ET.parse(pathlib.Path(__file__).parents[1] / 'urdf' / 'joystick_tool.urdf').getroot()
+    z = {'ft_flange_link': 0.0, 'load_cell_link': 0.0004,
+         'joystick_plate_link': 0.0372, 'joystick_grip_link': 0.0392}
+    m = mz = 0.0
+    for ln in r.iter('link'):
+        if ln.get('name') in z:
+            k = float(ln.find('inertial/mass').get('value'))
+            m += k
+            mz += k * (z[ln.get('name')] + float(ln.find('inertial/origin').get('xyz').split()[2]))
+    assert rl.PAYLOAD_KG == pytest.approx(m, abs=1e-3)
+    assert rl.PAYLOAD_COG_Z_M == pytest.approx(mz / m, abs=5e-4)

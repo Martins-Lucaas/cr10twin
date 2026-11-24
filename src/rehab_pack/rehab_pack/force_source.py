@@ -5,6 +5,7 @@ O sinal físico é "força da mão sobre o mastro" (compressão positiva).
 """
 from __future__ import annotations
 
+import json
 import math
 import threading
 import time
@@ -20,8 +21,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
-from .constants import (S_TARE, STATES, T_FT, T_REAL_WRENCH, T_SIM_WRENCH,
-                        T_STATE, T_TARED)
+from .constants import (S_TARE, STATES, T_FT, T_FT_CONFIG, T_REAL_WRENCH,
+                        T_SIM_WRENCH, T_STATE, T_TARED)
 
 TARE_WINDOW_S = 0.5
 TARE_MIN_N = 10
@@ -90,9 +91,8 @@ class ForceSource(Node):
             raise ValueError(f'source={src!r}: use sim ou real')
         topic, self._frame = SOURCES[src]
         self._src = src
-        yaw = math.radians(self.get_parameter('real_yaw_deg').value
-                           if src == 'real' else 0.0)
-        self._map = self._sign() * rot_z6(yaw)
+        yaw_deg = self.get_parameter('real_yaw_deg').value if src == 'real' else 0.0
+        self._map = self._sign() * rot_z6(math.radians(yaw_deg))
         self._tare = Tare()
         self._lock = threading.Lock()
         self._pub = self.create_publisher(WrenchStamped, T_FT, 50)
@@ -103,6 +103,12 @@ class ForceSource(Node):
             Float64, T_TARED,
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._pub_tared.publish(Float64(data=0.0))
+        # para o meta da sessão; os parâmetros são só leitura, uma vez basta
+        self._pub_config = self.create_publisher(
+            String, T_FT_CONFIG,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self._pub_config.publish(String(data=json.dumps(
+            {'ft_sign': self._sign(), 'ft_yaw_deg': yaw_deg})))
         self._state = None
         self.create_subscription(
             String, T_STATE, lambda m: setattr(self, '_state', m.data),
@@ -152,6 +158,9 @@ class ForceSource(Node):
 
 
 def main():
+    # trava touch_pack × rehab_pack; sem touch_pack o import falha e o nó não sobe
+    from touch_pack.pack_lock import acquire_or_exit
+    acquire_or_exit('rehab_pack')
     rclpy.init()
     node = ForceSource()
     ex = MultiThreadedExecutor(num_threads=4)

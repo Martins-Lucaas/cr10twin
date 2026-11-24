@@ -870,6 +870,8 @@ class PalpationLogger(Node):
 
 
 def main(args=None):
+    from .pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s  %(message)s',

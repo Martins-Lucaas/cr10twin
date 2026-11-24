@@ -8,22 +8,23 @@
       0,0 …   6,0   flange fixo FA7155   (⌀75 alumínio, parafusa no punho)
       0,4 …  36,9   célula FA7155        (6 eixos, 300 g de catálogo)
      37,2 …  39,2   placa do mastro      (110 × 50 × 2, impressa)
-     39,2 … 189,2   empunhadura          (⌀35 × 150, SILICONE/BORRACHA, oca)
+     39,2 … 174,2   empunhadura          (⌀35 × 135 MEDIDA, SILICONE/BORRACHA)
 
   A pilha célula → placa reaproveita a altura de montagem do touch_pack
   (junta em 37,2 mm do flange, onde o acoplador hot-swap encosta na célula).
   Os meshes do flange e da célula são cópia dos do touch_pack: este pacote
   não depende dele.
 
-  tcp_link = centro da empunhadura (Z = 114,2 mm do flange), onde a mão
+  tcp_link = centro da empunhadura (Z = 106,7 mm do flange), onde a mão
   fica. A força é medida em load_cell_link; para levá-la ao tcp_link há um
-  braço de 77 mm (M = r × F) — o controlador precisa dessa transformação.
+  braço de 70 mm (M = r × F) — o controlador precisa dessa transformação.
 
   MASSAS E INÉRCIAS: calculadas da geometria real por
   scripts/gen_joystick_meshes.py (que também gera os STL). Placa: 950 kg/m³
-  (impressa). Empunhadura: 1100 kg/m³ (silicone) sobre o volume REAL, que é
-  oco. PESE A PEÇA PRONTA e corrija a massa: ela entra na compensação de
-  peso do controlador.
+  (impressa). Empunhadura: massa PESADA (mastro = 285,9 g) num cilindro UNIFORME de
+  ⌀35 × 135: nem maciça de silicone a peça daria esse peso, então há outro material
+  e a distribuição oca do STEP não vale. MEÇA O PONTO DE EQUILÍBRIO (esperado: 67 mm
+  da face da placa que encosta na célula).
 
   ATRITO: a "superfície rugosa" da borracha é modelada só como atrito alto
   (mu 1,2) e acabamento fosco. A rugosidade não existe na geometria.
@@ -137,21 +138,21 @@
        centro da base, 2 mm acima da face da placa. -->
   <link name="joystick_grip_link">
     <inertial>
-      <origin xyz="0.00000 0.00000 0.08925" rpy="0 0 0"/>
-      <mass value="0.0694"/>
-      <inertia ixx="1.018e-04" ixy="0.0" ixz="0.0"
-               iyy="1.018e-04" iyz="0.0" izz="1.524e-05"/>
+      <origin xyz="0.00000 0.00000 0.06750" rpy="0 0 0"/>
+      <mass value="0.2765"/>
+      <inertia ixx="4.411e-04" ixy="0.0" ixz="0.0"
+               iyy="4.411e-04" iyz="0.0" izz="4.234e-05"/>
     </inertial>
     <visual>
       <geometry>
         <mesh filename="package://rehab_pack/meshes/joystick_empunhadura.stl"
-              scale="0.001 0.001 0.001"/>
+              scale="0.001 0.001 0.0009"/>  <!-- STEP: 150 mm; peça: 135 -->
       </geometry>
       <material name="silicone_black"/>
     </visual>
     <collision name="col_grip">
-      <origin xyz="0 0 0.075" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.0175" length="0.150"/></geometry>
+      <origin xyz="0 0 0.0675" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0175" length="0.135"/></geometry>
     </collision>
   </link>
   <joint name="joystick_grip_attach" type="fixed">
@@ -165,7 +166,7 @@
   <joint name="tcp_alias_joint" type="fixed">
     <parent link="joystick_grip_link"/>
     <child link="tcp_link"/>
-    <origin xyz="0 0 0.075" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0675" rpy="0 0 0"/>
   </joint>
 
   <gazebo reference="Link6">
@@ -213,7 +214,7 @@
 
   <!-- F/T simulada na junta onde a FA7155 real está montada: a que liga a
        face móvel da célula à placa, ou seja, mede o que vem de cima (placa,
-       empunhadura e a mão). Preservar a junta tira do lumping esses 79 g, e o
+       empunhadura e a mão). Preservar a junta tira do lumping esses 286 g, e o
        touch_pack mediu J4 oscilando por causa disso com a pilha dele — por
        isso este bloco só entra com sim_ft=true. O plugin publica
        WrenchStamped em /sim/load_cell/wrench. -->

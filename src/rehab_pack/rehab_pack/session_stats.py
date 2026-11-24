@@ -1,7 +1,8 @@
 """Estatísticas de sessão (lógica PURA, sem ROS): resumo por alcance e totais.
 
 Um alcance vai de TARGET_ON até o próximo TARGET_HIT/TARGET_MISS. As métricas
-usam a posição medida (x_m..z_m) e a velocidade do setpoint (vx_ms..vz_ms).
+usam o TCP do robô REAL (xr_m..zr_m) quando gravado em todo o trecho, com a velocidade
+derivada dele; senão o simulado (x_m..z_m) e a velocidade do setpoint (vx_ms..vz_ms).
 """
 from __future__ import annotations
 
@@ -58,6 +59,19 @@ def metricas_alcance(t, pos, vel):
     }
 
 
+def velocidade(t, pos, janela=7):
+    """Velocidade por inclinação da reta em `janela` amostras (~0,2 s): o status do robô
+    e o tick não são síncronos, e a diferença simples criaria picos falsos."""
+    m, v = janela // 2, []
+    for i in range(len(t)):
+        a, b = max(0, i - m), min(len(t), i + m + 1)
+        tm = sum(t[a:b]) / (b - a)
+        den = sum((s - tm) ** 2 for s in t[a:b])
+        v.append(tuple(sum((t[k] - tm) * pos[k][e] for k in range(a, b)) / den if den > 0 else 0.0
+                       for e in range(3)))
+    return v
+
+
 def ler_colunas(caminho):
     """CSV -> dict nome -> lista de float (campos não numéricos ficam como str)."""
     cols = {}
@@ -80,6 +94,22 @@ def ler_eventos(caminho):
         rd = csv.reader(f)
         next(rd, None)
         return [(float(l[0]), l[1], l[2] if len(l) > 2 else '') for l in rd if l]
+
+
+def _tarefas(eventos, t_ini, t_fim):
+    """[(início, fim)] de cada tarefa; a sessão inteira se não houver TASK_START."""
+    out, ini = [], None
+    for t, tipo, _ in eventos:
+        if tipo == 'TASK_START':
+            if ini is not None:
+                out.append((ini, t))
+            ini = t
+        elif tipo == 'TASK_END' and ini is not None:
+            out.append((ini, t))
+            ini = None
+    if ini is not None:
+        out.append((ini, t_fim))
+    return out or [(t_ini, t_fim)]
 
 
 def _tempo_fora_tunel(eventos, t_ini, t_fim):
@@ -106,6 +136,9 @@ def resumir(amostras, eventos):
     pos = list(zip(amostras['x_m'], amostras['y_m'], amostras['z_m'])) if n else []
     vel = list(zip(amostras['vx_ms'], amostras['vy_ms'], amostras['vz_ms'])) if n else []
 
+    real = (list(zip(amostras['xr_m'], amostras['yr_m'], amostras['zr_m']))
+            if n and 'xr_m' in amostras else [])
+
     alcances = []
     aberto = None
     for te, tipo, detalhe in sorted(eventos, key=lambda e: e[0]):
@@ -115,11 +148,16 @@ def resumir(amostras, eventos):
             t0, det0 = aberto
             aberto = None
             idx = [i for i in range(n) if t0 <= t[i] <= te]
-            m = metricas_alcance([t[i] for i in idx], [pos[i] for i in idx],
-                                 [vel[i] for i in idx])
+            ts, p, v = [t[i] for i in idx], [pos[i] for i in idx], [vel[i] for i in idx]
+            usa_real = bool(real and idx) and all(math.isfinite(c) for i in idx for c in real[i])
+            if usa_real:
+                p = [real[i] for i in idx]
+                v = velocidade(ts, p)
+            m = metricas_alcance(ts, p, v)
             alcances.append({'t_inicio_s': t0, 't_fim_s': te,
                              'resultado': 'acerto' if tipo == 'TARGET_HIT' else 'erro',
-                             'alvo': det0, **(m or {})})
+                             'alvo': det0, 'posicao': 'real' if usa_real else 'simulada',
+                             **(m or {})})
 
     totais = {
         'duracao_s': (t[-1] - t[0]) if n > 1 else 0.0,
@@ -137,12 +175,18 @@ def resumir(amostras, eventos):
         totais['f_media_n'] = sum(fn) / n
         totais['f_pico_n'] = max(fn)
         if n > 1:
-            # só o tempo de tarefa conta, não a sessão inteira
-            ini = next((e[0] for e in eventos if e[1] == 'TASK_START'), t[0])
-            fim = next((e[0] for e in reversed(eventos) if e[1] == 'TASK_END'), t[-1])
-            fora = _tempo_fora_tunel(eventos, ini, fim)
-            if fora is not None and fim > ini:
-                totais['pct_tempo_no_tunel'] = 100.0 * (1.0 - fora / (fim - ini))
+            # só o tempo das tarefas de túnel conta: nem intervalos, nem outras tarefas
+            fora = total = 0.0
+            for ini, fim in _tarefas(eventos, t[0], t[-1]):
+                # início aberto em TASK_END: o EXIT de uma tarefa não vaza para a seguinte
+                f = _tempo_fora_tunel([e for e in eventos if ini <= e[0] <= fim], ini, fim)
+                if f is None and any(e[1] == 'TASK_START' and ini == e[0] and 'tunel' in e[2]
+                                     for e in eventos):
+                    f = 0.0           # túnel sem nenhuma saída
+                if f is not None:
+                    fora, total = fora + f, total + fim - ini
+            if total > 0:
+                totais['pct_tempo_no_tunel'] = 100.0 * (1.0 - fora / total)
     return {'alcances': alcances, 'totais': totais}
 
 

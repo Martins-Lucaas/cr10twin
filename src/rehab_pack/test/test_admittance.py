@@ -131,3 +131,11 @@ def test_setpoint_nunca_salta(mudar):
         mudar(c)
         c.step([0, 0, 0])
         assert np.linalg.norm(c.x - x0) <= c.v_max * c.dt + 1e-12
+
+
+def test_excursao_vale_desde_o_habilitar_mesmo_com_a_referencia_andando():
+    c = AdmittanceController(stiffness_n_m=200, max_excursion_m=0.05, deadband_n=0.0)
+    for i in range(600):
+        c.set_reference([0.001 * i, 0, 0])
+        c.step([5, 0, 0])
+        assert np.linalg.norm(c.x - c.origin) <= 0.05 + 1e-9

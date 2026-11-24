@@ -13,9 +13,8 @@ Materiais (densidades, kg/m³):
     placa ........ 950   impressa (PLA, convenção do projeto)
     empunhadura .. 1100  silicone/borracha — decisão do operador, 23/11/2026
 
-A massa da empunhadura vem do volume REAL do sólido (a peça é oca). Pese a
-peça pronta: massa e CoM entram na compensação de peso do controlador, e um
-silicone de outra dureza muda a densidade em ±10 %.
+ATENÇÃO: o STEP está desatualizado (150 mm; a peça tem 135). Não copie dele a massa,
+o CoM e a inércia da empunhadura: no URDF são a pesagem e um cilindro uniforme.
 
 Uso:  python3 gen_joystick_meshes.py   (precisa do OCP / cadquery-ocp)
 """

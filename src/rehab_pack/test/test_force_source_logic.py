@@ -60,3 +60,46 @@ def test_load_cell_force_rotated_to_world():
 def test_giro_da_montagem_gira_forca_e_torque():
     w = rot_z6(np.pi / 2) @ [1, 0, 5, 0, 2, 3]
     assert np.allclose(w, [0, 1, 5, -2, 0, 3])
+
+
+@pytest.mark.parametrize('source,sinal,giro', [('real', -1.0, 30.0), ('sim', 1.0, 0.0)])
+def test_publica_o_sinal_e_o_giro_que_usa(source, sinal, giro, monkeypatch):
+    rclpy = pytest.importorskip('rclpy')
+    import json
+    from rclpy.publisher import Publisher
+    from rehab_pack.constants import T_FT_CONFIG
+    from rehab_pack.force_source import ForceSource
+    pubs = []
+    monkeypatch.setattr(Publisher, 'publish', lambda s, m: pubs.append((s.topic_name, m)))
+    rclpy.init(domain_id=78, args=['--ros-args', '-p', f'source:={source}',
+                                   '-p', 'real_sign:=-1.0', '-p', 'real_yaw_deg:=30.0'])
+    try:
+        n = ForceSource()
+        cfg, = [json.loads(m.data) for t, m in pubs if t == T_FT_CONFIG]
+        assert cfg == {'ft_sign': sinal, 'ft_yaw_deg': giro}
+        assert np.allclose(n._map, sinal * rot_z6(np.radians(giro)))
+        n.destroy_node()
+    finally:
+        rclpy.shutdown()
+
+
+@pytest.mark.parametrize('mod', ['admittance_node', 'force_source', 'session_logger'])
+def test_main_toma_a_trava_antes_do_ros_e_falha_fechado(mod, monkeypatch):
+    rclpy = pytest.importorskip('rclpy')
+    import importlib
+    import sys
+    from touch_pack import pack_lock
+    m = importlib.import_module(f'rehab_pack.{mod}')
+    monkeypatch.setattr(rclpy, 'init', lambda *a, **k: pytest.fail('rclpy.init sem a trava'))
+    pedidos = []
+
+    def ocupado(pack):
+        pedidos.append(pack)
+        raise SystemExit('touch_pack aberto')
+    monkeypatch.setattr(pack_lock, 'acquire_or_exit', ocupado)
+    with pytest.raises(SystemExit):
+        m.main()
+    assert pedidos == ['rehab_pack']
+    monkeypatch.setitem(sys.modules, 'touch_pack.pack_lock', None)   # sem touch_pack
+    with pytest.raises(ImportError):
+        m.main()

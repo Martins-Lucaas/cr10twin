@@ -19,7 +19,7 @@ from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy)
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64, Float64MultiArray, String
+from std_msgs.msg import Empty, Float64, Float64MultiArray, String
 from std_srvs.srv import SetBool, Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
@@ -30,19 +30,22 @@ from .constants import (ARM_JOINTS, ARM_STIFFNESS_MIN_N_M, DT_S,
                         ENABLE_MAX_N, LINK_CLEARANCE_M, MIN_CELL_Z, SIM_LAG_MAX_RAD,
                         TABLE_HALF_XY, TARE_MAX_TILT_RAD,
                         TORQUE_ABORT_LIMIT_NM, T_TARED, FORCE_ABORT_LIMIT_N, FORCE_STALE_S, SIM_ROBOT_IP,
-                        HOME_Q_RAD, JOG_SPEED_DEFAULT_PCT, JOG_SPEED_MIN_PCT,
+                        HOME_Q_RAD, JOG_MAX_DEG_S, JOG_SPEED_DEFAULT_PCT,
+                        JOG_SPEED_MIN_PCT, JOINT_LIMITS_DEG,
                         MIN_TCP_Z, S_ENABLE, S_ESTOP, S_HOME,
                         S_RESET, STATES, T_ARM_CMD, T_FT, T_JOG_GOTO, T_JOG_RESULT,
                         T_JOINT_STATES, T_REAL_STATUS, JOG_MARGIN_S,
                         T_PARAMS, T_REFERENCE, T_STATE, T_TCP_POSE, T_TICK,
-                        home_q)
+                        GUI_STALE_S, T_GUI_ALIVE, home_q)
 from .kinematics import Chain, _log
-from .jog import plan_jog
+from .jog import BRAKE_S, brake_point, plan_jog
 from .real_link import real_ok
 from .urdf_builder import build_robot_urdf
 
+Q_REAL_STALE_S = 0.2      # pose real mais velha que isso não é gravada
 IK_RESIDUAL_M = 0.005     # acima disto: LIMITE
-MAX_DQ_TICK = 0.05        # rad por tick por junta; acima: LIMITE
+# rad/s por junta; acima: LIMITE. A 0,10 m/s a guia pede até 13,8°/s num raio de 15 cm do HOME
+MAX_DQ_RAD_S = math.radians(JOG_MAX_DEG_S)
 P, A, S_, L, AB, J = STATES  # PARADO ATIVO SEM_FORCA LIMITE ABORTADO POSICIONANDO
 
 # parâmetros ROS = campos do JSON; valor = padrão
@@ -99,14 +102,23 @@ class AdmittanceNode(Node):
         if self.chain.names != ARM_JOINTS:
             raise RuntimeError(f'cadeia {self.chain.names} != {ARM_JOINTS}')
 
+        # o mais estreito entre o limite de software e o do URDF
+        lim = np.array(self.chain.limits)
+        soft = np.radians(JOINT_LIMITS_DEG)
+        self.lim_lo = np.maximum(lim[:, 0], soft[:, 0])
+        self.lim_hi = np.minimum(lim[:, 1], soft[:, 1])
+
         self.state = P
         self.q = None            # medido
+        self.dq = np.zeros(6)    # rad/s, derivado da posição
+        self._dq_ref = None      # (carimbo, q) de onde se deriva
         self.q_cmd = None        # último comandado
         self.R0 = None           # orientação a manter
         self.force_w = np.zeros(3)   # força no world
         self.f_axial = 0.0
         self.ft_t = None             # chegada da última força (relógio de parede)
         self.ft_acc = []             # amostras desde o último tick
+        self.x_real = np.full(3, np.nan)   # TCP do robô real (só MIRROR)
         self.x_prev = None           # (fonte, posição) do tick anterior
         self._sim_last, self._wall_last = 0.0, time.monotonic()
         self.m_peak = 0.0            # idem, |M| no centro da empunhadura
@@ -120,6 +132,7 @@ class AdmittanceNode(Node):
         self.require_real = bool(self.get_parameter('require_real').value)
         self.real, self.real_t = None, 0.0
         self.jog_goal, self.jog_end = None, 0.0
+        self.gui_t, self.gui_need = 0.0, False   # batimento do painel; exigido se ele estava vivo ao mover
 
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
@@ -134,6 +147,7 @@ class AdmittanceNode(Node):
         self.create_subscription(PointStamped, T_REFERENCE, self._on_ref, 10)
         self.create_subscription(Float64, T_TARED, self._on_tared, latched)
         self.create_subscription(String, T_REAL_STATUS, self._on_real, 5)
+        self.create_subscription(Empty, T_GUI_ALIVE, self._on_gui, 5)
         self.create_subscription(Float64MultiArray, T_JOG_GOTO, self._on_goto, 5)
         self.create_service(SetBool, S_ENABLE, self._srv_enable)
         self.create_service(Trigger, S_ESTOP, self._srv_estop)
@@ -181,7 +195,7 @@ class AdmittanceNode(Node):
             c = self._make_ctrl(new)
         except ValueError as e:
             return SetParametersResult(successful=False, reason=str(e))
-        for k in ('x', 'x_ref', 'v', 'scale', '_p', '_n'):
+        for k in ('x', 'x_ref', 'origin', 'v', 'scale', '_p', '_n'):
             setattr(c, k, getattr(self.ctrl, k))
         self.ctrl, self.p = c, new
         self._publish_params()
@@ -202,7 +216,15 @@ class AdmittanceNode(Node):
             self.q = np.array([msg.position[msg.name.index(j)]
                                for j in ARM_JOINTS])
         except ValueError:
-            pass
+            return
+        # a velocidade que o Gazebo publica é ~0 com o braço em movimento: deriva a posição,
+        # no tempo do carimbo (o mesmo em que o JTC vai executar a freada)
+        t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if self._dq_ref is None or not 0.0 <= t - self._dq_ref[0] < 0.5:
+            self._dq_ref, self.dq = (t, self.q), np.zeros(6)
+        elif t - self._dq_ref[0] >= 0.04:
+            self.dq = (self.q - self._dq_ref[1]) / (t - self._dq_ref[0])
+            self._dq_ref = (t, self.q)
 
     def _on_tared(self, msg):
         # tara anterior a este nó (mensagem latched): orientação desconhecida
@@ -228,6 +250,12 @@ class AdmittanceNode(Node):
                 folga = min(folga, float(p[2]) - LINK_CLEARANCE_M)
         return folga
 
+    def _on_gui(self, _msg):
+        self.gui_t = time.monotonic()
+
+    def _gui_alive(self) -> bool:
+        return time.monotonic() - self.gui_t < GUI_STALE_S
+
     def _on_real(self, msg: String):
         try:
             self.real, self.real_t = json.loads(msg.data), time.monotonic()
@@ -242,9 +270,11 @@ class AdmittanceNode(Node):
 
     def _v_meas(self, x):
         """Velocidade medida do TCP: do robô real em MIRROR, senão do simulado."""
-        src = 'sim'
+        src, self.x_real = 'sim', np.full(3, np.nan)
         if self._mirror() and self.real and self.real.get('q_real'):
             src, x = 'real', self.chain.fk(self.real['q_real'])[:3, 3]
+            if time.monotonic() - self.real_t < Q_REAL_STALE_S:
+                self.x_real = x
         prev, self.x_prev = self.x_prev, (src, np.array(x))
         if prev is None or prev[0] != src:
             return np.zeros(3)
@@ -268,6 +298,18 @@ class AdmittanceNode(Node):
         if self.count_publishers(T_FT) > 1:
             return False, f'mais de um nó publica {T_FT}: feche o outro launch'
         return True, 'ok'
+
+    def _jog_check(self):
+        """(ok, motivo) para posicionar. Em MIRROR a força precisa estar viva, senão o
+        aborto por força não protege ninguém; fora dele o jog funciona sem célula."""
+        if not self._mirror():
+            return True, 'ok'
+        ok, why = self._active_check()
+        if ok and (self.ft_t is None or time.monotonic() - self.ft_t > FORCE_STALE_S):
+            ok, why = False, 'sem força em MIRROR (não retoma sozinho)'
+        elif ok and not np.all(np.isfinite([*self.force_w, self.f_peak, self.m_peak])):
+            ok, why = False, 'força não finita'
+        return ok, why
 
     def _fk_z(self, q):
         return (float(self.chain.fk(q)[2, 3]), float(self.chain_ft.fk(q)[2, 3]))
@@ -299,19 +341,23 @@ class AdmittanceNode(Node):
                                    f'[{JOG_SPEED_MIN_PCT:g}; 100]')
         if self.q is None:
             return self._jog_reply(False, 'sem /joint_states')
-        ok_real, why = self._real_check()
-        if not ok_real:
-            return self._jog_reply(False, f'robô real: {why}')
+        ok_jog, why = self._jog_check()
+        if not ok_jog:
+            return self._jog_reply(False, why)
         if self.pub_cmd.get_subscription_count() == 0:
             # sem assinante a trajetória se perde e o braço não sai do lugar
             return self._jog_reply(False, 'o controlador do braço '
                                    '(cr10_group_controller) ainda não está no ar')
-        ok, motivo, dur = plan_jog(self.q, goal, self._fk_z, speed_pct=pct)
+        # em movimento: freia em linha reta e só então segue para o novo alvo
+        qb = brake_point(self.q, self.dq) if self.state == J else None
+        ok, motivo, dur = plan_jog(self.q, goal, self._fk_z, speed_pct=pct,
+                                   clearance=self._clearance, q_brake=qb)
         if not ok:
             return self._jog_reply(False, motivo)
         self.jog_goal = goal
         self.jog_end = self._now() + dur + JOG_MARGIN_S
-        self._send(goal, dur)
+        self._send_jog(goal, dur, qb)
+        self.gui_need = self._gui_alive()
         if self.state != J:
             self._set_state(J)
         return self._jog_reply(True, motivo, dur)
@@ -339,7 +385,7 @@ class AdmittanceNode(Node):
 
     # ── serviços ────────────────────────────────────────────────────────
     def _now(self) -> float:
-        """Tempo simulado (use_sim_time) com resolução fina: o /clock sai a
+        """Tempo simulado, só para o fim do jog (o JTC segue o /clock), com resolução fina: o /clock sai a
         10 Hz, então interpola com o relógio de parede entre as atualizações."""
         sim = self.get_clock().now().nanoseconds * 1e-9
         wall = time.monotonic()
@@ -378,6 +424,7 @@ class AdmittanceNode(Node):
         elif self.chain.fk(self.q)[2, 3] < MIN_TCP_Z:
             res.success, res.message = False, 'TCP abaixo do piso: posicione as juntas'
         else:
+            self.gui_need = self._gui_alive()
             self._begin_active()
             self._set_state(A)
             res.success, res.message = True, 'admitância ativa'
@@ -402,17 +449,27 @@ class AdmittanceNode(Node):
 
     # ── comando ─────────────────────────────────────────────────────────
     def _send(self, q, t_s):
+        self._send_points([(q, t_s)])
+
+    def _send_jog(self, goal, dur, qb):
+        # velocidade final zero: o JTC usa cúbica em vez de degrau de velocidade
+        self._send_points(([] if qb is None else [(qb, BRAKE_S)]) + [(goal, dur)],
+                          velocities=[0.0] * 6)
+
+    def _send_points(self, pts, velocities=()):
         m = JointTrajectory()
         m.joint_names = list(ARM_JOINTS)
-        pt = JointTrajectoryPoint()
-        pt.positions = [float(v) for v in q]
-        pt.time_from_start = Duration(sec=int(t_s),
-                                      nanosec=int((t_s % 1) * 1e9))
-        m.points = [pt]
+        for q, t_s in pts:
+            pt = JointTrajectoryPoint()
+            pt.positions = [float(v) for v in q]
+            pt.velocities = list(velocities)
+            pt.time_from_start = Duration(sec=int(t_s),
+                                          nanosec=int((t_s % 1) * 1e9))
+            m.points.append(pt)
         self.pub_cmd.publish(m)
 
     def _tick(self):
-        now = self._now()
+        now = time.monotonic()      # t_s: tempo REAL; o simulado corre devagar com o Gazebo carregado
         # relógio de parede: com o /clock parado a idade em tempo simulado congela
         age = min(time.monotonic() - self.ft_t, 99.0) if self.ft_t else 99.0
         if self.ft_acc:      # média do tick: anti-aliasing 400 → 33 Hz, 15 ms de atraso
@@ -440,9 +497,11 @@ class AdmittanceNode(Node):
         mpeak, self.m_peak = self.m_peak, 0.0
         why = ''
         if self.state in (A, S_, L, J):
-            ok, msg = self._real_check() if self.state == J else self._active_check()
+            ok, msg = self._jog_check() if self.state == J else self._active_check()
             if not ok:
                 why = msg
+            elif self.gui_need and not self._gui_alive():
+                why = 'painel travado ou fechado'
             elif peak > self.p['abort_force_n']:
                 why = f'pico de força {peak:.1f} N'
             elif mpeak > self.p['abort_torque_nm']:
@@ -487,21 +546,22 @@ class AdmittanceNode(Node):
             c.x[2] = MIN_TCP_Z
             c.v[2] = max(c.v[2], 0.0)
         q, res = self.chain.ik(self.q_cmd, sp, self.R0)
-        lo = np.array([a for a, _ in self.chain.limits])
-        hi = np.array([b for _, b in self.chain.limits])
-        q = np.clip(q, lo, hi)
+        # já fora do limite: o clip vira um salto, que MAX_DQ_RAD_S recusa (LIMITE)
+        q = np.clip(q, self.lim_lo, self.lim_hi)
         res = float(np.linalg.norm(self.chain.fk(q)[:3, 3] - sp))
         # invadir a folga só é aceito se estiver saindo dela
         folga = self._clearance(q)
         baixo = folga < 0.0 and folga < self._clearance(self.q_cmd)
         if (baixo or res > IK_RESIDUAL_M
-                or np.max(np.abs(q - self.q_cmd)) > MAX_DQ_TICK):
+                or np.max(np.abs(q - self.q_cmd)) > MAX_DQ_RAD_S * self.p['dt_s']):
             self.get_logger().warn(
                 f'LIMITE: resíduo IK {res * 1e3:.1f} mm, folga {folga * 1e3:.0f} mm',
                 throttle_duration_sec=1.0)
             if self.state != L:
                 self._set_state(L)
+            origin = c.origin
             c.reset(self.chain.fk(self.q)[:3, 3])
+            c.origin = origin        # LIMITE não renova a excursão
             self.q_cmd = self.q.copy()
             return
         self.q_cmd = q
@@ -515,11 +575,14 @@ class AdmittanceNode(Node):
         v = [now, f[0], f[1], f[2], self.f_axial, x[0], x[1], x[2],
              c.x[0], c.x[1], c.x[2], c.v[0], c.v[1], c.v[2],
              c.x_ref[0], c.x_ref[1], c.x_ref[2],
-             float(STATES.index(self.state)), age, c.scale]
+             float(STATES.index(self.state)), age, c.scale, *self.x_real]
         self.pub_tick.publish(Float64MultiArray(data=[float(a) for a in v]))
 
 
 def main():
+    # trava touch_pack × rehab_pack; sem touch_pack o import falha e o nó não sobe
+    from touch_pack.pack_lock import acquire_or_exit
+    acquire_or_exit('rehab_pack')
     rclpy.init()
     node = AdmittanceNode()
     try:

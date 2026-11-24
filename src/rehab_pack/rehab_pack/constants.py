@@ -41,6 +41,7 @@ MIN_TCP_Z = 0.10                # piso do setpoint, m, no frame world
 # seguimento é maior. Acima dela: aborta.
 SYNC_TOL_START_RAD = 0.0524     # 3°
 SYNC_TOL_RUN_RAD = 0.1396       # 8°
+GUI_STALE_S = 1.0               # painel calado por mais que isso, com o braço solto: aborta
 REAL_STATUS_STALE_S = 1.0       # status mais velho que isso = rehab_mirror fora do ar
 ROBOT_MODES_OK = (5, 7, 8)        # RobotMode V4: habilitado, rodando, movimento único
 SIM_ROBOT_IP = 'sim'            # robot_ip:='sim' → robô real simulado (ensaio sem hardware)
@@ -58,7 +59,7 @@ S_REAL_MODE = '/rehab/real/mode'               # SetBool: True = MIRROR, False =
 # touch_pack (J2/J4 ±170°, J3 ±160° = limite de hardware do CR10).
 JOINT_LIMITS_DEG = ((-180.0, 180.0), (-170.0, 170.0), (-160.0, 160.0),
                     (-170.0, 170.0), (-170.0, 170.0), (-180.0, 180.0))
-JOG_MAX_DEG_S = 24.0            # velocidade articular a 100 %
+JOG_MAX_DEG_S = 24.0            # pico de velocidade articular a 100 % (e teto na admitância)
 JOG_SPEED_DEFAULT_PCT = 50.0
 JOG_SPEED_MIN_PCT = 5.0
 JOG_MIN_S = 0.5                 # duração mínima de um movimento
@@ -67,15 +68,17 @@ JOG_MIN_DELTA_DEG = 0.5         # abaixo disto: "já está nessa posição"
 MIN_CELL_Z = 0.05               # piso da célula de carga no mundo, m
 
 # ── Mastro (conferido contra urdf/joystick_tool.urdf nos testes) ────────────
-GRIP_MASS_KG = 0.0694
+# Mastro PESADO em 24/11/2026: 285,9 g (placa + empunhadura, sem célula nem flange); placa = 9,4 g calculada.
+GRIP_MASS_KG = 0.2765
 PLATE_MASS_KG = 0.0094
-TCP_OFFSET_M = 0.1142           # flange → centro da empunhadura
+TCP_OFFSET_M = 0.1067           # flange → centro da empunhadura
 
 # ── Tópicos ─────────────────────────────────────────────────────────────────
 T_SIM_WRENCH = '/sim/load_cell/wrench'
 T_REAL_WRENCH = '/ft_sensor/wrench'
 T_FT = '/rehab/ft/wrench'
 T_TARED = '/rehab/ft/tared'   # Float64 latched: time.monotonic() da tara; 0 = sem tara
+T_FT_CONFIG = '/rehab/ft/config'   # String JSON latched {ft_sign, ft_yaw_deg}: o que o force_source usa
 T_REFERENCE = '/rehab/admittance/reference'
 T_TICK = '/rehab/admittance/tick'
 T_TCP_POSE = '/rehab/tcp/pose'
@@ -85,6 +88,7 @@ T_ARM_CMD = '/cr10_group_controller/joint_trajectory'
 T_JOINT_STATES = '/joint_states'
 T_TARGET = '/rehab/task/target'
 T_EVENT = '/rehab/event'
+T_GUI_ALIVE = '/rehab/gui/alive'     # Empty a cada volta do laço do Tk (~30 Hz)
 T_SESSION_META = '/rehab/session/meta'
 T_SESSION_SUMMARY = '/rehab/session/summary'
 T_EMG = '/rehab/emg'
@@ -113,6 +117,7 @@ TICK_FIELDS = (
     'vx_ms', 'vy_ms', 'vz_ms',
     'rx_m', 'ry_m', 'rz_m',
     'state', 'force_age_s', 'adm_scale',
+    'xr_m', 'yr_m', 'zr_m',        # TCP do robô real; NaN fora de MIRROR
 )
 
 EVENT_TYPES = ('TASK_START', 'TARGET_ON', 'TARGET_HIT', 'TARGET_MISS',
@@ -153,11 +158,15 @@ def save_home(q_rad) -> None:
 
 
 def runs_dir() -> str:
-    """Pasta das sessões: $REHAB_PACK_DATA_DIR, senão <repo>/sensors/Data/REHAB
+    """Pasta das sessões: $REHAB_PACK_DATA_DIR, senão $TOUCH_PACK_DATA_DIR/REHAB,
+    senão <repo>/sensors/Data/REHAB
     (repo = pai de `sensors/`, subindo diretórios), senão ~/rehab_pack_runs."""
     env = os.environ.get('REHAB_PACK_DATA_DIR')
     if env:
         return os.path.expanduser(env)
+    env = os.environ.get('TOUCH_PACK_DATA_DIR')     # a pasta padrão de coletas, se mudada
+    if env:
+        return os.path.join(os.path.abspath(os.path.expanduser(env)), 'REHAB')
     d = os.path.dirname(os.path.abspath(__file__))
     while True:
         if os.path.isdir(os.path.join(d, 'sensors')):

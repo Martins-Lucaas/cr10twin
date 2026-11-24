@@ -562,6 +562,9 @@ def main(argv=None):
             + glob.glob(os.path.join(OUTPUT_DIR, '*', '*', '*', RUN_SAMPLES_CSV))
             + glob.glob(os.path.join(OUTPUT_DIR, '*__samples.csv')),
             key=os.path.getmtime)
+        # REHAB/ é do rehab_pack: mesmo nome de arquivo, outro formato.
+        candidates = [p for p in candidates if os.path.relpath(
+            p, OUTPUT_DIR).split(os.sep)[0] != 'REHAB']
         if not candidates:
             sys.exit(f'Nenhum run encontrado em {OUTPUT_DIR}.')
         paths = [candidates[-1]]

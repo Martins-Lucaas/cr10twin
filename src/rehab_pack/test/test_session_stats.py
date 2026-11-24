@@ -82,3 +82,24 @@ def test_sem_tunel_none_e_erro_contado():
 def test_sessao_vazia():
     r = resumir({}, [])
     assert r['alcances'] == [] and r['totais']['n_amostras'] == 0
+
+
+def test_metricas_usam_o_robo_real_quando_gravado():
+    t, x, vx = _reta()
+    am = _amostras(t, x, [9.0] * len(t))             # setpoint absurdo: não pode ser usado
+    am.update(xr_m=[0.5 * v for v in x], yr_m=[0.0] * len(t), zr_m=[0.2] * len(t))
+    ev = [(0.0, 'TARGET_ON', ''), (1.0, 'TARGET_HIT', '')]
+    a = resumir(am, ev)['alcances'][0]
+    assert a['posicao'] == 'real' and a['n_picos_velocidade'] == 1
+    assert math.isclose(a['comprimento_caminho_m'], 0.1, abs_tol=1e-3)
+    assert math.isclose(a['pico_velocidade_ms'], 0.1 * 1.875, rel_tol=0.05)
+    am['xr_m'][3] = float('nan')
+    assert resumir(am, ev)['alcances'][0]['posicao'] == 'simulada'
+
+
+def test_tunel_nao_conta_intervalo_entre_tarefas():
+    t = [0.1 * i for i in range(301)]
+    ev = [(0.0, 'TASK_START', 'tarefa=tunel_reta'), (2.0, 'TUNNEL_EXIT', ''), (4.0, 'TUNNEL_ENTER', ''),
+          (10.0, 'TASK_END', ''), (20.0, 'TASK_START', 'tarefa=tunel_reta'), (30.0, 'TASK_END', '')]
+    r = resumir(_amostras(t, [0.0] * 301, [0.0] * 301), ev)
+    assert math.isclose(r['totais']['pct_tempo_no_tunel'], 90.0)

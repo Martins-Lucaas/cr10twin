@@ -4793,6 +4793,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
 
 
 def main(args=None):
+    from .pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     import faulthandler, sys
     faulthandler.enable(file=sys.stderr)
     logging.basicConfig(

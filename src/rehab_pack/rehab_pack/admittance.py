@@ -26,7 +26,7 @@ desejada. Quem chama converte para juntas e envia o ServoJ.
 Segurança — por convenção do projeto compressão é positiva:
   * |F| acima de `abort_force_n` levanta AdmittanceAbort (sem setpoint novo);
   * força velha (> stale_s) zera a velocidade em vez de seguir a última lida;
-  * velocidade e afastamento da referência são saturados.
+  * velocidade e afastamento (da referência e do ponto onde se habilitou) são saturados.
 """
 from __future__ import annotations
 
@@ -87,6 +87,7 @@ class AdmittanceController:
         """Reinicia no ponto x0 [m]; a referência passa a ser x0."""
         self.x = np.array(x0, dtype=float).reshape(3)
         self.x_ref = self.x.copy()
+        self.origin = self.x.copy()   # onde se habilitou: x_ref anda, ela não
         self.v = np.zeros(3)
         self.scale = 1.0              # multiplica M e B
         self._p = self._n = 0.0       # energia trocada / devolvida (J, com esquecimento)
@@ -141,13 +142,14 @@ class AdmittanceController:
         x0 = self.x
         self.x = self.x + self.v * self.dt
 
-        d = self.x - self.x_ref
-        dn = np.linalg.norm(d)
-        if dn > self.max_excursion:
-            self.x = self.x_ref + d * (self.max_excursion / dn)
-            # mata a componente de velocidade que empurra para fora
-            out = d / dn
-            self.v -= max(0.0, float(self.v @ out)) * out
+        for c in (self.x_ref, self.origin):     # origin por último: é o limite absoluto
+            d = self.x - c
+            dn = np.linalg.norm(d)
+            if dn > self.max_excursion:
+                self.x = c + d * (self.max_excursion / dn)
+                # mata a componente de velocidade que empurra para fora
+                out = d / dn
+                self.v -= max(0.0, float(self.v @ out)) * out
         # x_ref ou excursão podem mudar em ATIVO: o setpoint não salta
         step = self.x - x0
         sn, lim = float(np.linalg.norm(step)), self.v_max * self.dt

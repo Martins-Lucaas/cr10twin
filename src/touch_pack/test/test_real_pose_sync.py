@@ -169,3 +169,48 @@ def test_move_duration_survives_the_integer_conversion():
     o valor atual não há perda; se alguém puser 2,5 s, a trajetória iria em
     2 s — mais rápido que o pedido, contra o braço já posicionado."""
     assert rps._MOVE_DURATION_S == int(rps._MOVE_DURATION_S)
+
+
+# ── Resposta do goal ──────────────────────────────────────────────────
+def _move(node, monkeypatch, future, sim_pose):
+    """Roda `_move_sim_to` com o controller e o /joint_states simulados."""
+    target = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    callbacks, sent = [], []
+
+    class _Client:
+        def wait_for_server(self, timeout_sec):
+            return True
+
+        def send_goal_async(self, goal):
+            sent.append(goal)
+            return future
+
+    def _spin(*_a, **_k):
+        for cb in callbacks:
+            # Ordem invertida: o casamento é por nome, não por índice.
+            cb(rps.JointState(name=list(rps._ARM_JOINTS)[::-1],
+                              position=sim_pose(target)[::-1]))
+
+    monkeypatch.setattr(node, '_client', _Client())
+    monkeypatch.setattr(node, 'create_subscription',
+                        lambda _t, _n, cb, _q: callbacks.append(cb))
+    monkeypatch.setattr(rps.rclpy, 'spin_until_future_complete', _spin)
+    ok = node._move_sim_to(target)
+    assert len(sent) == 1, 'goal não pode ser reenviado'
+    return ok
+
+
+def test_lost_response_with_arm_on_target_is_success(node, monkeypatch):
+    """REGRESSÃO: resposta perdida no DDS com goal aceito virava 'rejeitado'."""
+    assert _move(node, monkeypatch, rclpy.task.Future(), list) is True
+
+
+def test_lost_response_with_arm_elsewhere_is_failure(node, monkeypatch):
+    assert _move(node, monkeypatch, rclpy.task.Future(),
+                 lambda q: [v + 0.1 for v in q]) is False
+
+
+def test_rejected_goal_is_failure_even_on_target(node, monkeypatch):
+    fut = rclpy.task.Future()
+    fut.set_result(type('_H', (), {'accepted': False})())
+    assert _move(node, monkeypatch, fut, list) is False

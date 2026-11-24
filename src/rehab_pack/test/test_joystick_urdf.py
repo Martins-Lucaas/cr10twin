@@ -30,7 +30,7 @@ def test_stack_heights_match_the_cad():
     total = sum(_z(j[n]) for n in ('ft_flange_attach', 'load_cell_attach',
                                    'joystick_plate_attach',
                                    'joystick_grip_attach', 'tcp_alias_joint'))
-    assert total == pytest.approx(0.1142)
+    assert total == pytest.approx(0.1067)
 
 
 def test_every_mesh_exists():

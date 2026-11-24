@@ -25,7 +25,7 @@ setup(
     maintainer_email='lucaspmartins14@gmail.com',
     description='Digital Twin da COVVI Hand',
     license='Apache-2.0',
-    tests_require=['pytest'],  # sem isto o colcon cai no unittest e roda 0 testes
+    extras_require={'test': ['pytest']},  # sem isto o colcon cai no unittest e roda 0 testes
     entry_points={
         'console_scripts': [
             'hand_gui = hand_pack.hand_gui:main',

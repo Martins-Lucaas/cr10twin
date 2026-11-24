@@ -22,7 +22,7 @@ from rclpy.qos import qos_profile_sensor_data
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray, String
+from std_msgs.msg import Empty, Float64MultiArray, String
 from std_srvs.srv import SetBool, Trigger
 
 from . import constants as C
@@ -65,6 +65,7 @@ class GuiBridge:
         self._pub_target = n.create_publisher(PointStamped, C.T_TARGET, 10)
         self._pub_ref = n.create_publisher(PointStamped, C.T_REFERENCE, 10)
         self._pub_event = n.create_publisher(String, C.T_EVENT, 10)
+        self._pub_alive = n.create_publisher(Empty, C.T_GUI_ALIVE, 1)
         self._pub_goto = n.create_publisher(Float64MultiArray, C.T_JOG_GOTO, 10)
         self._pub_meta = n.create_publisher(String, C.T_SESSION_META, _QOS_LATCHED)
 
@@ -89,6 +90,9 @@ class GuiBridge:
                 self._executor.spin_once(timeout_sec=0.05)
             except Exception as e:  # nunca derruba a GUI
                 self.results.append(('ros', False, f'erro interno: {e}'))
+                if not rclpy.ok():      # contexto derrubado: sem tique, a tela fica SEM DADOS
+                    return
+                self._stop.wait(0.2)    # erro repetido não vira laço sem pausa
 
     def _touch(self, key):
         def cb(msg):
@@ -205,6 +209,9 @@ class GuiBridge:
     def publish_goto(self, q_rad, speed_pct):
         """Pede ao nó de admitância que posicione as 6 juntas (rad, URDF)."""
         self._pub_goto.publish(Float64MultiArray(data=[float(v) for v in q_rad] + [float(speed_pct)]))
+
+    def publish_alive(self):
+        self._pub_alive.publish(Empty())
 
     def publish_event(self, text):
         self._pub_event.publish(String(data=text))

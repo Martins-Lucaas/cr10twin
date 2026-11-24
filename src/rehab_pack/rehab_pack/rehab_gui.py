@@ -19,7 +19,7 @@ import sys
 import time
 import traceback
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from . import constants as C
 from . import gui_theme as th
@@ -101,6 +101,13 @@ class RehabGui:
         self._jog_t, self._jog_after, self._jog_raw = 0.0, None, None   # última mexida do operador; envio agendado
         self._last_estop = 0.0
         self._estop_wait = 0.0           # PARAR enviado, ainda sem resposta
+        self._estop_ok = None            # resposta do último PARAR (None = ainda não veio)
+        self._estop_alert = ''           # PARAR não confirmado: fica no banner
+        self._enable_wait, self._enable_done = 0.0, False   # pedido do botão em curso
+        self._jog_synced = False         # os 6 sliders já mostraram a pose do braço
+        self._task_z = 0.0
+        self.origin = None
+        self._dlg = None
         self._last_target_pub = 0.0
         self._params_loaded = False
         self._ref_sent = False           # a assistência moveu x_ref nesta tarefa
@@ -149,9 +156,34 @@ class RehabGui:
                               fg=th.MUTED if ok else th.DANGER_HV)
 
     def _typing(self):
-        w = self.root.focus_get()
+        try:
+            w = self.root.focus_get()
+        except KeyError:                 # widget interno do Tk (lista do Combobox): não é texto
+            return False
         return w is not None and w.winfo_class() in ('Entry', 'TEntry', 'Text', 'TSpinbox', 'Spinbox',
                                                      'TCombobox')
+
+    def _confirm(self, titulo, texto, ok='Confirmar'):
+        """Confirmação SEM grab: PARAR (botão e Espaço) segue acessível, e a cancela."""
+        self._confirm_cancel()
+        w = self._dlg = tk.Toplevel(self.root, bg=th.PANEL)
+        w.title(titulo)
+        if self.root.winfo_viewable():   # transient de janela minimizada nasceria escondida
+            w.transient(self.root)
+        th.label(w, texto, wraplength=420).pack(padx=18, pady=14)
+        row = tk.Frame(w, bg=th.PANEL)
+        row.pack(pady=(0, 14))
+        sim = []
+        self._btn(row, ok, lambda: (sim.append(1), w.destroy()), 'Primary').pack(side='left', padx=th.PAD)
+        nao = self._btn(row, 'Cancelar', w.destroy)
+        nao.pack(side='left')
+        nao.focus_set()
+        self.root.wait_window(w)
+        return bool(sim)
+
+    def _confirm_cancel(self):
+        if self._dlg is not None and self._dlg.winfo_exists():
+            self._dlg.destroy()
 
     def _tab(self):
         return self.nb.index(self.nb.select())
@@ -235,13 +267,13 @@ class RehabGui:
         row = tk.Frame(hdr, bg=H)
         row.pack(fill='x', padx=18, pady=(0, 10))
         tk.Label(row, text='IP do CR10', bg=H, fg=th.HEADER_FG, font=th.FONT).pack(side='left')
-        self.var_ip = tk.StringVar()
+        self.var_ip = tk.StringVar()     # o rehab_mirror informa: robot_ip do launch ou o padrão do touch_pack
         ttk.Entry(row, textvariable=self.var_ip, width=15).pack(side='left', padx=th.PAD)
         self.btn_real = self._btn(row, 'Conectar', self.toggle_real)
         self.btn_real.pack(side='left')
         self.btn_mode = self._btn(row, 'Modo: SIM_ONLY', self.toggle_mode)
         self.btn_mode.pack(side='left', padx=th.PAD)
-        self.lbl_env = tk.Label(row, text='SIMULAÇÃO', bg=H, fg='#ffffff',
+        self.lbl_env = tk.Label(row, text='ROBÔ REAL: DESCONHECIDO', bg=th.WARN, fg='#ffffff',
                                 font=th.FONT_TITLE, padx=10, pady=3)
         self.lbl_env.pack(side='left', padx=th.PAD)
 
@@ -461,12 +493,18 @@ class RehabGui:
         self.btn_apply.state(['!disabled'] if s['ok'] else ['disabled'])
 
     def apply_preset(self, nome):
+        why = T.preset_refusal(nome, self.br.last.get('params'), self.enabled or bool(self._enable_wait))
+        if why:
+            self._say(why, False)
+            return
         for k, v in T.PRESETS[nome].items():
             self.pvar[k].set(v)
             self._slide(k, next(p[4] for p in PARAMS if p[0] == k))
         self._preset = nome
         self._mark_preset()
-        self.apply_params()
+        # só o preset: um limite de aborto mexido e não aplicado não vai de carona
+        from .gui_bridge import NODE_ADMITTANCE
+        self.br.set_params(NODE_ADMITTANCE, dict(T.PRESETS[nome]))
         self._say(f'Perfil {nome} enviado ao nó.')
 
     def apply_params(self):
@@ -476,6 +514,10 @@ class RehabGui:
             return
         if not T.abort_limit_ok(g['abort_force_n']):
             self._say(f'Limite de aborto deve ser ≤ {C.FORCE_ABORT_LIMIT_N:g} N.', False)
+            return
+        if ((self.enabled or self._enable_wait)
+                and (self.br.last.get('params') or {}).get('stiffness_n_m') != g['stiffness_n_m']):
+            self._say('A mola (K) não muda com o braço ativo: desabilite antes.', False)
             return
         from .gui_bridge import NODE_ADMITTANCE
         self.br.set_params(NODE_ADMITTANCE, g)
@@ -621,7 +663,7 @@ class RehabGui:
         if not self.tick:
             self._say('Sem posição do braço: o nó rehab_admittance não está no ar.', False)
             return
-        if C.STATES[int(self.tick['state'])] != 'ATIVO':
+        if self._state_name(True) != 'ATIVO':
             self._say('Habilite o braço (estado ATIVO) antes de iniciar a tarefa.', False)
             return
         if self.task and not self.task.done:
@@ -638,6 +680,20 @@ class RehabGui:
             if not lo <= g[k] <= hi:
                 self._say(f'{rot}: use de {lo:g} a {hi:g}.', False)
                 return
+        exc = (self.br.last.get('params') or {}).get('max_excursion_m')
+        if exc is None:
+            self._say('Excursão máxima desconhecida: sem parâmetros do nó.', False)
+            return
+        chave = 'alcance' if name == 'centro_fora' else 'tamanho' if name.startswith('tunel_') else None
+        if chave:
+            d, (lo, hi) = self.tick, next(p[3:5] for p in TASK_PARAMS if p[0] == chave)
+            ref = (d['rx_m'], d['ry_m'], d['rz_m'])
+            cabe = 100 * min(T.reach_limit(name, exc, self.center, c) for c in (ref, self.origin or ref))
+            if not cabe >= lo:           # NaN também recusa
+                self._say(f'Só há {max(cabe, 0.0):.0f} cm dentro da excursão máxima: desabilite e '
+                          'habilite mais perto do centro.', False)
+                return
+            g[chave] = min(g[chave], cabe)
         if name == 'centro_fora':
             self.task = T.CenterOutTask(
                 (cx, cy), reach_m=g['alcance'] / 100, target_radius_m=g['raio'] / 100,
@@ -648,12 +704,13 @@ class RehabGui:
                                      width_m=g['largura'] / 100)
         else:
             self.task = T.ReachTask((cx, cy), duration_s=g['duracao'])
-        self.task_name = name
+        self.task_name, self._task_z = name, cz
         self.cv.delete('trace')
         self._drawn = set()
         self._co_result, self._flash = {}, None
         self._emit(self.task.start(t))
-        self._say(f'Tarefa iniciada: {TASK_LABELS.get(name, name)}.')
+        self._say(f'Tarefa iniciada: {TASK_LABELS.get(name, name)}'
+                  + (f' ({g[chave]:.0f} cm).' if chave else '.'))
 
     def task_stop(self):
         if self.task and self.tick:
@@ -664,11 +721,18 @@ class RehabGui:
         if self.task_name and self.tick:
             nan = float('nan')
             self.br.publish_target((nan, nan), nan)
-            # Referência no ponto atual: com K > 0 não puxa o braço para o fim da trajetória.
-            if self._ref_sent:
-                self.br.publish_reference((self.tick['x_m'], self.tick['y_m']), self.tick['z_m'])
-                self._ref_sent = False
+            self._ref_recenter()
         self.task_name = None
+
+    def _ref_recenter(self):
+        """Referência no ponto atual: com K > 0 não puxa o braço para o fim da trajetória.
+        O nó só a aceita em ATIVO; em SEM_FORCA/LIMITE espera a volta."""
+        st = self._state_name(True)
+        if not self._ref_sent or st in ('SEM_FORCA', 'LIMITE'):
+            return
+        if st == 'ATIVO':
+            self.br.publish_reference((self.tick['x_m'], self.tick['y_m']), self.tick['z_m'])
+        self._ref_sent = False           # nos outros, reabilitar já zera a referência
 
     def _emit(self, events):
         for tipo, kv in events:
@@ -737,6 +801,8 @@ class RehabGui:
             sp.grid(row=r, column=3, padx=th.PAD_L)
             # só no Enter: digitar '120' passaria por 1° e 12°
             sp.bind('<Return>', lambda e: self._jog_user())
+            for ev in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+                sp.bind(ev, lambda e: 'break')   # rolar a página não move o braço
             sp.bind('<Key>', lambda e: setattr(self, '_jog_t', time.monotonic()))
             self.jog_widgets += [sc, sp]
             real = tk.Label(c, text='—', bg=th.PANEL, fg=th.MUTED, font=th.FONT_MONO,
@@ -759,22 +825,29 @@ class RehabGui:
         self.lbl_jog_est.grid(row=9, column=0, columnspan=6, sticky='w', pady=(th.PAD, 0))
         self.lbl_jog_res = th.label(c, '')
         self.lbl_jog_res.grid(row=10, column=0, columnspan=6, sticky='w', pady=(2, 0))
-        th.label(c, 'Não confere colisão do cotovelo: mova aos poucos.', muted=True,
+        th.label(c, 'Não confere cadeira nem pessoas: mova aos poucos.', muted=True,
                  font=th.FONT_SMALL).grid(row=11, column=0, columnspan=6, sticky='w',
                                           pady=(th.PAD, 0))
 
     def _jog_user(self):
         """Slider ou seta: envia o alvo 80 ms depois da última mexida (como o touch_pack)."""
         self._jog_t = time.monotonic()
+        self._jog_cancel()
+        self._jog_after = self.root.after(80, self._jog_send)
+
+    def _jog_cancel(self):
         if self._jog_after is not None:
             self.root.after_cancel(self._jog_after)
-        self._jog_after = self.root.after(80, self._jog_send)
+            self._jog_after = None
 
     def _jog_send(self):
         self._jog_after = None
         goal = self._jog_goal_deg()
         if goal is None:
             self._jog_msg('Valor inválido em algum campo.', False)
+        elif not self._jog_synced or self._jog_current_deg() is None:
+            # sem isto os sliders não mexidos mandariam 0°
+            self._jog_msg('Pose atual das juntas desconhecida: espere os sliders seguirem o braço.', False)
         elif self._state_name(self.br.age('tick') < LIVE_S) not in ('PARADO', 'POSICIONANDO'):
             self._jog_msg('Só com o braço PARADO.', False)
         else:
@@ -789,6 +862,9 @@ class RehabGui:
             v.set(round(g, 1))
 
     def jog_home(self):
+        if not self._confirm('Ir para Home', 'As 6 juntas vão para a Home salva, sem conferir cadeira '
+                             'nem pessoas. Em MIRROR o CR10 REAL vai junto. Área livre e mão no E-Stop?'):
+            return
         self._jog_set([math.degrees(q) for q in C.home_q()])
         self._jog_user()
 
@@ -828,8 +904,9 @@ class RehabGui:
             lb.configure(text=f'{dr:+7.1f}°', fg=th.DANGER_HV if off else th.TEXT)
         espelho = st.get('conectado') and st.get('modo') != 'SIM_ONLY'
         self.lbl_jog_mode.configure(
-            text='O robô REAL segue o slider' if espelho else 'Só simulação',
-            fg=th.DANGER_HV if espelho else th.MUTED)
+            text=('Robô real: DESCONHECIDO' if not st else
+                  'O robô REAL segue o slider' if espelho else 'Só simulação'),
+            fg=th.DANGER_HV if espelho or not st else th.MUTED)
         self.lbl_speed.configure(text=f'{self.jog_speed.get():.0f} %')
         nome = self._state_name(live_adm)
         pode = nome in ('PARADO', 'POSICIONANDO')
@@ -838,6 +915,9 @@ class RehabGui:
         # parado e sem mexida recente: os sliders mostram onde o braço está
         if cur is not None and nome != 'POSICIONANDO' and time.monotonic() - self._jog_t > 2.0:
             self._jog_set(cur)
+            self._jog_synced = True
+        elif cur is None:
+            self._jog_synced = False
         raw = br.last.get('jog')
         if raw and br.age('jog') < 30.0 and raw != self._jog_raw:
             self._jog_raw = raw
@@ -880,40 +960,73 @@ class RehabGui:
         if now - self._last_estop < 0.3:
             return
         self._last_estop = self._estop_wait = now
-        self.br.call_trigger(C.S_ESTOP)
-        self.br.publish_event(T.format_event('ESTOP', origem='gui'))
+        self._estop_ok = None
+        # dois caminhos independentes: um que falhe (contexto ROS caído) não impede o outro
+        for fn in (lambda: self.br.call_trigger(C.S_ESTOP),
+                   lambda: self.br.publish_event(T.format_event('ESTOP', origem='gui'))):
+            try:
+                fn()
+            except Exception as e:
+                self.br.results.append((C.S_ESTOP, False, str(e)))
         self._say('PARAR enviado ao braço.', False)
+        self._jog_cancel()
+        self._confirm_cancel()
 
     def tare(self):
-        if messagebox.askokcancel(
+        if self._confirm(
                 'Tarar sensor',
                 'Solte o mastro: ninguém pode tocar na empunhadura.\n'
-                'A tara mede a força por 0,5 s e vale até mover as juntas (aba 5): refaça depois.\n\nTarar agora?',
-                parent=self.root):
+                'A tara mede a força por 0,5 s e vale até mover as juntas (aba 5): refaça depois.\n\nTarar agora?'):
             self.br.call_trigger(C.S_TARE)
 
     def toggle_real(self):
-        st = self._real_status() or {}
+        st = self._real_status()
+        if not st:                       # sem status: não se sabe se pede conectar ou desconectar
+            self._say('Estado do robô real desconhecido: o nó rehab_mirror não responde.', False)
+            return
         if st.get('conectado') or st.get('conectando'):
             self.br.call_bool(C.S_REAL_CONNECT, False)
-        elif messagebox.askokcancel(
-                'Conectar ao CR10 real', f'IP {self.var_ip.get().strip()}: o robô será energizado e '
-                'habilitado (freios soltos). Área livre e mão no E-Stop?', parent=self.root):
-            self.br.connect_real(self.var_ip.get().strip())
+            return
+        ip = self.var_ip.get().strip()
+        if not ip:                       # vazio cairia no robot.json, sem o operador ver qual
+            self._say('Informe o IP do CR10 antes de conectar.', False)
+        elif self._confirm(
+                'Conectar ao CR10 real', f'IP {ip}: o robô será energizado e '
+                'habilitado (freios soltos). Área livre e mão no E-Stop?'):
+            self.br.connect_real(ip)
 
     def toggle_mode(self):
-        on = (self._real_status() or {}).get('modo') != 'MIRROR'
+        st = self._real_status()
+        if not st:
+            self._say('Estado do robô real desconhecido: o nó rehab_mirror não responde.', False)
+            return
+        on = st.get('modo') != 'MIRROR'
         src = (self.br.last.get('params') or {}).get('force_source')
         if on and src != 'real' and self.var_ip.get().strip() != C.SIM_ROBOT_IP:
             self._say(f'MIRROR recusado: a força é "{src}". Relance com force_source:=real.', False)
             return
-        if not on or messagebox.askokcancel(
+        if not on or self._confirm(
                 'Modo MIRROR', 'O CR10 REAL passará a seguir o simulado quando a admitância '
-                'estiver ativa. Mão no E-Stop físico?', parent=self.root):
+                'estiver ativa. Mão no E-Stop físico?'):
             self.br.call_bool(C.S_REAL_MODE, on)
 
     def toggle_enable(self):
-        self.br.call_enable(not self.enabled)
+        """Pede o que o rótulo diz; trava o botão para o 2º clique não pedir o contrário."""
+        if self._enable_wait:
+            return
+        self._enable_wait, self._enable_done = time.monotonic(), False
+        self.btn_enable.state(['disabled'])
+        self.br.call_enable(self.btn_enable.cget('text') == 'Habilitar')
+
+    def disable(self):
+        self.br.call_enable(False)
+
+    def _enable_release(self):
+        # 0,8 s no mínimo: a resposta chega antes do 2º clique de um duplo clique
+        dt = time.monotonic() - self._enable_wait
+        if self._enable_wait and dt > (0.8 if self._enable_done else 3.0):
+            self._enable_wait = 0.0
+            self.btn_enable.state(['!disabled'])
 
     def reset(self):
         self.br.call_trigger(C.S_RESET)
@@ -942,7 +1055,7 @@ class RehabGui:
     def _on_key_press(self, e):
         k = e.keysym.lower()
         # com o braço se movendo, Espaço é PARAR até dentro de um campo de texto
-        if k == 'space' and (not self._typing() or self.moving):
+        if k == 'space' and (self.moving or not self._typing()):
             self.estop()
             return 'break'
         if self._typing():
@@ -959,19 +1072,23 @@ class RehabGui:
             return
         self._n_poll += 1
         try:
+            self.br.publish_alive()      # do laço do Tk: tela travada para de bater
             self._drain_results()
             self._drain_ticks()
             if self.task and not self.task.done and self.tick:
                 self._task_housekeeping()
             elif self.task_name and self.task and self.task.done:
                 self._task_finished()
+            elif not self.task_name and self.tick:
+                self._ref_recenter()
             if (self.task and not self.task.done and self.tick and
-                    C.STATES[int(self.tick['state'])] in ('PARADO', 'ABORTADO', 'POSICIONANDO')):
+                    self._state_name(True) in ('PARADO', 'ABORTADO', 'POSICIONANDO', 'SEM DADOS')):
                 self.task_stop()         # nada de referência velha ao reabilitar
             if self._estop_wait and time.monotonic() - self._estop_wait > 0.5:
                 self._estop_wait = 0.0
-                self._say('PARAR SEM RESPOSTA da admitância: use a parada de emergência '
-                          'física do robô.', False)
+                self._estop_alert = ('PARAR SEM RESPOSTA da admitância: use a parada de emergência '
+                                     'física do robô.')
+                self._say(self._estop_alert, False)
             if self._n_poll % 3 == 0:
                 self._refresh_ui()
         except Exception as e:           # o laço nunca morre: congelaria força e estado
@@ -985,14 +1102,19 @@ class RehabGui:
         while self.br.results:
             nome, ok, msg = self.br.results.popleft()
             if nome == C.S_ESTOP:
-                self._estop_wait = 0.0
+                self._estop_wait, self._estop_ok = 0.0, ok
+                if ok:
+                    self._estop_alert = ''
+            if nome == C.S_ENABLE:
+                self._enable_done = True
             acao, no = ACTION.get(nome, ('Parâmetros' if nome.startswith('params:') else nome,
                                          'rehab_admittance'))
             if ok:
                 self._say(f'{acao}: {msg or "feito."}')
             elif nome == C.S_ESTOP:
-                self._say(f'PARAR NÃO CHEGOU AO BRAÇO: o nó {no} não responde. '
-                          'Use a parada de emergência física do robô.', False)
+                self._estop_alert = (f'PARAR NÃO CHEGOU AO BRAÇO: o nó {no} não responde. '
+                                     'Use a parada de emergência física do robô.')
+                self._say(self._estop_alert, False)
             elif 'indispon' in msg:
                 self._say(f'{acao} não executado: o nó {no} não está no ar.', False)
             else:
@@ -1014,10 +1136,14 @@ class RehabGui:
                 continue
             d = dict(zip(C.TICK_FIELDS, raw))
             self.tick = d
-            if not self._center_ok() and math.isfinite(d['x_m']):
-                self.center = (d['x_m'], d['y_m'], d['z_m'])
+            if self._state_name(True) not in ('ATIVO', 'SEM_FORCA', 'LIMITE'):
+                self.origin = None
+            elif self.origin is None:    # onde se habilitou: centro da excursão
+                self.origin = (d['rx_m'], d['ry_m'], d['rz_m'])
+            if not all(math.isfinite(d[k]) for k in ('t_s', 'x_m', 'y_m', 'z_m')):
+                continue                 # ainda sem /joint_states: NaN não vai às tarefas
             if not self._center_ok():
-                continue                 # ainda sem /joint_states
+                self.center = (d['x_m'], d['y_m'], d['z_m'])
             cx, cy, cz = self.center
             t = d['t_s']
             fm = math.sqrt(d['fx_n'] ** 2 + d['fy_n'] ** 2 + d['fz_n'] ** 2)
@@ -1040,15 +1166,17 @@ class RehabGui:
                 self._publish_target()
         elif isinstance(self.task, T.TunnelTask) and self.var_assist.get():
             rx, ry = self.task.reference()
-            self.br.publish_reference((rx, ry), self.center[2])
+            self.br.publish_reference((rx, ry), self._task_z)   # Recentrar não muda o z
             self._ref_sent = True
+        else:                            # assistência desmarcada: solta a referência aqui
+            self._ref_recenter()
 
     # ── atualização visual (≈ 10 Hz) ────────────────────────────────────
     def _state_name(self, live_adm):
         d = self.tick
         if not (live_adm and d):
             return 'SEM DADOS'
-        i = int(d['state'])
+        i = int(d['state']) if math.isfinite(d['state']) else -1
         return C.STATES[i] if 0 <= i < len(C.STATES) else 'SEM DADOS'
 
     def _refresh_real(self, br):
@@ -1060,7 +1188,7 @@ class RehabGui:
             except (ValueError, KeyError, TypeError):
                 st = None
         if st is None:
-            self.lbl_env.configure(text='SIMULAÇÃO', bg=th.HEADER)
+            self.lbl_env.configure(text='ROBÔ REAL: DESCONHECIDO', bg=th.WARN)
             self.conn['real'].configure(
                 text='○ fora do ar',
                 fg=th.MUTED)
@@ -1122,12 +1250,16 @@ class RehabGui:
 
         nome = self._state_name(live['adm'])
         pill_bg, pill_fg, icon, ban_bg, ban_fg = th.STATE_STYLE[nome]
+        if nome == 'ABORTADO':
+            self._estop_alert = ''
+        elif self._estop_alert:          # fica até o braço confirmar a parada
+            ban_bg, ban_fg = th.STATE_STYLE['ABORTADO'][3:]
         self.pill.configure(bg=pill_bg)
         self.lbl_state_icon.configure(text=icon, bg=pill_bg, fg=pill_fg)
         self.lbl_state.configure(text=STATE_LABEL.get(nome, nome), bg=pill_bg, fg=pill_fg)
         self.banner.configure(bg=ban_bg)
-        self.lbl_banner.configure(text=f'{icon}  {BANNER[nome]}', bg=ban_bg, fg=ban_fg,
-                                  font=th.FONT_TITLE if nome == 'ABORTADO' else th.FONT)
+        self.lbl_banner.configure(text=f'{icon}  {self._estop_alert or BANNER[nome]}', bg=ban_bg, fg=ban_fg,
+                                  font=th.FONT_TITLE if nome == 'ABORTADO' or self._estop_alert else th.FONT)
         self._set_banner_action(nome)
         d = self.tick
         if nome != 'SEM DADOS':
@@ -1135,11 +1267,13 @@ class RehabGui:
                 d['fx_n'] ** 2 + d['fy_n'] ** 2 + d['fz_n'] ** 2))
             self.lbl_force.configure(text='axial %+.1f N   idade %.2f s' % (
                 d['f_axial_n'], d['force_age_s']))
-            self.enabled = nome in ('ATIVO', 'SEM_FORCA', 'LIMITE')
+            antes, self.enabled = self.enabled, nome in ('ATIVO', 'SEM_FORCA', 'LIMITE')
+            self._enable_done |= antes != self.enabled
             self.moving = self.enabled or nome == 'POSICIONANDO'
         else:
             self.lbl_fmag.configure(text='—')
             self.lbl_force.configure(text='axial —   idade —')
+        self._enable_release()
         self.btn_enable.configure(text='Desabilitar' if self.enabled else 'Habilitar')
 
         p = br.last.get('params')
@@ -1173,9 +1307,9 @@ class RehabGui:
 
     def _set_banner_action(self, nome):
         # sem Habilitar aqui: um duplo clique em Reset habilitaria o braço
-        act = {'ATIVO': ('Desabilitar', self.toggle_enable, 'TButton'),
-               'SEM_FORCA': ('Desabilitar', self.toggle_enable, 'TButton'),
-               'LIMITE': ('Desabilitar', self.toggle_enable, 'TButton'),
+        act = {'ATIVO': ('Desabilitar', self.disable, 'TButton'),
+               'SEM_FORCA': ('Desabilitar', self.disable, 'TButton'),
+               'LIMITE': ('Desabilitar', self.disable, 'TButton'),
                'ABORTADO': ('Reset', self.reset, 'TButton')}.get(nome)
         if act == self._banner_action:
             return
@@ -1377,26 +1511,43 @@ class RehabGui:
     def close(self):
         if self._closing:
             return
-        if self.enabled:
-            self.estop()                 # sair da tela não pode deixar o braço seguindo a mão
-            time.sleep(0.3)
+        self._jog_cancel()
+        # sair da tela não pode deixar o braço se movendo (nem um pedido recém-enviado)
+        if ((self.moving or self._enable_wait or time.monotonic() - self._jog_t < 1.0)
+                and not self._stop_confirmed()
+                and not self._confirm('PARAR não confirmado', 'A admitância não confirmou o PARAR: o braço pode '
+                                      'estar se movendo. Use a parada de emergência física. Fechar mesmo assim?',
+                                      'Fechar mesmo assim')):
+            return
         self._closing = True
         self.br.shutdown()
         self.root.destroy()
 
+    def _stop_confirmed(self, limite_s=1.0):
+        self.estop()
+        t0 = time.monotonic()
+        while self._estop_ok is None and time.monotonic() - t0 < limite_s:
+            time.sleep(0.02)
+            self._drain_results()
+        return bool(self._estop_ok)
+
 
 def main(argv=None):
+    from touch_pack.pack_lock import acquire_or_exit   # sem o touch_pack: recusa
+    acquire_or_exit('rehab_pack')
     from .gui_bridge import GuiBridge
     br = GuiBridge()
     root = tk.Tk()
     app = RehabGui(root, br)
     sig = {'stop': False}
-    signal.signal(signal.SIGINT, lambda *_: sig.update(stop=True))
+    for s in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(s, lambda *_: sig.update(stop=True))
 
     def watch():
         if sig['stop']:
+            sig['stop'] = False
             app.close()
-        elif not app._closing:
+        if not app._closing:
             root.after(200, watch)
     root.after(200, watch)
     try:

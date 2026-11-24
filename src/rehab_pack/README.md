@@ -32,6 +32,11 @@ Fluxo de uma sessão: **Tarar** (mastro solto) → **Habilitar** → publicar me
 **Iniciar sessão** → tarefa → **Encerrar sessão**. **PARAR** (tecla Espaço) em
 qualquer momento trava o braço em `ABORTADO`.
 
+**Painel:** se ele travar ou morrer por mais de 1 s com o braço se movendo, a admitância
+vai a `ABORTADO`. Vale só se o painel estava vivo ao iniciar o movimento.
+
+**Trava:** com o `touch_pack` aberto o rehab não inicia, e vice-versa (`docs/adr/0003`).
+
 ## Pilha mecânica (eixo +Z do flange, mm)
 
 | mm | peça | material |
@@ -39,9 +44,9 @@ qualquer momento trava o braço em `ABORTADO`.
 | 0 … 6 | flange fixo FA7155 | alumínio |
 | 0,4 … 36,9 | célula FA7155 (300 g de catálogo) | — |
 | 37,2 … 39,2 | placa 110 × 50 × 2 | impressa, 950 kg/m³ |
-| 39,2 … 189,2 | empunhadura ⌀35 × 150, oca | **silicone/borracha**, 1100 kg/m³ |
+| 39,2 … 174,2 | empunhadura ⌀35 × 135 (medida) | **silicone/borracha**, 276,5 g (pesada) |
 
-`tcp_link` = centro da empunhadura (Z = 114,2 mm do flange), a 77 mm da face da
+`tcp_link` = centro da empunhadura (Z = 106,7 mm do flange), a 70 mm da face da
 célula: a força medida na célula precisa ser levada até ali (M = r × F).
 Pose inicial (`HOME_Q_RAD`, em `constants.py`): **J5 = +90°**, empunhadura para
 cima, TCP em ≈ (0,55; 0; 0,25) m no frame `world`.
@@ -96,12 +101,12 @@ ros2 launch rehab_pack joystick_cell.launch.py control_mode:=mirror force_source
   sustentada e o One-Euro atrasa a malha ~80 ms). Ele é o único dono da porta serial e publica
   `/ft_sensor/wrench`; o `rehab_force_source` o tara e o leva ao frame do mundo.
 - **Robô:** o `rehab_mirror` sobe sempre; no cabeçalho do painel: IP, Conectar e modo
-  SIM_ONLY/MIRROR, como no touch_pack. `control_mode:=mirror` já conecta ao subir. Ele usa o
+  SIM_ONLY/MIRROR, como no touch_pack. `control_mode:=mirror` não conecta ao subir: use Conectar. Ele usa o
   `CR10RealDriver` do `touch_pack` (TCP 29999, feedback 30004). O IP vem de
   `robot_ip`, senão de `~/.config/touch_pack/robot.json` (o mesmo da GUI do
   touch_pack), senão 192.168.5.2. O braço simulado manda ServoJ a 33 Hz ao real.
   Em MIRROR e PARADO, o `rehab_mirror` leva o simulado até a pose do real; só arma
-  abaixo de 3°. O IP que conectou é salvo no `robot.json`.
+  abaixo de 3°. O rehab só lê o `robot.json`, nunca o altera.
 - **Sem hardware:** `robot_ip:=sim` usa um robô real simulado (segue o ServoJ),
   para ensaiar o fluxo todo.
 
@@ -157,19 +162,19 @@ com Enter. Em MIRROR o robô REAL também segue. Velocidade em % (100 % = 24°/s
 vai à pose salva; **Salvar Home** grava a pose atual e **Capturar do robô** a do CR10 real
 em `~/.config/rehab_pack/home_pose.json`, que também é a pose inicial do Gazebo. Só em
 `PARADO`/`POSICIONANDO`. Recusa limite de junta, TCP abaixo de 10 cm ou célula abaixo de
-5 cm no caminho; **não confere colisão do cotovelo**. PARAR interrompe.
+5 cm no caminho e cotovelo/punho junto à mesa; **não confere cadeira nem pessoas**. Em MIRROR
+exige força recente da célula. PARAR interrompe.
 
 ## Bancada falsa (tudo menos o robô)
 
 `scripts/fake_bench.py` fala os protocolos do CR10 (TCP 29999/30004) e da FA7155 (Modbus
 numa pty), para rodar o `CR10RealDriver` e o `ft_receiver` verdadeiros sem hardware:
-`robot_ip:=127.0.0.1 ft_port:=<porta impressa>`. O IP que conecta é salvo no `robot.json`;
-use um `HOME` temporário. Não simula dinâmica nem tempos do firmware.
+`robot_ip:=127.0.0.1 ft_port:=<porta impressa>`. Não simula dinâmica nem tempos do firmware.
 
 ## Coleta de dados
 
 `rehab_logger` grava cada sessão em `sensors/Data/REHAB/<id>/<AAAAMMDD_HHMMSS>_<tarefa>/`
-(ou em `$REHAB_PACK_DATA_DIR`). Publique `/rehab/session/meta` (subject_id,
+(ou em `$REHAB_PACK_DATA_DIR`, ou `$TOUCH_PACK_DATA_DIR/REHAB`). Publique `/rehab/session/meta` (subject_id,
 lado_paretico, tarefa, notas) e chame `/rehab/session/start`; ele falha sem
 `subject_id` ou com sessão aberta. Se a admitância for a `ABORTADO`, a sessão
 fecha sozinha com status `abortada`.
@@ -179,7 +184,7 @@ fecha sozinha com status `abortada`.
 - `wrench.csv`: força e torque na taxa nativa, com o frame.
 - `events.csv`: `t_s, tipo, detalhe` (inclui `PARAMS` quando um parâmetro muda).
 - `emg.csv`: só com `emg_channels` > 0 (ponto de extensão; sem driver de EMG).
-- `meta.json`: esquema 1, commit do git, parâmetros, fonte de força, massas do mastro, status.
+- `meta.json`: esquema 2, commit do git, parâmetros, fonte de força, massas do mastro, status.
 - `summary.json`: por alcance (tempo, caminho, retilinearidade, picos de velocidade) e totais.
 
 O `t_s` dos ticks é tempo simulado; o `/clock` do Gazebo sai a 10 Hz, então os
@@ -217,11 +222,12 @@ python3 scripts/check_sim_ft.py            # com o Gazebo no ar e sim_ft:=true
 
 ## Pendências e limites conhecidos
 
-- **Pese a empunhadura pronta** e corrija a massa no URDF: 69,4 g é a densidade
-  de catálogo do silicone sobre o volume do CAD (oco). Entra na compensação de peso.
-- **Furação da placa:** os 2 furos ⌀5 a ±22 mm do centro não coincidem com
-  nenhum padrão da face móvel da FA7155 (M5 a ±17,7 mm e M6 em (0, ±25) e
-  (±11, 0)). No simulador a junta é fixa; para montar de verdade o CAD precisa de ajuste.
+- **Centro de massa do mastro:** a massa foi pesada (285,9 g), mas o CoM e a inércia
+  supõem cilindro uniforme. Meça o ponto de equilíbrio (esperado: 67 mm da face da placa).
+- **`cad/Joystick.step` desatualizado:** traz 150 mm de empunhadura; a peça tem 135.
+- **Furação da placa:** a peça real é aparafusada direto na FA7155 (operador, 24/11/2026),
+  mas o `cad/Joystick.step` não tem essa furação: os 2 furos ⌀5 a ±22 mm não coincidem
+  com a face móvel (M5 a ±17,7 mm; M6 em (0, ±25) e (±11, 0)). O CAD está diferente da peça.
 - `sim_sign = +1` é inferido pelo peso do mastro (Fz = −0,77 N); o teste com
   `/apply_link_wrench` não moveu o sensor. Confirme com uma força real em modo `sim`.
 - O estado `LIMITE` (resíduo da IK) não foi exercitado em simulação.

@@ -10,6 +10,7 @@ resolver). Código de saída 1 se houver FALHA.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import grp
 import ipaddress
 import os
@@ -88,6 +89,19 @@ def install_is_stale() -> str | None:
     return None
 
 
+def touch_pack_open() -> bool:
+    """Alguém segura a trava do touch_pack? Só testa e solta (não toma a do rehab)."""
+    from touch_pack.pack_lock import _dir
+    try:
+        with open(os.path.join(_dir(), 'touch_pack.lock')) as f:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except FileNotFoundError:
+        return False
+    except BlockingIOError:
+        return True
+    return False
+
+
 def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, str]]:
     r: list[tuple[str, str, str]] = []
     add = lambda nivel, nome, det='': r.append((nivel, nome, det))   # noqa: E731
@@ -96,6 +110,12 @@ def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, st
     add('FALHA' if stale else 'OK', 'código instalado é o do src',
         stale or 'rehab_pack carregado do repositório (build --symlink-install)')
 
+    try:
+        aberto = touch_pack_open()
+        add('FALHA' if aberto else 'OK', 'trava do touch_pack',
+            'touch_pack aberto: feche-o antes' if aberto else 'livre')
+    except Exception as exc:
+        add('FALHA', 'trava do touch_pack', f'não consegui conferir: {exc}')
     try:
         import touch_pack.real_driver  # noqa: F401
         add('OK', 'driver do CR10 (touch_pack.real_driver)', 'importável')

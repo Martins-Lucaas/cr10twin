@@ -40,6 +40,9 @@ def _flag(context, name: str) -> bool:
 
 
 def launch_setup(context, *args, **kwargs):
+    # levanta antes de criar qualquer ação: com o touch_pack aberto nada sobe
+    from touch_pack.pack_lock import acquire
+    acquire('rehab_pack')
     sim_ft = _flag(context, 'sim_ft')
     gui = _flag(context, 'gui')
     source = LaunchConfiguration('force_source').perform(context).strip()
@@ -122,7 +125,7 @@ def launch_setup(context, *args, **kwargs):
                                    'control_mode': control_mode}]))
     if mirror:
         nodes.append(LogInfo(msg='MIRROR: o CR10 REAL vai seguir o braço '
-                                 'simulado quando a admitância estiver ATIVA. '
+                                 'simulado quando a admitância estiver ATIVA, depois de Conectar. '
                                  'Mantenha a mão no E-Stop físico.'))
     if _flag(context, 'logger'):
         nodes.append(Node(package='rehab_pack', executable='rehab_logger',

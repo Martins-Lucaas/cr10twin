@@ -17,7 +17,7 @@ class FakeBridge:
 
     def __init__(self):
         self.ticks, self.results = collections.deque(), collections.deque()
-        self.last = {'params': {'force_source': 'sim'}}
+        self.last = {'params': {'force_source': 'sim', 'max_excursion_m': 0.15}}
         self.calls, self.events = [], []
         self.targets = []
         self.gotos = []
@@ -32,6 +32,7 @@ class FakeBridge:
     def set_params(self, node, values): self.calls.append((node, values))
     def publish_target(self, xy, z): self.targets.append(xy)
     def publish_reference(self, xy, z): pass
+    def publish_alive(self): pass
     def publish_event(self, text): self.events.append(text)
     def publish_goto(self, q, pct): self.gotos.append(list(q) + [pct])
     def publish_meta(self, meta): self.calls.append(('meta', meta))
@@ -40,7 +41,7 @@ class FakeBridge:
 
 def tick(t, x=0.55, y=0.0, state=1.0):
     d = dict.fromkeys(C.TICK_FIELDS, 0.0)
-    d.update(t_s=t, x_m=x, y_m=y, z_m=0.25, state=state)
+    d.update(t_s=t, x_m=x, y_m=y, z_m=0.25, rx_m=x, ry_m=y, rz_m=0.25, state=state)
     return [d[k] for k in C.TICK_FIELDS]
 
 
@@ -54,6 +55,7 @@ def app():
     a = RehabGui(root, br)
     root.update()
     yield a, br
+    a._confirm = lambda *x, **k: True
     a.close()
 
 
@@ -219,15 +221,14 @@ def test_robo_real_problema_aparece_em_vermelho_com_palavra(app, campo, trecho):
 
 
 def test_conectar_e_modo_exigem_confirmacao(app, monkeypatch):
-    from rehab_pack import rehab_gui
     a, br = app
     _real(br, conectado=False, modo='SIM_ONLY', ip='10.0.0.7')
     a._refresh_real(br)
     assert a.var_ip.get() == '10.0.0.7' and 'SIM_ONLY' in a.conn['real'].cget('text')
-    monkeypatch.setattr(rehab_gui.messagebox, 'askokcancel', lambda *x, **k: False)
+    monkeypatch.setattr(a, '_confirm', lambda *x, **k: False)
     a.toggle_real(); a.toggle_mode()
     assert not br.calls
-    monkeypatch.setattr(rehab_gui.messagebox, 'askokcancel', lambda *x, **k: True)
+    monkeypatch.setattr(a, '_confirm', lambda *x, **k: True)
     a.toggle_real(); a.toggle_mode()           # força simulada: MIRROR recusado
     assert br.calls == [('connect', '10.0.0.7')]
     br.last['params'] = {'force_source': 'real'}
@@ -305,6 +306,7 @@ def test_salvar_home_ir_para_home_e_reabrir(app, tmp_path, monkeypatch):
     a.jog_save_home()
     assert C.home_q() == pytest.approx(q, abs=1e-4)
     _braco_no_ar(br); a._poll()
+    monkeypatch.setattr(a, '_confirm', lambda *x, **k: True)
     a.jog_home(); a.root.after_cancel(a._jog_after); a._jog_send()
     assert br.gotos[-1][:6] == pytest.approx(q, abs=2e-3)
 
@@ -351,3 +353,25 @@ def test_estado_posicionando_tem_estilo_e_texto(app):
     a._poll(); a._refresh_ui(); a.root.update()
     assert a.lbl_state.cget('text') == 'POSICIONANDO'
     assert 'PARAR' in a.lbl_banner.cget('text')
+
+
+def test_roda_do_mouse_nao_altera_spinbox_de_junta(app):
+    a, br = app
+    _braco_no_ar(br); a._poll(); a._refresh_ui()
+    a.nb.select(4); a.root.update()
+    antes = a.jog_var[0].get()
+    a.jog_spin[0].event_generate('<Button-4>'); a.jog_spin[0].event_generate('<Button-5>')
+    a.root.update()
+    assert a.jog_var[0].get() == antes and a._jog_after is None
+
+
+def test_confirmacao_nao_segura_o_grab_e_parar_a_cancela(app):
+    a, br = app
+    visto = []
+
+    def durante():
+        visto.append(a.root.grab_current())
+        a.estop()
+    a.root.after(200, durante)
+    assert a._confirm('t', 'x') is False
+    assert visto == [None] and C.S_ESTOP in br.calls

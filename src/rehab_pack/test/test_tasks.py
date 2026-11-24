@@ -146,6 +146,25 @@ def test_estabilidade_e_presets():
     assert tasks.abort_limit_ok(15.0) and not tasks.abort_limit_ok(15.1)
 
 
+def test_preset_nao_muda_a_mola_com_o_braco_ativo():
+    livre = {'stiffness_n_m': 0.0}
+    assert tasks.preset_refusal('Assistido', livre, True)
+    assert not tasks.preset_refusal('Assistido', livre, False)
+    assert not tasks.preset_refusal('Leve', livre, True)
+    assert tasks.preset_refusal('Leve', None, True)          # K do nó desconhecido
+
+
+@pytest.mark.parametrize('forma', ['reta', 'circulo', 'oito'])
+def test_tarefa_limitada_cabe_na_excursao(forma):
+    c, ref, exc = (0.5, 0.0, 0.25), (0.5, 0.03, 0.25), 0.15
+    tam = tasks.reach_limit('tunel_' + forma, exc, c, ref)
+    path = tasks.tunnel_path(forma, tam, c[:2])
+    assert max(math.dist(p, ref[:2]) for p in path) <= exc + 1e-9
+    r = tasks.reach_limit('centro_fora', exc, c, ref)
+    alvos = tasks.CenterOutTask(c[:2], reach_m=r).target_positions
+    assert max(math.dist(p, ref[:2]) for p in alvos) <= exc + 1e-9
+
+
 def test_decimacao_preserva_pico():
     vs = [0.0] * 1000
     vs[437] = 9.0

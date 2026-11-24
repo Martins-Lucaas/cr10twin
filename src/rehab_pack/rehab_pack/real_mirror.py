@@ -30,10 +30,10 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
 
 from .constants import (ARM_JOINTS, RAMP_S, REAL_MODES, ROBOT_MODES_OK, S_REAL_CONNECT,
-                        S_REAL_MODE, SIM_ROBOT_IP, STATES, T_ARM_CMD, T_EVENT,
+                        S_REAL_MODE, STATES, T_ARM_CMD, T_EVENT,
                         T_JOINT_STATES, T_REAL_STATUS, T_STATE, T_TICK,
                         TICK_STALE_S)
-from .real_link import RealLink, robot_ip, save_robot_ip, sync_error_rad
+from .real_link import RealLink, robot_ip, sync_error_rad
 
 ACTIVE = STATES[1]      # ATIVO
 ABORTED = STATES[4]     # ABORTADO
@@ -43,6 +43,8 @@ PARKED = (None, STATES[0], ABORTED)   # estados em que se troca modo/conexão
 STATUS_HZ = 33.0        # a admitância usa q_real para medir a velocidade
 ZERO_BLIP_RAD, ZERO_BLIP_MAX = 0.05, 10     # até ~0,3 s seguidos
 SYNC_MOVE_S = 3
+ARM_PUBS = {'rehab_admittance', 'rehab_mirror'}       # quem pode publicar em T_ARM_CMD
+TOUCH_NODES = {'mirror_node', 'tactile_explorer'}   # levariam o sim (ou o real) junto
 Q_SIM_STALE_S = 0.5
 
 
@@ -52,8 +54,8 @@ class RealMirror(Node):
         self.declare_parameter('robot_ip', '')
         self.declare_parameter('servoj_period_s', 0.030)
         self.declare_parameter('control_mode', 'mirror')
-        self.mirror = self.want = (
-            str(self.get_parameter('control_mode').value) == 'mirror')
+        self.mirror = str(self.get_parameter('control_mode').value) == 'mirror'
+        self.want = False            # energizar o CR10 é sempre pedido do operador (Conectar)
         self.connecting = False
         self._sync_t = 0.0
         self.tick_t = 0.0            # último tick da admitância (batimento)
@@ -153,6 +155,11 @@ class RealMirror(Node):
                 or self.pub_arm.get_subscription_count() == 0):
             return
         self._sync_t = time.monotonic()
+        pubs = [p.node_name for p in self.get_publishers_info_by_topic(T_ARM_CMD)]
+        if (len(pubs) != len(set(pubs)) or set(pubs) - ARM_PUBS
+                or TOUCH_NODES & set(self.get_node_names())):
+            self.get_logger().warning(f'sincronia recusada: outro nó comanda o braço ({pubs})')
+            return
         pt = JointTrajectoryPoint(positions=[float(v) for v in q_real],
                                   velocities=[0.0] * 6,
                                   time_from_start=Duration(sec=SYNC_MOVE_S))
@@ -174,13 +181,15 @@ class RealMirror(Node):
                 self.wake.clear()
                 continue
             drv, err = link.open_driver()      # até ~16 s: fora do lock
-            wait, ok = 0.0, False
+            ok = False
             with self.lock:
                 self.connecting = False
                 if drv is None:
                     if self.want:
                         link.fail(err)
-                        wait = link.backoff_s()
+                        # uma tentativa por pedido: repetir o enable() energizaria
+                        # o braço sozinho quando alguém soltasse o E-Stop
+                        self.want = False
                 elif self.want and not self.stop_ev.is_set():
                     link.attach(drv)
                     self._was_connected = True
@@ -191,15 +200,6 @@ class RealMirror(Node):
                         fn()
                     except Exception as exc:
                         self.get_logger().warning(f'conexão cancelada: {exc}')
-            if ok and link.ip != SIM_ROBOT_IP:
-                try:
-                    from touch_pack.constants import ROBOT_CONFIG_FILE
-                    save_robot_ip(link.ip, ROBOT_CONFIG_FILE)
-                except Exception as exc:
-                    self.get_logger().warning(f'IP não salvo: {exc}')
-            if wait:
-                self.wake.wait(wait)
-                self.wake.clear()
 
     def _servoj_loop(self):
         t_next = time.monotonic() + self.period
@@ -298,6 +298,8 @@ class RealMirror(Node):
 
 
 def main():
+    from touch_pack.pack_lock import acquire_or_exit   # sem o touch_pack: recusa
+    acquire_or_exit('rehab_pack')
     rclpy.init()
     node = RealMirror()
     try:

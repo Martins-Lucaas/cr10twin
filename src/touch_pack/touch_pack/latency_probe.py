@@ -418,6 +418,8 @@ class LatencyProbe(Node):
 
 
 def main(args=None):
+    from .pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     rclpy.init(args=args)
     node = LatencyProbe()
     if not node.start_real_poll():

@@ -514,6 +514,9 @@ def _wifi_ipv4() -> str:
 
 
 def launch_setup(context, *args, **kwargs):
+    # O launch segura a trava: com o rehab_pack aberto nada sobe.
+    from touch_pack.pack_lock import acquire
+    acquire('touch_pack')
     end_effector = LaunchConfiguration('end_effector').perform(context)
     control_mode = LaunchConfiguration('control_mode').perform(context)
     robot_ip     = LaunchConfiguration('robot_ip').perform(context)

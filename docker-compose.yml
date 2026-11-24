@@ -26,6 +26,7 @@ services:
     volumes:
       - .:/ws/src/cr10twin                       # código ao vivo
       - /tmp/.X11-unix:/tmp/.X11-unix:rw         # GUI (Tk / rviz / Gazebo)
+      - /run/lock:/run/lock                      # trava touch_pack × rehab_pack vale no host também
       - ./sensors/Data:/ws/src/cr10twin/sensors/Data   # runs gravados no host
 
     working_dir: /ws

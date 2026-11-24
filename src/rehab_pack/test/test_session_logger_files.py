@@ -4,12 +4,13 @@ import json
 import math
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 
 import pytest
 
 from rehab_pack import constants as C
-from rehab_pack.session_logger import SessionWriter
+from rehab_pack.session_logger import SessionWriter, ler_ft_config
 
 META = {'subject_id': 'S01', 'lado_paretico': 'D', 'tarefa': 'centro-fora', 'notas': 'x'}
 PARAMS = {'mass_kg': 2.0, 'damping_ns_m': 30.0, 'force_source': 'virtual'}
@@ -73,7 +74,7 @@ def test_meta_segue_esquema(tmp_path):
     assert meta['status'] == 'interrompida'  # meta de segurança enquanto aberta
     w.fechar('concluida')
     m = json.load(open(os.path.join(pasta, 'meta.json')))
-    assert m['schema'] == 1 and m['status'] == 'concluida' and m['fim_iso']
+    assert m['schema'] == 2 and m['status'] == 'concluida' and m['fim_iso']
     for k in ('session_id', 'subject_id', 'lado_paretico', 'tarefa', 'notas', 'inicio_iso',
               'codigo', 'admitancia', 'forca', 'mastro', 'pose_inicial_rad', 'emg_canais',
               'arquivos'):
@@ -145,3 +146,66 @@ def test_massas_mastro_conferem_urdf():
     valores = sorted(massas.values())
     assert any(math.isclose(v, C.GRIP_MASS_KG) for v in valores)
     assert any(math.isclose(v, C.PLATE_MASS_KG) for v in valores)
+
+
+@pytest.mark.parametrize('texto,sinal,giro', [
+    ('{"ft_sign": -1.0, "ft_yaw_deg": 90.0}', -1.0, 90.0), ('{"ft_sign": 1.0}', 1.0, None),
+    (None, None, None), ('lixo', None, None), ('[1]', None, None)])
+def test_meta_registra_sinal_e_giro_da_celula_ou_null(tmp_path, texto, sinal, giro):
+    w = SessionWriter(str(tmp_path))
+    pasta = w.abrir(META, PARAMS, {'fonte': 'real', **ler_ft_config(texto)}, [0.0] * 6)
+    w.fechar('concluida')
+    f = json.load(open(os.path.join(pasta, 'meta.json')))['forca']
+    assert f['ft_sign'] == sinal and f['ft_yaw_deg'] == giro
+
+
+def test_logger_no_ar_grava_a_config_da_celula(tmp_path, monkeypatch):
+    """O nó de verdade: config latched publicada ANTES de ele subir chega ao meta."""
+    rclpy = pytest.importorskip('rclpy')
+    from rclpy.qos import DurabilityPolicy, QoSProfile
+    from std_msgs.msg import String
+    from std_srvs.srv import Trigger
+    from rehab_pack import session_logger as sl
+    from touch_pack import pack_lock
+    monkeypatch.setattr(pack_lock, 'acquire_or_exit', lambda p: None)
+    monkeypatch.setenv('REHAB_PACK_DATA_DIR', str(tmp_path))
+    init, metas = rclpy.init, []
+
+    def init_isolado(args=None):
+        init(args=args, domain_id=78)
+
+    def spin(no):
+        pub = rclpy.create_node('fake_force_source')
+        for com_fonte in (True, False):
+            p = pub.create_publisher(String, C.T_FT_CONFIG, QoSProfile(
+                depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            if com_fonte:
+                p.publish(String(data='{"ft_sign": -1.0, "ft_yaw_deg": 30.0}'))
+            else:
+                pub.destroy_publisher(p)
+                pub.destroy_publisher(antes)
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 3 and (
+                    no.ft_config is None or no.count_publishers(C.T_FT_CONFIG) != com_fonte):
+                rclpy.spin_once(no, timeout_sec=0.05)
+            antes = p
+            no.meta_usuario = {**META, 'tarefa': f'fonte{com_fonte}'}
+            r = no._srv_start(None, Trigger.Response())
+            assert r.success, r.message
+            metas.append(json.load(open(os.path.join(r.message, 'meta.json')))['forca'])
+            no.w.fechar('concluida')
+        pub.destroy_node()
+    monkeypatch.setattr(rclpy, 'init', init_isolado)
+    monkeypatch.setattr(rclpy, 'spin', spin)
+    sl.main([])
+    assert (metas[0]['ft_sign'], metas[0]['ft_yaw_deg']) == (-1.0, 30.0)
+    assert (metas[1]['ft_sign'], metas[1]['ft_yaw_deg']) == (None, None)
+
+
+def test_sessoes_ficam_na_pasta_padrao_em_subpasta_propria(tmp_path, monkeypatch):
+    from rehab_pack.constants import runs_dir
+    monkeypatch.delenv('REHAB_PACK_DATA_DIR', raising=False)
+    monkeypatch.setenv('TOUCH_PACK_DATA_DIR', str(tmp_path))
+    assert runs_dir() == str(tmp_path / 'REHAB')
+    monkeypatch.delenv('TOUCH_PACK_DATA_DIR')
+    assert runs_dir().endswith('sensors/Data/REHAB')

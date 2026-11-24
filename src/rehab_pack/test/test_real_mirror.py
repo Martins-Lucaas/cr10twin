@@ -1,4 +1,8 @@
 """rehab_mirror com driver falso: conectar, modo, sincronizar e armar (precisa do rclpy)."""
+import fcntl
+import importlib.util
+import pathlib
+import sys
 import threading
 import time
 
@@ -170,3 +174,88 @@ def test_juntas_zeradas_do_firmware_sao_ignoradas_por_pouco_tempo(node):
     time.sleep(0.1)
     assert np.allclose(node.q_real, q)          # blip: segura a última leitura
     assert wait(lambda: node.q_real is None)    # persistente: sem posição, não arma
+
+
+def test_falha_ao_conectar_nao_tenta_de_novo_sozinho(node):
+    n = []
+
+    def factory(*a):
+        n.append(1)
+        raise RuntimeError('E-Stop acionado')
+    with node.lock:
+        node.link = real_link.RealLink('1.2.3.4', 0.03, factory=factory)
+        node.want = True
+    node.wake.set()
+    assert wait(lambda: n and not node.want)
+    time.sleep(2.5)                             # o antigo backoff era de 2 s
+    assert len(n) == 1 and not node.connecting
+    assert 'E-Stop' in node.link.last_error     # vai em 'erro' do status
+    assert call(node._srv_connect, True).success and wait(lambda: node.link.connected)
+
+
+class Info:
+    def __init__(self, nome): self.node_name = nome
+
+
+@pytest.mark.parametrize('pubs,nos,publica', [
+    (['rehab_mirror', 'rehab_admittance'], ['rehab_mirror', 'ft_receiver'], True),
+    (['rehab_mirror', 'rehab_admittance', 'rehab_admittance'], [], False),
+    (['rehab_mirror', 'palpation_gui'], [], False),
+    (['rehab_mirror'], ['mirror_node'], False),
+    (['rehab_mirror'], ['tactile_explorer'], False),
+])
+def test_sincronia_so_publica_sem_outro_comando_no_braco(node, monkeypatch, pubs, nos, publica):
+    saiu = []
+    monkeypatch.setattr(node.pub_arm, 'get_subscription_count', lambda: 1)
+    monkeypatch.setattr(node.pub_arm, 'publish', saiu.append)
+    monkeypatch.setattr(node, 'get_publishers_info_by_topic', lambda t: [Info(p) for p in pubs])
+    monkeypatch.setattr(node, 'get_node_names', lambda: nos)
+    node._sync_sim(HOME_Q_RAD)
+    assert bool(saiu) is publica
+
+
+def _launch_setup():
+    f = pathlib.Path(__file__).parents[1] / 'launch' / 'joystick_cell.launch.py'
+    spec = importlib.util.spec_from_file_location('joystick_cell', f)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.launch_setup
+
+
+@pytest.mark.parametrize('sem_modulo', [False, True])
+def test_trava_recusa_antes_de_subir_qualquer_coisa(monkeypatch, tmp_path, sem_modulo):
+    pytest.importorskip('launch')
+    from rehab_pack import gui_bridge, rehab_gui
+    from touch_pack import pack_lock
+
+    def nao(*a, **k):
+        raise AssertionError('subiu com o touch_pack aberto')
+    monkeypatch.setenv('CR10_PACK_LOCK_DIR', str(tmp_path))
+    monkeypatch.setattr(pack_lock, '_held', {})
+    monkeypatch.setattr(rclpy, 'init', nao)
+    monkeypatch.setattr(gui_bridge, 'GuiBridge', nao)
+    if sem_modulo:
+        monkeypatch.setitem(sys.modules, 'touch_pack.pack_lock', None)
+    sai, sobe = (ImportError, ImportError) if sem_modulo else (SystemExit, pack_lock.PackLockError)
+    with open(tmp_path / 'touch_pack.lock', 'a') as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
+        for main in (real_mirror.main, rehab_gui.main):
+            with pytest.raises(sai):
+                main()
+        with pytest.raises(sobe):
+            _launch_setup()(None)
+
+
+def test_mirror_nao_conecta_sem_pedido():
+    rclpy.init(domain_id=77, args=['--ros-args', '-p', 'robot_ip:=sim',
+                                   '-p', 'control_mode:=mirror'])
+    n = real_mirror.RealMirror()
+    try:
+        time.sleep(0.5)
+        assert n.mirror and not n.link.connected
+        n.state = 'PARADO'
+        assert call(n._srv_connect, True).success
+        assert wait(lambda: n.link.connected)
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()

@@ -26,7 +26,7 @@ setup(
     maintainer_email='lucaspmartins14@gmail.com',
     description='Mastro de reabilitação no CR10 com célula FA7155.',
     license='MIT',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={'console_scripts': [
         'rehab_admittance = rehab_pack.admittance_node:main',
         'rehab_force_source = rehab_pack.force_source:main',

@@ -58,6 +58,19 @@ def stability(mass_kg: float, damping_ns_m: float) -> dict:
     return {'k_max': k, 'ok': k >= ARM_STIFFNESS_MIN_N_M}
 
 
+def preset_refusal(nome: str, params, ativo: bool) -> str:
+    """Motivo para não aplicar o preset ('' = pode): com o braço ativo a mola não muda."""
+    if ativo and (params or {}).get('stiffness_n_m') != PRESETS[nome]['stiffness_n_m']:
+        return f'Perfil {nome} muda a mola (K): desabilite o braço antes.'
+    return ''
+
+
+def reach_limit(name: str, max_exc_m: float, center, ref) -> float:
+    """Maior alcance/tamanho [m] da tarefa que cabe na excursão em torno de `ref`."""
+    livre = max_exc_m - math.dist(center, ref)
+    return 2.0 * livre if name == 'tunel_oito' else livre   # o oito se afasta só meio tamanho
+
+
 def abort_limit_ok(limit_n: float) -> bool:
     return 0.0 < limit_n <= FORCE_ABORT_LIMIT_N
 

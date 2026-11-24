@@ -6180,6 +6180,8 @@ class TactileExplorer(AttackMixin, Node):
 
 
 def main(args=None):
+    from .pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     rclpy.init(args=args)
     node = TactileExplorer()
     executor = MultiThreadedExecutor(num_threads=3)
