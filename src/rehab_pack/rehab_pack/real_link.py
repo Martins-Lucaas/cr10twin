@@ -3,7 +3,7 @@
 Mesmo sistema do touch_pack: `CR10RealDriver` (TCP 29999, feedback 30004),
 IP em ~/.config/touch_pack/robot.json, conexão só a pedido e espelhamento
 sim → real por ServoJ a 33 Hz a partir de /joint_states. O protocolo do robô
-mora no driver do touch_pack e NÃO é copiado: o import é adiado para o
+mora em `real_driver` (cópia própria do rehab): o import é adiado para o
 momento de conectar, então estas funções (e o nó de admitância) não exigem o
 touch_pack.
 
@@ -48,7 +48,7 @@ class StepTooLarge(RuntimeError):
 def is_feedback_timeout(exc) -> bool:
     """Leitura de feedback atrasada, com a conexão mantida pelo driver?"""
     try:
-        from touch_pack.real_driver import CR10FeedbackTimeout
+        from .real_driver import CR10FeedbackTimeout
     except ImportError:
         return False
     return isinstance(exc, CR10FeedbackTimeout)
@@ -139,10 +139,10 @@ class SimulatedDriver:
 
 
 def default_factory(ip: str, period_s: float):
-    """Driver real do touch_pack (import adiado) ou o simulado."""
+    """Driver real do rehab_pack (import adiado) ou o simulado."""
     if ip == SIM_ROBOT_IP:
         return SimulatedDriver()
-    from touch_pack.real_driver import CR10RealDriver, CR10RealDriverConfig
+    from .real_driver import CR10RealDriver, CR10RealDriverConfig
     return CR10RealDriver(ip=ip, config=CR10RealDriverConfig(
         payload_kg=PAYLOAD_KG, payload_cog_m=(0.0, 0.0, PAYLOAD_COG_Z_M),
         servoj_period_s=period_s))

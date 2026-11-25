@@ -11,8 +11,8 @@
   <license>MIT</license>
 
   <exec_depend>cra_description</exec_depend>
-  <!-- pack_lock (todo main() e o launch), e no hardware real: real_driver
-       (CR10) e ft_receiver (FA7155). -->
+  <!-- pack_lock (todo main() e o launch), e no hardware real: kinematics
+       (real_driver) e ft_receiver (FA7155). -->
   <exec_depend>touch_pack</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>xacro</exec_depend>

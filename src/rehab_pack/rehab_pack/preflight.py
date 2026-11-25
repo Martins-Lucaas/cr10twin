@@ -116,10 +116,10 @@ def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, st
     except Exception as exc:
         add('FALHA', 'trava do touch_pack', f'não consegui conferir: {exc}')
     try:
-        import touch_pack.real_driver  # noqa: F401
-        add('OK', 'driver do CR10 (touch_pack.real_driver)', 'importável')
+        from . import real_driver  # noqa: F401
+        add('OK', 'driver do CR10 (rehab_pack.real_driver)', 'importável')
     except Exception as exc:
-        add('FALHA', 'driver do CR10 (touch_pack.real_driver)', str(exc))
+        add('FALHA', 'driver do CR10 (rehab_pack.real_driver)', str(exc))
     try:
         out = subprocess.run(['ros2', 'pkg', 'executables', 'touch_pack'],
                              capture_output=True, text=True, timeout=15).stdout

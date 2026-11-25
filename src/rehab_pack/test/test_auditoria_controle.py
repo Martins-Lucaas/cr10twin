@@ -121,7 +121,7 @@ def test_xc9_primeira_amostra_parte_da_pose_real_e_nan_nao_sai():
 
 
 def test_r13_um_timeout_de_feedback_para_sem_derrubar(mirror):
-    from touch_pack import real_driver
+    from rehab_pack import real_driver
     atraso = getattr(real_driver, 'CR10FeedbackTimeout', TimeoutError)
     drv, q0 = arma(mirror)
     le, falhas = drv.read_joints_urdf_latest, [2]

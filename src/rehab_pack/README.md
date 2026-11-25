@@ -2,7 +2,7 @@
 
 Reabilitação de membro superior com o CR10. O voluntário segura um **mastro**
 (`cad/Joystick.step`) preso à célula FA7155 e guia o robô por **admitância**
-cartesiana. Usa do `touch_pack` só o driver do CR10 e o `ft_receiver`.
+cartesiana. O driver do CR10 é cópia própria (`real_driver.py`); usa do `touch_pack` a trava, a cinemática e o `ft_receiver`.
 
 Padrão: CR10 simulado (Gazebo Classic) e força da **célula FA7155 real**. Sem célula o
 braço simulado ainda se move pelas juntas (aba 5), mas a admitância não habilita. O
