@@ -182,17 +182,17 @@ def test_o_atraso_da_mediana_segue_a_taxa_da_fonte():
     assert (lag_hx - lag_ft) > 0.75 * bin_s
 
 
-def test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula():
-    """Os call sites do explorer não podem cair no default da função: ele é
-    o nominal, não a taxa MEDIDA da FA7155 no fio."""
-    import inspect
-    from touch_pack import tactile_explorer as te
-    chamadas = [ln for ln in inspect.getsource(te).splitlines()
-                if 'fmod_measure_lag_s(' in ln and 'def ' not in ln]
-    usos = [ln for ln in chamadas if 'prof.freq_hz' in ln]
-    assert usos, 'nenhum call site de fmod_measure_lag_s encontrado'
-    for ln in usos:
-        assert '_lc_rate_hz()' in ln, f'call site sem a taxa medida: {ln.strip()}'
+def test_a_onda_passa_a_taxa_medida_e_nao_a_constante_da_celula(
+        onda, monkeypatch):
+    """O explorer não pode cair no default da função: ele é o nominal, não a
+    taxa MEDIDA da FA7155 no fio."""
+    taxas = []
+    base = onda.te.fmod_measure_lag_s
+    monkeypatch.setattr(onda.te, 'fmod_measure_lag_s',
+                        lambda f, *a: (taxas.append(a), base(f, *a))[1])
+    onda.taxa, onda.com_cru = 97.0, False
+    assert onda.roda(ciclos=6) == 'ok'
+    assert taxas and set(taxas) == {(97.0,)}
 
 
 def test_a_taxa_cai_no_nominal_enquanto_nenhuma_leitura_chegou():

@@ -76,8 +76,9 @@ QOS_COMMAND = QoSProfile(
 # (o E-STOP congela no lugar, sem ir à HOME) entra aqui: enquanto ficava de
 # fora, o cronômetro contava para sempre depois de um E-STOP.
 # Não confundir com a lista de fases INATIVAS do espelhamento
-# (mirror_node._IDLE_PHASES): num FROZEN o braço continua sob comando do
-# explorer, então o espelho segue ativo.
+# (mirror_node._IDLE_PHASES): em FROZEN o jog segue barrado até o operador
+# soltar o E-STOP ou apertar Stop (explorer volta a IDLE), e o espelho não
+# comanda nada.
 _PHASE_ENDED = ('IDLE', 'DONE', 'ABORTED', 'FROZEN')
 
 # Constantes compartilhadas (fonte única GUI ↔ explorer ↔ nós auxiliares).
@@ -98,7 +99,7 @@ from .constants import (
     HOME_POSE_FILE, HOME_POSE_HAND_FILE, tool_stamp, tool_stamp_mismatch,
     TOUCH_SENSOR_DEFAULT, touch_sensor_spec,
     PALPATION_PARAMS_FILE, new_run_id,
-    TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
+    TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC, TOUCH_EVENT_QOS_DEPTH,
     MATRIX_SAFE_Z_MM_DEFAULT, MATRIX_SAFE_Z_MM_MIN, MATRIX_SAFE_Z_MM_MAX,
     MATRIX_TRANSIT_MMS_DEFAULT, MATRIX_TRANSIT_MMS_MIN,
     MATRIX_TRANSIT_MMS_MAX,
@@ -439,7 +440,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             PalpationStatus, '/palpation/status', self._cb_status, 10)
         # Leitura dos seis eixos para a aba "6 Axes" e para a planilha.
         # A GUI é só ASSINANTE aqui. Ela já publicou neste tópico o wrench
-        # estimado do CR10 (bridge `read_tcp_force`), e enquanto as duas
+        # estimado do CR10 (bridge antigo), e enquanto as duas
         # coisas coexistiam o tópico carregava duas fontes intercaladas que o
         # assinante não distinguia. O bridge foi desligado em 12/08/2026 e
         # REMOVIDO em 24/08/2026: o único produtor é o ft_receiver (FA7155).
@@ -479,7 +480,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._touch_frame_pub = self.create_publisher(
             TouchFrame, TOUCH_FRAME_TOPIC, QOS_SENSOR)
         self._touch_event_pub = self.create_publisher(
-            String, TOUCH_EVENT_TOPIC, QOS_SENSOR)
+            String, TOUCH_EVENT_TOPIC, TOUCH_EVENT_QOS_DEPTH)
 
         # Publishers para comando direto (aba Controle Manual)
         # Os joint_trajectory_controllers expõem um tópico direto
@@ -603,6 +604,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._robot_heartbeat_thread: threading.Thread | None = None
         self._robot_heartbeat_stop = threading.Event()
         self._robot_reconnect_thread: threading.Thread | None = None
+        # Stop/E-STOP durante o pré-home cancelam o start pendente.
+        self._prehome_cancel = threading.Event()
         self._robot_reconnecting: bool = False
 
         # Mirror MovJ — em modo MIRROR, cada nova trajetória publicada em
@@ -650,9 +653,11 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self.create_subscription(
             Bool, '/load_cell/tared', self._cb_lc_tared, 10)
         self.create_subscription(
-            String, '/load_cell/tare_result', self._cb_lc_tare_result, 10)
+            String, '/load_cell/tare_result',
+            lambda m: self.root.after(0, self._cb_lc_tare_result, m), 10)
         self.create_subscription(
-            String, '/ft_sensor/command_result', self._cb_ft_cmd_result, 10)
+            String, '/ft_sensor/command_result',
+            lambda m: self.root.after(0, self._cb_ft_cmd_result, m), 10)
         # Guardado num atributo porque ele é criado e destruído em tempo de
         # execução — ver _reconcile_touch_echo_sub.
         self._touch_value_sub = None
@@ -2016,6 +2021,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                              'CALIBRATING/SLIDING/RETRACT use ServoJ with their '
                              'own speed set in the parameters above).')
         self.speed_factor_var.trace_add(
+            'write', lambda *_: self._cache_speed_factor())
+        self.speed_factor_var.trace_add(
             'write', lambda *_: self._apply_speed_factor_if_active())
 
         cols = tk.Frame(body, bg=BG)
@@ -2443,6 +2450,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             self._latest_extra_joints = {**self._latest_extra_joints, **extra}
         try:
             self._latest_joint_rad = [float(pos[j]) for j in ARM_JOINTS]
+            self._latest_joint_ts = time.monotonic()
         except KeyError:
             pass  # msg parcial (mão ou outra cadeia) — ignorar
 
@@ -2509,6 +2517,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # uma verificação de sincronismo na pose corrente, sem mover nada.
         sync_only = str(payload.get('mode', '')) == 'MATRIX_MAP'
 
+        self._prehome_cancel.clear()
         self._prehoming = True
         if sync_only:
             self._set_status(
@@ -2536,6 +2545,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         erro = 'tempo esgotado'
         while time.monotonic() < t_end:
             time.sleep(0.10)
+            if self._prehome_cancel.is_set():
+                erro = 'cancelado pelo operador'
+                break
             drv = self._real_driver
             if drv is None or not self._robot_connected:
                 erro = 'braço real desconectado durante o homing'
@@ -2976,7 +2988,8 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             pass
         try:
             self._logger_proc = subprocess.Popen(
-                ['ros2', 'run', 'touch_pack', 'palpation_logger'],
+                ['ros2', 'run', 'touch_pack', 'palpation_logger',
+                 '--ros-args', '-p', f"sensor:='{self._touch_spec.key}'"],   # aspas: senão vira int
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=True)
@@ -3677,7 +3690,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
             # `after` porque _stop_recording toca widgets Tk e esta callback
             # roda na thread do executor ROS.
             ended = (msg.phase in ('DONE', 'ABORTED', 'FROZEN')
-                     and self._rec_fh is not None and self._rec_auto)
+                     and self._rec_fh is not None and self._rec_auto
+                     # O fim do run ANTERIOR segue a 10 Hz até o explorer
+                     # pegar o start novo.
+                     and (not msg.run_id or msg.run_id == self._rec_run_id))
             self._latest_cycle = int(msg.cycle)
             self._latest_cycles_total = int(msg.cycles_total)
             self._paused = bool(msg.paused)
@@ -3882,6 +3898,9 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                              TEXT_DIM)
             return
         new_state = not paused
+        if new_state:
+            with self._lock:
+                self._paused = True       # o espelho cala antes do Pause()
         msg = Bool(); msg.data = new_state
         self._pause_pub.publish(msg)
         if self._robot_connected and self._real_driver is not None:
@@ -4012,18 +4031,22 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         msg = String()
         msg.data = 'stop'
         self._stop_pub.publish(msg)
-        # Halt paralisa o movimento atual do braço real sem desabilitar.
-        if self._robot_connected and self._real_driver is not None:
-            try:
-                self._real_driver.halt()
-            except CR10RealDriverError as exc:
-                self.get_logger().warning(f'Halt após stop falhou: {exc}')
+        self._exec_stop.set()
+        self._prehome_cancel.set()
+        # Fora do streaming o que está no ar é um MovJ (pré-home, jog, Poses):
+        # Stop() o interrompe. Em palpação quem para é o explorer, e um Stop()
+        # no meio do ServoJ derrubaria o recuo à HOME.
+        para_braco = (self._robot_connected and self._real_driver is not None
+                      and self._latest_phase in _PHASE_ENDED)
         # Congela o poll loop: define last_target = posição atual para que
         # o dedup bloqueie novos ServoJ até o braço realmente se mover de novo.
         cur = self._latest_joint_rad
         if cur is not None:
             self._mirror_last_target = np.asarray(cur, dtype=np.float64)
-        self._set_status('Palpation stopped by the operator.', WARN)
+        if para_braco:
+            self._stop_motion_bounded('Palpation stopped by the operator.')
+        else:
+            self._set_status('Palpation stopped by the operator.', WARN)
 
     def _on_start(self):
         # Gate (defesa em profundidade — ver também o bloqueio da aba em
@@ -4039,6 +4062,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # mas evitar a segunda publicação é mais barato que confiar nela.
         if self._starting_palpation:
             self._set_status('Start already in progress…', WARN)
+            return
+        if self._exec_movement_id is not None:
+            self._set_status(
+                'A Poses motion is running — stop it before palpating.', WARN)
             return
         # E-STOP travado: o driver recusaria todo movimento e o run morreria
         # na primeira fase. Barrar aqui diz o porquê, em vez de deixar o
@@ -4069,6 +4096,16 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 'use Stop first.', WARN)
             return
         self._starting_palpation = True
+        try:
+            self._collect_and_start()
+        except (tk.TclError, ValueError) as exc:
+            # Campo vazio ou ilegível: o flag preso travava o Start até
+            # reiniciar a GUI.
+            self._starting_palpation = False
+            self._set_status(f'Start not sent: invalid field ({exc}).', DANGER)
+
+    def _collect_and_start(self) -> None:
+        """Lê e satura os campos, persiste e segue para o start."""
         # Satura cada parâmetro ao seu intervalo válido antes de enviar,
         # tanto para a publicação quanto para o que o usuário vê nos
         # spinboxes/sliders.
@@ -4492,6 +4529,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         """
         if not prehomed and self._prehome_before_start(payload):
             return            # o worker republica quando o braço chegar
+        if prehomed and (self._prehome_cancel.is_set()
+                         or getattr(self, '_estop_latched', False)):
+            self._prehome_failed('cancelado pelo operador')
+            return
         self._starting_palpation = False
         # Carimba a publicação: é o que fecha a janela cega até o explorer
         # aparecer ocupado no status (ver o gate em _on_start).
@@ -4622,6 +4663,13 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 OK)
 
     def _set_status(self, text: str, color: str = TEXT_MUTED):
+        # Callbacks ROS e workers também chamam isto; widget só na thread do Tk.
+        if threading.current_thread() is not threading.main_thread():
+            try:
+                self.root.after(0, self._set_status, text, color)
+            except (RuntimeError, tk.TclError):
+                pass          # janela fechando
+            return
         self.status_var.set(text)
         try:
             self._status_lbl.config(fg=color)
@@ -4674,7 +4722,21 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
                 pass
 
     def _on_close(self):
+        # O ROBÔ primeiro: o resto do encerramento (câmera, IMU, logger, mão)
+        # chega a ~10 s, e até lá o braço seguia o que estava fazendo.
+        self._exec_stop.set()
+        self._prehome_cancel.set()
+        self._mirror_hold = True
         self._stop_event.set()
+        try:
+            self._stop_pub.publish(String(data='stop'))
+        except Exception as exc:
+            log.warning('[CLOSE] /palpation/stop não publicado: %s', exc)
+        if self._real_driver is not None:
+            try:
+                self._real_driver.stop()
+            except Exception as exc:
+                log.error('[CLOSE] parada do braço falhou: %s', exc)
         # Teleop por câmera: solta a webcam e destrói a janela de vídeo
         # antes do resto do shutdown.
         if self._cam_teleop is not None:
@@ -4747,7 +4809,7 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         if logger_proc is not None and logger_proc.poll() is None:
             try:
                 os.killpg(os.getpgid(logger_proc.pid), signal.SIGTERM)
-                logger_proc.wait(timeout=3.0)
+                logger_proc.wait(timeout=20.0)   # inclui o relatório
             except Exception:
                 pass
         # Cancela callbacks Tk pendentes — disparar após `root.destroy()`
@@ -4770,10 +4832,6 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         self._terminate_hand_subprocess()
         # Fecha sockets do CR10.
         if self._real_driver is not None:
-            try:
-                self._real_driver.stop()
-            except CR10RealDriverError:
-                pass
             try:
                 self._real_driver.close()
             except OSError:

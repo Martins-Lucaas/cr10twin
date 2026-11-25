@@ -23,8 +23,8 @@ class _DashFalso:
     essa drenagem em laço infinito.
     """
 
-    def __init__(self, resposta=b'0,{},cmd();'):
-        self.resposta = resposta
+    def __init__(self, codigo=0):
+        self.codigo = codigo
         self.sent = []
         self._pendente = []
 
@@ -40,8 +40,10 @@ class _DashFalso:
         return None
 
     def sendall(self, data):
-        self.sent.append(data.decode('ascii').strip())
-        self._pendente.append(self.resposta)
+        cmd = data.decode('ascii').strip()
+        self.sent.append(cmd)
+        # Eco do comando, como no guia V4.5.1: "ErrorID,{...},Nome(params);"
+        self._pendente.append(f'{self.codigo},{{}},{cmd};'.encode())
 
     def close(self):
         pass
@@ -94,7 +96,7 @@ def test_com_calibracao_escreve_e_seleciona_a_ferramenta(drv, monkeypatch):
 def test_um_comando_recusado_nao_derruba_os_outros(drv, monkeypatch):
     """Firmware sem algum destes responde erro; o braço segue utilizável."""
     monkeypatch.setattr(tcp_calib, 'load_offset_mm', lambda: None)
-    drv._dash.resposta = b'-10000,{},SetBackDistance();'
+    drv._dash.codigo = -10000
 
     drv.apply_runtime_config()          # não levanta
 
@@ -118,7 +120,7 @@ def test_freio_solta_a_junta_pedida(drv):
 def test_freio_recusado_com_o_braco_habilitado_vira_erro_legivel(drv):
     """O controlador devolve -1 com o braço habilitado; a tela tem de dizer
     POR QUE, senão o operador fica clicando."""
-    drv._dash.resposta = b'-1,{},BrakeControl(1,1);'
+    drv._dash.codigo = -1
 
     with pytest.raises(CR10RealDriverError) as exc:
         drv.brake(1, True)

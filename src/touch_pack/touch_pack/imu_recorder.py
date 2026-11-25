@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 import queue
 import threading
@@ -33,6 +34,8 @@ import time
 import numpy as np
 
 from .constants import ARM_JOINTS, RUNS_DIR, new_run_id
+
+log = logging.getLogger(__name__)
 
 REC_MODE_DIR = 'IMU_TRACKING'
 REAL_POLL_S = 0.05
@@ -62,6 +65,7 @@ class TrackingRecorder:
         self._meta = dict(meta, run_id=self.run_id, t_start_unix=time.time())
         self._q: queue.SimpleQueue = queue.SimpleQueue()
         self._stop = threading.Event()
+        self.error: str | None = None   # gravação morta (disco cheio etc.)
         self.rows = {'imu': 0, 'robot': 0, 'real': 0}
         self._imu_t: dict[int, list[float]] = {}
 
@@ -89,9 +93,9 @@ class TrackingRecorder:
     def imu(self, sensor_id: int, msg, t_mono: float) -> None:
         o, g, a = msg.orientation, msg.angular_velocity, msg.linear_acceleration
         st = msg.header.stamp
-        self._q.put(('imu', (round(self.rel(t_mono), 6), round(time.time(), 6),
+        self._put('imu', (round(self.rel(t_mono), 6), round(time.time(), 6),
                              sensor_id, round(st.sec + st.nanosec * 1e-9, 6),
-                             o.w, o.x, o.y, o.z, g.x, g.y, g.z, a.x, a.y, a.z)))
+                             o.w, o.x, o.y, o.z, g.x, g.y, g.z, a.x, a.y, a.z))
 
     def robot(self, t_mono: float, *, frozen: bool, stale_ids=(), published=False,
               q_cmd_deg=None, q_sim_rad=None, p_cmd_m=None, tcp_m=None,
@@ -103,14 +107,14 @@ class TrackingRecorder:
         p_cmd = (np.asarray(p_cmd_m) * 1e3).tolist() if p_cmd_m is not None else nan3
         tcp = (np.asarray(tcp_m) * 1e3).tolist() if tcp_m is not None else nan3
         nan = float('nan')
-        self._q.put(('robot', (
+        self._put('robot', (
             round(self.rel(t_mono), 6), round(time.time(), 6), int(frozen),
             ' '.join(map(str, stale_ids)), int(published),
             *(round(v, 4) for v in q_cmd), *(round(v, 4) for v in q_sim),
             *(round(v, 3) for v in p_cmd), *(round(v, 3) for v in tcp),
             nan if ik_err_mm is None else round(ik_err_mm, 3),
             nan if v_tcp_mms is None else round(v_tcp_mms, 2),
-            int(singular), int(at_limit))))
+            int(singular), int(at_limit)))
 
     # ── Threads ──────────────────────────────────────────────────────
     def _real_loop(self, read_q_rad) -> None:
@@ -121,10 +125,21 @@ class TrackingRecorder:
             except Exception:
                 q = [float('nan')] * 6   # leitura falhou — fica o buraco no CSV
             ms = (time.monotonic() - t) * 1e3
-            self._q.put(('real', (round(self.rel(t), 6), round(time.time(), 6),
-                                  *(round(v, 4) for v in q), round(ms, 2))))
+            self._put('real', (round(self.rel(t), 6), round(time.time(), 6),
+                                  *(round(v, 4) for v in q), round(ms, 2)))
+
+    def _put(self, kind: str, row: tuple) -> None:
+        if self.error is None:      # writer morto: a fila só cresceria
+            self._q.put((kind, row))
 
     def _write_loop(self) -> None:
+        try:
+            self._write_rows()
+        except OSError as exc:
+            self.error = str(exc)
+            log.error('gravação de IMU interrompida: %s', exc)
+
+    def _write_rows(self) -> None:
         t_flush = time.monotonic()
         while True:
             if time.monotonic() - t_flush >= FLUSH_S:
@@ -148,13 +163,20 @@ class TrackingRecorder:
         if self._reader is not None:
             self._reader.join(timeout=1.0)
         self._writer.join(timeout=5.0)
-        for fh in self._fh.values():
-            fh.close()
+        try:
+            for fh in self._fh.values():
+                fh.close()
+        except OSError as exc:
+            self.error = self.error or str(exc)
+        self._meta['error'] = self.error
         self._meta['t_end_unix'] = time.time()
         self._meta['duration_s'] = round(self.rel(time.monotonic()), 3)
         self._meta['rows'] = dict(self.rows)
         self._meta['imu_summary'] = self.imu_summary()
-        self._write_meta()
+        try:
+            self._write_meta()
+        except OSError as exc:
+            self.error = self._meta['error'] = self.error or str(exc)
         return self._meta
 
     def imu_summary(self) -> dict:

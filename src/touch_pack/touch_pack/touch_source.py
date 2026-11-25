@@ -152,7 +152,7 @@ class TouchSensorSource:
     leitura honesta."""
 
     def __init__(self, port: Optional[str] = None,
-                 on_sample: Optional[Callable[[float], None]] = None,
+                 on_sample: Optional[Callable[..., None]] = None,
                  udp_broadcast: bool = True,
                  udp_ip: str = TOUCH_UDP_BROADCAST_IP,
                  udp_port: int = TOUCH_SENSOR_UDP_PORT,
@@ -287,7 +287,7 @@ class TouchSensorSource:
     def _ingest(self, text: str) -> tuple[list, list]:
         """Acumula ``text`` no buffer, fatia em linhas e parseia as COMPLETAS
         sob um único lock (batelado). Retorna (linhas_completas, pending), onde
-        pending são os I_final a reenviar/entregar FORA do lock."""
+        pending são as amostras (ver _pending_row) a entregar FORA do lock."""
         self._buffer += text
         lines = self._buffer.split("\n")
         self._buffer = lines[-1]
@@ -330,11 +330,11 @@ class TouchSensorSource:
                     pass
             # Reenvio UDP escalar (:8081) e callback ROS FORA do lock — rede/ROS
             # não podem segurar o lock de dados nem bloquear a leitura da serial.
-            for i_final in pending:
+            for i_final, volt, t_stm in pending:
                 self._broadcast(i_final)
                 if self._on_sample is not None:
                     try:
-                        self._on_sample(i_final)
+                        self._on_sample(i_final, volt, t_stm)
                     except Exception:
                         pass
 
@@ -402,7 +402,7 @@ class TouchSensorSource:
             if not self.has_total:
                 agg = self._frame_aggregate()
                 self.I_final_data.append((time.monotonic(), agg))
-                pending.append(agg)
+                pending.append(self._pending_row(agg))
             return
 
         if line.startswith("DATA"):
@@ -431,7 +431,7 @@ class TouchSensorSource:
                     if not self.has_total:
                         agg = self._frame_aggregate()
                         self.I_final_data.append((time.monotonic(), agg))
-                        pending.append(agg)
+                        pending.append(self._pending_row(agg))
 
         # CN_* ANTES de RA/SA: "CN_RA"/"CN_SA" também começam com "CN", mas
         # o teste startswith("RA"/"SA") não os pega.
@@ -492,7 +492,12 @@ class TouchSensorSource:
                 if not np.isfinite(i_final):
                     return
                 self.I_final_data.append((time.monotonic(), i_final))
-                pending.append(i_final)
+                pending.append(self._pending_row(i_final))
+
+    def _pending_row(self, i_final: float) -> tuple:
+        """(escalar, tensões, t do STM32) DESTE frame — um chunk traz vários, e
+        ler o estado depois dele daria a todos os taxels do último."""
+        return i_final, self.voltage_frame.copy(), float(self.current_time)
 
     def _frame_aggregate(self) -> float:
         """Sinal escalar de 1 kHz para o sensor SEM linha TOTAL (5×5)."""
@@ -510,14 +515,6 @@ class TouchSensorSource:
             sock.sendto(packet, self._udp_addr)
         except Exception:
             pass
-
-    def latest_voltages(self) -> np.ndarray:
-        """Cópia barata só da matriz de tensões (rows×cols), sob lock. Para o
-        gravador a 1 kHz, que não precisa do snapshot completo (spikes etc.) e
-        não pode pagar a cópia O(N) das listas a cada amostra. Devolve o último
-        frame COMPLETO (voltage_frame), não a matriz parcial em preenchimento."""
-        with self._lock:
-            return self.voltage_frame.copy()
 
     def latest_voltages_and_time(self) -> tuple[np.ndarray, float]:
         """Tensões (rows×cols) + o timestamp do STM32 (current_time, s) da

@@ -26,7 +26,8 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            git python3-pip python3-colcon-common-extensions python3-rosdep
+            git python3-pip python3-colcon-common-extensions python3-rosdep \
+            xvfb xauth
 
       - name: Checkout (com submódulos — src/eci_ros)
         uses: actions/checkout@v4
@@ -34,7 +35,7 @@ jobs:
           submodules: recursive
 
       - name: pip — numpy<2 é obrigatório (ABI do cv_bridge do Humble)
-        run: pip install --no-cache-dir "numpy<2" pyserial matplotlib
+        run: pip install --no-cache-dir "numpy<2" pyserial matplotlib trimesh scipy pandas pillow
 
       - name: rosdep — resolve o que os package.xml declaram
         shell: bash
@@ -49,14 +50,45 @@ jobs:
           source /opt/ros/humble/setup.bash
           colcon build --symlink-install --event-handlers console_direct+
 
-      # Smoke básico: só o núcleo puro (câmera + cinemática). Os demais
-      # testes continuam no repo (src/touch_pack/test/) e podem ser rodados
-      # à mão com `colcon test` — não travam o CI.
+      # touch_pack: só os testes puros (sem nó) e a trava. test_vtk_render derruba
+      # o processo sem display: fica fora. Os demais
+      # continuam no repo (src/touch_pack/test/) e rodam à mão.
       - name: smoke tests
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
-          python3 -m pytest -q \
+          python3 -m pytest -q -rs \
+            src/touch_pack/test/test_controller_config.py \
+            src/touch_pack/test/test_driver_confirmacao.py \
+            src/touch_pack/test/test_explorer_split.py \
+            src/touch_pack/test/test_ft_charts.py \
+            src/touch_pack/test/test_ft_frame.py \
+            src/touch_pack/test/test_ft_hkvl56.py \
+            src/touch_pack/test/test_ft_modbus.py \
+            src/touch_pack/test/test_ft_polled.py \
+            src/touch_pack/test/test_ft_stats.py \
+            src/touch_pack/test/test_ft_tcp.py \
+            src/touch_pack/test/test_gui_split.py \
             src/touch_pack/test/test_hand_camera_teleop.py \
-            src/touch_pack/test/test_kinematics.py
+            src/touch_pack/test/test_hand_connect_ready.py \
+            src/touch_pack/test/test_imu_math.py \
+            src/touch_pack/test/test_imu_recorder.py \
+            src/touch_pack/test/test_kinematics.py \
+            src/touch_pack/test/test_manip3d.py \
+            src/touch_pack/test/test_pack_lock.py \
+            src/touch_pack/test/test_palp_char.py \
+            src/touch_pack/test/test_plane_probe.py \
+            src/touch_pack/test/test_real_driver_proto.py \
+            src/touch_pack/test/test_slide_force_loop.py \
+            src/touch_pack/test/test_tcp_calib.py \
+            src/touch_pack/test/test_tool_select.py \
+            src/touch_pack/test/test_touch_sensor_spec.py
+
+      # rehab_pack inteiro: segura uma pessoa. O Xvfb é para o painel Tk.
+      - name: rehab_pack
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          xvfb-run -a python3 -m pytest -q -rs src/rehab_pack/test

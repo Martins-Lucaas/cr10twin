@@ -41,6 +41,7 @@ from __future__ import annotations
 import collections
 import json
 import threading
+import math
 import time
 from contextlib import contextmanager
 
@@ -347,6 +348,7 @@ class FtReceiverNode(Node):
     _CAPTURE_WIN_N = 800
     # Estabilidade por DERIVA (mediana da 2ª metade vs a 1ª), não por
     # pico-a-pico: o ptp cresce com a janela mesmo em sinal estacionário.
+    _TARE_MAX_AGE_S = 0.5    # idade máxima da amostra mais nova do tare
     _TARE_STABLE_N = 0.50
     # Auto-zero lento: cancela deriva térmica sem comer força real. Só atua em
     # repouso E dentro da banda morta — as duas condições, senão ele zeraria o
@@ -385,7 +387,10 @@ class FtReceiverNode(Node):
         """Tare PEDIDO (botão da GUI): exige dados e estabilidade."""
         with self._lock:
             win = list(self._buf)[-self._CAPTURE_WIN_N:]
-        if len(win) < 30:
+            # Janela de antes de o cabo cair não é o zero de agora.
+            viva = (self._rate_win and time.perf_counter() - self._rate_win[-1]
+                    < self._TARE_MAX_AGE_S)
+        if len(win) < 30 or not viva:
             self._publish_tare_result('err', 'no_data', len(win))
             return
         ok, drift = self._apply_tare(win)
@@ -428,6 +433,11 @@ class FtReceiverNode(Node):
             f'referência {ref:+.3f} N (deriva {drift:.3f} N na janela).')
         return True
 
+    def _forget_window(self) -> None:
+        with self._lock:
+            self._buf.clear()
+            self._rate_win.clear()
+
     # ── Caminho da amostra ────────────────────────────────────────────
     def _on_sample(self, seq: int, t_us: int, vals: tuple) -> None:
         """Um quadro do FA7155. Chamado NA THREAD 'ft-serial' — os publishers
@@ -435,7 +445,8 @@ class FtReceiverNode(Node):
         toca."""
         # Quadro que passou no CRC mas traz valor fora de qualquer física
         # possível: sincronismo por azar. Fora antes de entrar no filtro.
-        if (any(abs(v) > _FORCE_ABSURD_N for v in vals[:3])
+        if (not all(math.isfinite(v) for v in vals)
+                or any(abs(v) > _FORCE_ABSURD_N for v in vals[:3])
                 or any(abs(v) > _TORQUE_ABSURD_NM for v in vals[3:])):
             self._absurd += 1
             return
@@ -447,6 +458,8 @@ class FtReceiverNode(Node):
             d_us = (t_us - self._last_t_us) & 0xFFFFFFFF
             if 0 < d_us <= 500_000:
                 dt = d_us / 1e6
+            elif d_us > 500_000:
+                self._forget_window()      # buraco: o que havia é passado
         self._last_t_us = t_us
 
         if self._filter_on:
@@ -564,6 +577,8 @@ class FtReceiverNode(Node):
                  and (time.monotonic() - src.last_rx) < 3.0)
         with self._lock:
             self._link_ok = alive
+        if not alive:
+            self._forget_window()
         if not alive and not self._last_rx_warn:
             self._last_rx_warn = True
             self.get_logger().warn(
@@ -730,6 +745,7 @@ class FtReceiverNode(Node):
             with self._lock:
                 self._tare = [0.0] * len(FT_AXES)
                 self._tare_done = False
+                self._buf.clear()      # amostras de antes do zero
             self._tared_pub.publish(Bool(data=False))
             return True, 'zero aplicado no sensor; tare do host limpo', {}
 
@@ -818,7 +834,8 @@ class FtReceiverNode(Node):
         if novo == FT_MODE_POLLED:
             self._polled = FtPolledDriver(
                 self._serial, slave_id=self._modbus_slave,
-                timeout_s=self._modbus_timeout, on_sample=self._on_sample)
+                timeout_s=self._modbus_timeout, on_sample=self._on_sample,
+                interval_s=self._poll_interval)
             self._polled.start()
             teto = ft_polled_max_rate_hz(self._baud)
             detalhe = (f'polled ligado. Teto do fio {teto:.0f} Hz a '

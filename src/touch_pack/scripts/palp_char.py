@@ -77,7 +77,8 @@ def rates(d: dict) -> dict:
     dz = np.abs(np.diff(s.tcp_z.values))
     out = {'lc_hz': 1e6 / float(np.median(np.diff(s.lc_t_us))),
            'pose_hz': 1 / float(np.median(np.diff(pose.t_unix))),
-           'z_quantum_um': float(dz[dz > 0].min() * 1e6)}
+           'z_quantum_um': (float(dz[dz > 0].min() * 1e6)
+                            if (dz > 0).any() else float('nan'))}
     if 'w' in d:
         out['wrench_hz'] = 1 / float(np.median(np.diff(d['w'].t_unix)))
     if 'c' in d:
@@ -90,12 +91,17 @@ def contact(d: dict) -> dict:
     s = d['s']
     ks, k_lo, k_hi, ind = [], [], [], []
     for g in _segments(s.phase.isin([PH_DESC, PH_HOLD]).values, 100):
-        z = s.tcp_z.values[g] * 1e3
+        xyz = s[['tcp_x', 'tcp_y', 'tcp_z']].values[g] * 1e3
         f = s.force_net_n.values[g]
         c = np.flatnonzero(f > 0.3)
         if c.size < 20:
             continue
-        pen = z[c[0]] - z[c]                # mm, + = para dentro
+        # Penetração ao longo da DESCIDA (ataque inclinado não é Z); descida
+        # livre curta demais para dar direção cai na vertical.
+        ax = xyz[c[0]] - xyz[0]
+        n = np.linalg.norm(ax)
+        ax = ax / n if n > 1.0 else np.array([0.0, 0.0, -1.0])
+        pen = (xyz[c] - xyz[c[0]]) @ ax     # mm, + = para dentro
         fc = f[c]
         if np.ptp(pen) < 0.02:
             continue
@@ -163,7 +169,6 @@ def sliding(d: dict) -> dict:
     med = np.median([len(g) for g in strokes])
     strokes = [g for g in strokes if len(g) >= 0.5 * med]
     fn = -w.ft_fz_n.values                   # sinal do sensor: − = compressão
-    ft = (w.ft_fy_n if ax == 'tcp_y' else w.ft_fx_n).values
     nps = min(min(len(g) for g in strokes), 512)
     fr = welch(fn[strokes[0]][:nps], fs=fs, nperseg=nps)[0]
     P = np.mean([welch(detrend(fn[g]), fs=fs, nperseg=nps)[1]
@@ -171,8 +176,10 @@ def sliding(d: dict) -> dict:
     dirn = np.array([sg[g[0]] for g in strokes])
     fm = np.array([fn[g].mean() for g in strokes])
     slope = np.array([np.polyfit(pos[g], fn[g], 1)[0] for g in strokes])
-    mu = np.array([abs(ft[g].mean()) / max(fn[g].mean(), 1e-3)
-                   for g in strokes])
+    # Módulo tangencial: os eixos do sensor giram com a J6 em relação ao mundo.
+    fx, fy = w.ft_fx_n.values, w.ft_fy_n.values
+    mu = np.array([np.hypot(fx[g].mean(), fy[g].mean())
+                   / max(fn[g].mean(), 1e-3) for g in strokes])
     b = (fr >= 2) & (fr <= 80)
     out = {'n_strokes': len(strokes), 'stroke_s': nps / fs, 'df_Hz': float(fr[1]),
            'v_cmd_mms': v_cmd,
@@ -214,7 +221,11 @@ def delay(d: dict) -> dict:
     if len(tt) < 400:
         return {}
     # O comando vale para t_unix + time_from_start.
-    cm = np.interp(tt, c.t_unix + c.cmd_tfs_s, c[f'cmd_tcp_{ax}'])
+    # Lote longo seguido de comandos curtos deixa x fora de ordem (np.interp
+    # não avisa).
+    tc = (c.t_unix + c.cmd_tfs_s).values
+    o = np.argsort(tc, kind='stable')
+    cm = np.interp(tt, tc[o], c[f'cmd_tcp_{ax}'].values[o])
     me = np.interp(tt, s.t_unix, s[f'tcp_{ax}'])
     a, b = np.gradient(cm), np.gradient(me)
     xc = correlate(b - b.mean(), a - a.mean(), 'full')
@@ -264,7 +275,11 @@ def main(argv: list[str]) -> None:
     runs = [a.rstrip('/') for a in argv if not a.startswith('--')]
     rows = []
     for r in runs:
-        res = analyse(r, do_plot)
+        try:
+            res = analyse(r, do_plot)
+        except Exception as exc:     # um run ruim não derruba a tabela
+            print(f'== {r}: FALHOU ({type(exc).__name__}: {exc})')
+            continue
         print(f'== {r}\n{json.dumps(res, indent=1)}')
         sl = res['sliding']
         rows.append((r, res['contact'].get('K_sec_Nmm'), sl.get('v_cmd_mms'),

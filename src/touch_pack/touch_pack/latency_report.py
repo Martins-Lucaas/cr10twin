@@ -55,9 +55,8 @@ def xcorr_lag(sig_s: np.ndarray, sig_r: np.ndarray, dt: float,
               max_lag: int) -> tuple[float, float]:
     """Atraso (s) de `sig_r` em relação a `sig_s`, com refino sub-amostra.
 
-    Reimplementa `LatencyProbe._xcorr_lag` para que o relatório rode sem ROS
-    (o módulo do probe importa rclpy no topo). Qualquer mudança aqui tem de
-    espelhar lá — `test_latency_report.py` compara as duas.
+    Fonte única (`LatencyProbe` importa daqui): o relatório roda sem ROS
+    (o módulo do probe importa rclpy no topo).
     """
     s = sig_s - sig_s.mean()
     r = sig_r - sig_r.mean()
@@ -216,27 +215,26 @@ _TAB_TAIL = (r'\end{tabular}' '\n'
              r'\end{table}' '\n')
 
 
-def _tex_condition_table(by_cond: dict[str, dict]) -> str:
+def _tex_condition_table(by_cond: dict[str, dict], n_cap: int) -> str:
     tex = _TAB_HEAD % (
         'Real-to-Sim mirroring: latency and lag-compensated kinematic '
         'agreement, by excitation regime',
         '|p{1.75cm}|c|c|c|c|')
     tex += (r'\textbf{Excitation} & \textbf{N} & \textbf{$|\Delta t|$ (ms)} & '
             r'\textbf{MAE (deg)} & \textbf{RMSE (deg)} \\' '\n' r'\hline' '\n')
-    label = {'drag teach': 'Drag-teach (0.4--33.2 deg)',
-             'GUI jog': 'GUI jog (2.9--3.9 deg)'}
+    label = {'drag teach': 'Drag-teach', 'GUI jog': 'GUI jog'}
     for cond in ('drag teach', 'GUI jog'):
         a = by_cond.get(cond)
         if a is None:
             continue
-        tex += (f'{label.get(cond, cond)} & {a["n"]} & '
+        tex += (f'{label[cond]} ({a["amp_min"]:.1f}--{a["amp_max"]:.1f} deg) '
+                f'& {a["n"]} & '
                 f'${a["lag_m"]:.1f} \\pm {a["lag_s"]:.1f}$ & '
                 f'${a["mae_m"]:.3f} \\pm {a["mae_s"]:.3f}$ & '
                 f'${a["rmse_m"]:.3f} \\pm {a["rmse_s"]:.3f}$ \\\\' '\n'
                 r'\hline' '\n')
     tex += _TAB_TAIL % 'tab:latency'
-    tex += ('% N = pares (captura, junta). Ambos os regimes medem o MESMO\n'
-            '% caminho Real-to-Sim: o probe detectou real_to_sim nas 7 capturas.\n')
+    tex += f'% N = pares (captura, junta), de {n_cap} captura(s).\n'
     return tex
 
 
@@ -303,7 +301,8 @@ def write_outputs(rows: list[dict], out_dir: str) -> tuple[str, str]:
     with open(tex_path, 'w') as fh:
         fh.write('% Gerado por `ros2 run touch_pack latency_report`.\n'
                  '% NÃO editar à mão — regerar após cada campanha.\n\n')
-        fh.write(_tex_condition_table(by_cond))
+        fh.write(_tex_condition_table(
+            by_cond, len({r['captura'] for r in rows})))
         fh.write('\n')
         fh.write(_tex_joint_table(by_joint, cond_main, joint_order, subsystem))
     return csv_path, tex_path

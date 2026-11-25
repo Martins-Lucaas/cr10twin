@@ -654,7 +654,6 @@ def launch_setup(context, *args, **kwargs):
     explorer_node = Node(
         package='touch_pack', executable='tactile_explorer',
         parameters=[{
-            'arm_base_z':   0.78,
             'use_sim_time': True,
             'learned_contact_persist': learned_contact_persist,
             'servoj_period_s': servoj_period_s,
@@ -742,6 +741,8 @@ def launch_setup(context, *args, **kwargs):
             package='touch_pack', executable='mirror_node',
             parameters=[{'robot_ip': robot_ip,
                          'servoj_period_s': servoj_period_s,
+                         'payload_kg': payload_kg,
+                         'payload_cog_z_mm': payload_cog_z_mm,
                          'feedback_port': feedback_port}]))
     # Explorer precisa da action do cr10_group_controller — sobe por último.
     late_nodes  = [explorer_node]

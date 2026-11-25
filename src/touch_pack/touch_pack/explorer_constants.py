@@ -40,6 +40,29 @@ _SLIDING_SAFETY_M   = 0.30   # m: distância máxima de segurança no SLIDING
 # braço tem inércia, a parada dispara com MARGEM (_FORCE_SAFE_LIMIT_N) para
 # o overshoot residual não ultrapassar os 15 N.
 _FORCE_SAFE_LIMIT_N = 12.0   # N: margem de 3 N abaixo do teto de 15 N
+# Força LATERAL (Fx, Fy da FA7155, tarada). Mesmo teto do Fz em todos os modos:
+# o atrito legítimo do SLIDING fica abaixo dele com μ até 1,2 no setpoint
+# máximo (10 N), e em ar livre o que aparece ali é o peso da ponteira girando
+# (poucos newtons). CONSERVADOR E NÃO MEDIDO em bancada: validar com a
+# ponteira montada antes de baixar.
+_LATERAL_SAFE_LIMIT_N = 12.0
+# Um excesso visto por QUALQUER amostra vale por este tempo: a célula entrega
+# ~13 leituras por tick de controle e a guarda só olharia a última.
+_FORCE_LATCH_S = 0.060
+
+# Chegada do movimento em ar livre: o 'done' exige a pose MEDIDA no alvo, não
+# só o tempo esgotado (o JTC pode ter descartado a trajetória).
+_ARRIVE_TOL_M = 0.002
+_ARRIVE_TOL_RAD = 0.02
+_ARRIVE_TIMEOUT_S = 2.0
+# Passado o prazo nominal, o braço ainda andando (> isto a cada
+# _ARRIVE_TIMEOUT_S) é simulação lenta, não falha; o teto é RTF ≈ 0,1.
+_ARRIVE_MOVE_RAD = 0.002
+_ARRIVE_RTF_MAX = 9.0
+
+# Giro do punho até o eixo de ataque (≤ 30°): um salto maior que isto numa
+# junta é outro ramo da IK (ver _rotate_to_attack).
+_ATTACK_MAX_JOINT_JUMP_DEG = 45.0
 
 # Estimador de rigidez do contato p/ a regulação quase-estática:
 # Δx = relax·(alvo−fz)/K, com K_est=ΔF/Δx estimado online em REPOUSO
@@ -219,6 +242,10 @@ _Z_HAT = np.array([0.0, 0.0, 1.0])
 # sobe pouco) e de perder o contato de raspão (recupera em poucos µm). O que
 # separa os três é o CURSO livre acumulado depois de já ter havido contato.
 _TARGET_LOST_FREE_M = 0.0015   # 1,5 mm de avanço livre após contato firmado
+# O mesmo curso, agora EM contato: força parada apesar do comando (braço real
+# alarmado com a célula viva). 60 mN é 4/5 do que o contato mais mole admitido
+# (_K_MIN_NM) devolve em 1,5 mm, e 30σ do canal filtrado.
+_STALL_DF_N = 0.060
 # Queda ABRUPTA: da ordem do setpoint para abaixo do limiar de contato dentro
 # desta janela. Relaxação viscoelástica é lenta e não cai abaixo do contato;
 # retirar a amostra é instantâneo.
@@ -798,6 +825,11 @@ _FORCE_STALE_S = 0.5
 # sessão anterior. Entrega real leva milissegundos; 10 s é folgado para
 # qualquer atraso legítimo e curto para qualquer reinício.
 _START_MAX_AGE_S = 10.0
+
+# Tetos dos campos de velocidade do /palpation/start (os da GUI), para o
+# publisher que não passa por ela.
+_SLIDE_SPEED_MAX_MMS = 30.0
+_APPROACH_SPEED_MAX_MMS = 30.0
 
 
 _CTRL_DT    = 0.030   # período de cada passo (33 Hz)

@@ -92,6 +92,7 @@ class FakeCR10:
                 p = bytearray(1440)
                 struct.pack_into('<H', p, 0, 1440)
                 struct.pack_into('<Q', p, 24, self.mode)
+                struct.pack_into('<Q', p, 48, 0x0123456789ABCDEF)   # TestValue
                 blip, self.zero_blip = self.zero_blip > 0, max(0, self.zero_blip - 1)
                 struct.pack_into('<6d', p, 432, *(np.zeros(6) if blip else self.q))
                 c.sendall(p)

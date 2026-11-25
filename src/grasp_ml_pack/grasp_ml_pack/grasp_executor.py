@@ -1035,6 +1035,9 @@ class GraspExecutorNode(Node):
 
 
 def main(args=None):
+    # trava contra o rehab_pack (ADR 0003): quem comanda o braço divide a do touch_pack
+    from touch_pack.pack_lock import acquire_or_exit
+    acquire_or_exit('touch_pack')
     rclpy.init(args=args)
     node = GraspExecutorNode()
     executor = MultiThreadedExecutor(num_threads=4)

@@ -30,11 +30,14 @@ def _ros():
 def node(_ros):
     from touch_pack.tactile_explorer import TactileExplorer
     n = TactileExplorer()
-    n._q_now = lambda: np.deg2rad([0, 0, -90, 0, 90, 0]).astype(float)
+    # Braço que EXECUTA: o 'done' exige a pose medida no alvo.
+    n.q_sim = np.deg2rad([0, 0, -90, 0, 90, 0]).astype(float)
+    n._q_now = lambda: n.q_sim.copy()
     n._stream_q = lambda *a, **k: None
     n._settle = lambda *a, **k: None
     n._speed_factor_pct = 10.0
-    n._arm_traj_pub.publish = lambda msg: None
+    n._arm_traj_pub.publish = lambda msg: setattr(
+        n, 'q_sim', np.array(msg.points[-1].positions))
     # Célula viva e descarregada. O carimbo é estático num teste, e o
     # trânsito dura mais que _FORCE_STALE_S de relógio — em operação quem o
     # renova é o callback da célula, a 10–80 Hz. O teste do 'stale' restaura
@@ -140,7 +143,7 @@ def test_home_replaneja_depois_da_pausa(node):
     que ninguém escolheu."""
     tentativas = []
 
-    def _once(q_target):
+    def _once(q_target, require_fresh=True):
         tentativas.append(q_target)
         return 'paused' if len(tentativas) == 1 else 'done'
 

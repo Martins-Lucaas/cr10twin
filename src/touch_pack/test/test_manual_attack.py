@@ -173,7 +173,7 @@ def frozen_node(node):
     node._force_stale_abort = lambda *a, **k: False
     node._send_hand_pose = lambda *a, **k: None
     node._unload_before_home = lambda: None
-    node._joint_batch_to = lambda q: pytest.fail('foi à HOME')
+    node._joint_batch_to = lambda q, **k: pytest.fail('foi à HOME')
     threading.Timer(0.2, node._cb_freeze, args=(None,)).start()
     yield node
     node._busy.clear()
@@ -220,7 +220,7 @@ def test_run_novo_esquece_o_recuo_do_run_congelado(node):
 
 def test_home_refaz_o_zero_da_pose_inclinada(node):
     log = []
-    node._joint_batch_to = lambda q: True
+    node._joint_batch_to = lambda q, **k: True
     node._tare_here = lambda label: log.append(label) or True
     node._tare_tilted = True
     assert node._phase_goto_home() is True
@@ -230,7 +230,7 @@ def test_home_refaz_o_zero_da_pose_inclinada(node):
 
 
 def test_home_nao_segue_com_zero_errado(node):
-    node._joint_batch_to = lambda q: True
+    node._joint_batch_to = lambda q, **k: True
     node._tare_here = lambda label: False
     node._tare_tilted = True
     assert node._phase_goto_home() is False

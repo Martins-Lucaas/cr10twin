@@ -252,7 +252,6 @@ def ik_step(q: np.ndarray,
     q = np.clip(np.asarray(q, dtype=float).copy(), JOINT_MIN, JOINT_MAX)
     p_target = np.asarray(p_target, dtype=float).flatten()
     I3, I6 = np.eye(3), np.eye(6)
-    singular = False
     at_limit = False
     pos_err = float('inf')
     # Junta travada = coluna zerada no Jacobiano: o DLS dá dq = 0 nela.
@@ -270,11 +269,7 @@ def ik_step(q: np.ndarray,
             if pos_err > max_lin_m:
                 dp = dp * (max_lin_m / pos_err)
             J = jacobian(q, T_end=T_end)[:3, :] * free
-            try:
-                dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * I3, dp)
-            except np.linalg.LinAlgError:
-                singular = True
-                break
+            dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * I3, dp)
         else:
             dw = rot_error(T[:3, :3], R_lock)
             ang_err = float(np.linalg.norm(dw))
@@ -289,11 +284,7 @@ def ik_step(q: np.ndarray,
             J = jacobian(q, T_end=T_end) * free
             J[3:, :] *= ORI_WEIGHT
             tw = np.concatenate([dp, ORI_WEIGHT * dw])
-            try:
-                dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * I6, tw)
-            except np.linalg.LinAlgError:
-                singular = True
-                break
+            dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * I6, tw)
 
         dq = np.clip(dq, -max_dq, max_dq)
         q_next = np.clip(q + dq, JOINT_MIN, JOINT_MAX)
@@ -304,6 +295,13 @@ def ik_step(q: np.ndarray,
 
     T = forward_kinematics(q, T_end=T_end)
     pos_err = float(np.linalg.norm(p_target - T[:3, 3]))
+    # O DLS é positivo-definido e nunca falha: singular é onde o amortecimento
+    # domina a solução (menor valor singular do BRAÇO, sem as travas, abaixo
+    # de λ). Com J5 a ~10° do alinhamento do punho já acende.
+    J = jacobian(q, T_end=T_end)
+    if R_lock is None:
+        J = J[:3, :]
+    singular = bool(np.linalg.svd(J, compute_uv=False)[-1] < lam)
     return IKResult(q=q, pos_err_m=pos_err, singular=singular,
                     at_limit=at_limit, manip=manipulability(q))
 
@@ -446,6 +444,7 @@ class Manip3DView(tk.Canvas):
         self._scene_coarse = None
         self._gpu = None                # VtkRobotRenderer | None
         self._exact = False
+        self.on_gpu_lost = None         # quem recarrega a malha reduzida
         self._extra_joints: dict = {}   # juntas fora do braço (mão COVVI)
         self._photo = None              # ImageTk.PhotoImage reaproveitada
         self._img_item = None
@@ -522,11 +521,6 @@ class Manip3DView(tk.Canvas):
         if not force and np.allclose(q_new, self._q, atol=1e-5):
             return
         self._q = q_new
-        self._pts = skeleton_points(self._q, self._T_end)
-        self._dirty = True
-
-    def set_end_effector(self, T_end: np.ndarray) -> None:
-        self._T_end = np.asarray(T_end, dtype=float)
         self._pts = skeleton_points(self._q, self._T_end)
         self._dirty = True
 
@@ -814,9 +808,13 @@ class Manip3DView(tk.Canvas):
                 return True
             except Exception as exc:
                 # Contexto GL perdido (tela bloqueada, driver reiniciado):
-                # solta a GPU e segue em software no próximo quadro.
+                # solta a GPU. A malha exata no rasterizador levaria ~1 s na
+                # thread do Tk: esqueleto até a reduzida chegar.
                 self._release_gpu()
                 self.scene_status = f'GPU render lost ({exc})'
+                if self.on_gpu_lost is not None:
+                    self.on_gpu_lost()
+                return False
         try:
             scene = self._active_scene()
             img = Image.new('RGB', (w, h), PANEL)

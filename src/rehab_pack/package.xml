@@ -11,8 +11,8 @@
   <license>MIT</license>
 
   <exec_depend>cra_description</exec_depend>
-  <!-- só para o hardware real: real_driver (CR10), ft_receiver (FA7155) e
-       real_pose_sync. O modo sim não os importa. -->
+  <!-- pack_lock (todo main() e o launch), e no hardware real: real_driver
+       (CR10) e ft_receiver (FA7155). -->
   <exec_depend>touch_pack</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>xacro</exec_depend>
@@ -23,6 +23,9 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-tk</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
@@ -33,6 +36,9 @@
   <exec_depend>gazebo_ros2_control</exec_depend>
   <!-- libgazebo_ros_ft_sensor.so (sim_ft:=true) -->
   <exec_depend>gazebo_plugins</exec_depend>
+
+  <!-- scripts/check_sim_ft.py -->
+  <exec_depend>gazebo_msgs</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

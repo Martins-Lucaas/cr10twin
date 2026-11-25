@@ -18,6 +18,9 @@ FORCE_STALE_S = 0.5
 TORQUE_ABORT_LIMIT_NM = 2.0
 TARE_MAX_TILT_RAD = 0.0873      # 5°: girou mais que isso desde a tara, tare de novo
 SIM_LAG_MAX_RAD = 0.15          # simulado longe do comandado: outro nó move o braço
+TILT_MAX_RAD = math.radians(2.0)   # mastro girado além disso da orientação de partida: LIMITE
+JS_STALE_S = 0.1                # /joint_states mais velho que isso em MIRROR: Gazebo travou
+JS_STALE_SIM_S = 0.5            # idem só no simulado (sem robô real seguindo)
 TABLE_HALF_XY = (0.30, 0.55)    # meia mesa (frame world), de rehab_lab.world
 LINK_CLEARANCE_M = 0.10         # raio dos elos + folga
 ENABLE_MAX_N = 3.0              # acima disto não habilita: mão no mastro ou tara ruim
@@ -43,11 +46,15 @@ SYNC_TOL_START_RAD = 0.0524     # 3°
 SYNC_TOL_RUN_RAD = 0.1396       # 8°
 GUI_STALE_S = 1.0               # painel calado por mais que isso, com o braço solto: aborta
 REAL_STATUS_STALE_S = 1.0       # status mais velho que isso = rehab_mirror fora do ar
+SERVOJ_PERIOD_RANGE_S = (0.02, 0.1)   # ServoJ: o mínimo do firmware é 20 ms
+SERVO_STEP_SLACK = 2.0            # passo máximo do ServoJ = JOG_MAX_DEG_S × (período × folga + atraso do laço)
+FEEDBACK_TIMEOUT_MAX = 5          # leituras perdidas SEGUIDAS até dar a conexão por perdida
 ROBOT_MODES_OK = (5, 7, 8)        # RobotMode V4: habilitado, rodando, movimento único
 SIM_ROBOT_IP = 'sim'            # robot_ip:='sim' → robô real simulado (ensaio sem hardware)
 
 # ── Conexão com o robô real pela tela (como o cabeçalho do touch_pack) ──────
 NODE_MIRROR = 'rehab_mirror'
+ARM_PUBS = {'rehab_admittance', NODE_MIRROR}   # únicos nós que podem publicar em T_ARM_CMD
 REAL_MODES = ('SIM_ONLY', 'MIRROR')            # o mesmo par do seletor do touch_pack
 S_REAL_CONNECT = '/rehab/real/connect'         # SetBool: True conecta ao robot_ip atual, False desconecta
 S_REAL_MODE = '/rehab/real/mode'               # SetBool: True = MIRROR, False = SIM_ONLY
@@ -76,6 +83,8 @@ TCP_OFFSET_M = 0.1067           # flange → centro da empunhadura
 # ── Tópicos ─────────────────────────────────────────────────────────────────
 T_SIM_WRENCH = '/sim/load_cell/wrench'
 T_REAL_WRENCH = '/ft_sensor/wrench'
+T_REAL_TARED = '/load_cell/tared'   # Bool do ft_receiver (1 Hz e ao zerar)
+T_REAL_TARE_RESULT = '/load_cell/tare_result'   # ft_receiver: 'ok;...' = o zero dele mudou
 T_FT = '/rehab/ft/wrench'
 T_TARED = '/rehab/ft/tared'   # Float64 latched: time.monotonic() da tara; 0 = sem tara
 T_FT_CONFIG = '/rehab/ft/config'   # String JSON latched {ft_sign, ft_yaw_deg}: o que o force_source usa
@@ -91,8 +100,9 @@ T_EVENT = '/rehab/event'
 T_GUI_ALIVE = '/rehab/gui/alive'     # Empty a cada volta do laço do Tk (~30 Hz)
 T_SESSION_META = '/rehab/session/meta'
 T_SESSION_SUMMARY = '/rehab/session/summary'
+T_SESSION_REC = '/rehab/session/recording'   # String a 2 Hz: pasta em gravação ('' = nenhuma)
 T_EMG = '/rehab/emg'
-T_REAL_STATUS = '/rehab/real/status'   # JSON do rehab_mirror (10 Hz)
+T_REAL_STATUS = '/rehab/real/status'   # JSON do rehab_mirror (até 33 Hz)
 T_JOG_GOTO = '/rehab/jog/goto'         # Float64MultiArray: 6 juntas em rad (URDF) + velocidade em %
 T_JOG_RESULT = '/rehab/jog/result'     # String JSON {ok, motivo, duracao_s, fim?}
 
@@ -122,7 +132,7 @@ TICK_FIELDS = (
 
 EVENT_TYPES = ('TASK_START', 'TARGET_ON', 'TARGET_HIT', 'TARGET_MISS',
                'TUNNEL_EXIT', 'TUNNEL_ENTER', 'TASK_END', 'MARK', 'ESTOP',
-               'ABORT', 'PARAMS')
+               'ABORT', 'RESET', 'PARAMS', 'ROBO')
 
 # ── Colunas dos CSV de sessão ───────────────────────────────────────────────
 SAMPLES_COLUMNS = (TICK_FIELDS

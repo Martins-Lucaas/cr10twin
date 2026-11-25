@@ -1,5 +1,8 @@
 """Trava entre touch_pack e rehab_pack: com um aberto, o outro não controla nada.
 
+hand_pack e grasp_ml_pack, que também comandam o braço, tomam a do touch_pack:
+convivem com ele e entre si, e nunca com o rehab_pack.
+
 Cada processo de controle segura um flock COMPARTILHADO no arquivo do seu pack
 (vários nós do mesmo pack convivem) e recusa se alguém segura o do outro pack.
 O kernel solta o flock quando o processo morre: não há trava órfã.
@@ -11,6 +14,7 @@ import fcntl
 import os
 
 PACKS = ('touch_pack', 'rehab_pack')
+_ABERTO = {'touch_pack': 'touch_pack (ou hand_pack/grasp_ml_pack)', 'rehab_pack': 'rehab_pack'}
 _held: dict = {}      # (pasta, pack) -> arquivo aberto; vive até o processo sair
 
 
@@ -56,8 +60,8 @@ def acquire(pack: str) -> None:
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise PackLockError(
-                    f'{other} está aberto: {pack} não pode controlar nada. '
-                    f'Feche o {other} e tente de novo.') from None
+                    f'{_ABERTO[other]} está aberto: {pack} não pode controlar nada. '
+                    f'Feche e tente de novo.') from None
         mine = _open(d, f'{pack}.lock')
         fcntl.flock(mine, fcntl.LOCK_SH)
         _held[(d, pack)] = mine

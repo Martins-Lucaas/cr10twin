@@ -148,7 +148,6 @@ _L_PROX       = 0.0450
 _L_DIST       = 0.0300
 _K_P_FINGER   = 1.516
 _K_D_FINGER   = 0.718
-_K_P_THUMB    = 1.400
 
 
 # Primitivas URDF
@@ -363,19 +362,18 @@ def _geometric_guess(p_tcp: np.ndarray, R_tcp: np.ndarray,
     return np.array([-q1, q2, q3, q4, q5, q6])
 
 
+def _in_limits(q: np.ndarray) -> bool:
+    return bool(np.all(q >= JOINT_MIN - 1e-9) and np.all(q <= JOINT_MAX + 1e-9))
+
+
 def _set_wrist(q: np.ndarray, R_target: np.ndarray,
-                q_ref: np.ndarray | None = None,
                 T_end: np.ndarray | None = None) -> np.ndarray:
     """
     Recalcula q3-q5 analiticamente dado q0-q2 (posição do braço).
-    Testa ambas as soluções do pulso (±q5_u) e retorna a de menor erro.
-
-    Quando `q_ref` é fornecido (geralmente o seed da IK), o critério de
-    desempate inclui a proximidade no joint-space do pulso (q3-q5):
-    soluções de erro angular comparável são desambiguadas pela que
-    mantém continuidade com a IK anterior. Isto resolve o "wrist flip"
-    indesejado entre poses geometricamente próximas (e.g. POINTING e
-    TOUCH na mesma vertical).
+    Das duas soluções do pulso (±q5) escolhe, nesta ordem: a que cabe nos
+    limites, a de menor erro de orientação, a mais próxima do pulso atual. As
+    duas costumam empatar em ~1e-13 no erro; decidir por ele deixava a escolha
+    para o arredondamento da CPU.
     """
     att = _ik_attach(T_end)
     R_flange_target = R_target @ att[:3, :3].T
@@ -406,17 +404,16 @@ def _set_wrist(q: np.ndarray, R_target: np.ndarray,
         ang_err = float(np.linalg.norm(_rot_error(T_check[:3,:3], R_target)))
         solutions.append((ang_err, q_cand))
 
-    if q_ref is not None and len(solutions) > 1:
-        q_ref_arr = np.asarray(q_ref, dtype=float)
-        # Custo combinado: erro angular (orientação) + bias de continuidade
-        # nas juntas do pulso.
-        def cost(item):
-            ang_err, q_cand = item
-            dist_wrist = float(np.linalg.norm(q_cand[3:6] - q_ref_arr[3:6]))
-            return ang_err + 0.30 * dist_wrist
-        solutions.sort(key=cost)
-    else:
-        solutions.sort(key=lambda x: x[0])
+    def cost(item):
+        ang_err, q_cand = item
+        for k in (3, 5):     # mesma pose, na volta dentro do limite mais próxima
+            voltas = q_cand[k] + 2.0 * math.pi * np.array([0.0, -1.0, 1.0])
+            cabem = [v for v in voltas if JOINT_MIN[k] <= v <= JOINT_MAX[k]]
+            if cabem:
+                q_cand[k] = min(cabem, key=lambda v: abs(v - q[k]))
+        return (not _in_limits(q_cand), round(ang_err, 6),
+                float(np.linalg.norm(q_cand[3:] - q[3:])))
+    solutions.sort(key=cost)
     return solutions[0][1]
 
 
@@ -457,11 +454,12 @@ def _ik_refine(p_target: np.ndarray, R_target: np.ndarray,
         T = forward_kinematics(q, T_end=att)
         dp_c = float(np.linalg.norm(p_target - T[:3, 3]))
         dw_c = float(np.linalg.norm(_rot_error(T[:3, :3], R_target)))
-        if dp_c < tol_pos and dw_c < tol_ori:
+        if dp_c < tol_pos and dw_c < tol_ori and _in_limits(q):
             return q, True
 
     W_ori = 0.25
     lam_fine = 0.005
+    q = np.clip(q, JOINT_MIN, JOINT_MAX)
     for _ in range(100):
         T = forward_kinematics(q, T_end=att)
         dp = p_target - T[:3, 3]
@@ -505,6 +503,41 @@ def _ik_candidates(p_tcp: np.ndarray, R_tcp: np.ndarray,
     return candidates
 
 
+def _ik_from_seed(p_target: np.ndarray, approach: np.ndarray,
+                  q_seed: np.ndarray,
+                  T_end: np.ndarray | None = None) -> tuple[np.ndarray, bool]:
+    """Solução do MESMO ramo da semente: gira o TCP pelo menor ângulo até
+    `approach` (o giro em torno do próprio eixo fica o da semente) e segue por
+    DLS 6-DOF. Trocar de ramo num movimento articular varre o TCP por dezenas
+    de cm, mesmo com a pose final certa.
+    """
+    att = _ik_attach(T_end)
+    q = np.clip(np.asarray(q_seed, dtype=float), JOINT_MIN, JOINT_MAX)
+    R0 = forward_kinematics(q, T_end=att)[:3, :3]
+    a = np.asarray(approach, dtype=float) / np.linalg.norm(approach)
+    eixo = np.cross(R0[:, 2], a)
+    s, c = float(np.linalg.norm(eixo)), float(R0[:, 2] @ a)
+    if s < 1e-12:
+        if c < 0.0:
+            return q, False        # oposto: menor rotação indefinida
+        R = R0
+    else:
+        ang = math.atan2(s, c)
+        R = np.column_stack(
+            [_rotate_axis_angle(R0[:, i], eixo, ang) for i in range(3)])
+    lam2 = 0.005 ** 2 * np.eye(6)
+    for _ in range(200):
+        T = forward_kinematics(q, T_end=att)
+        e = np.concatenate([p_target - T[:3, 3], _rot_error(T[:3, :3], R)])
+        if (np.linalg.norm(e[:3]) < 1e-4 and np.linalg.norm(e[3:]) < 1e-3):
+            return q, True
+        J = jacobian(q, T_end=att)
+        dq = J.T @ np.linalg.solve(J @ J.T + lam2, e)
+        # Passo por iteração limitado: perto de singularidade o DLS saltaria.
+        q = np.clip(q + 0.5 * np.clip(dq, -0.1, 0.1), JOINT_MIN, JOINT_MAX)
+    return q, False
+
+
 def inverse_kinematics(
         p_tcp: np.ndarray,
         approach_vec: np.ndarray,
@@ -517,7 +550,8 @@ def inverse_kinematics(
     Args:
         p_tcp:        posição desejada do TCP (3,) em metros [frame base]
         approach_vec: direção de abordagem unitária (TCP z-axis)
-        q_seed:       palpite inicial opcional em convenção URDF
+        q_seed:       palpite inicial opcional em convenção URDF; com ele a
+                      solução do mesmo ramo, se existir, é a devolvida
         elbow_up:     preferência de configuração de cotovelo
         T_end:        transform flange→TCP do efetuador; None = mão COVVI
                       (T_HAND_ATTACH); use T_TOUCH_TOOL_ATTACH no modo
@@ -530,6 +564,11 @@ def inverse_kinematics(
     R_tcp = approach_to_Rtcp(np.asarray(approach_vec))
     p_tcp = np.asarray(p_tcp, dtype=float)
 
+    if q_seed is not None:
+        q, ok = _ik_from_seed(p_tcp, approach_vec, q_seed, T_end=att)
+        if ok:
+            return q, True
+
     candidates = _ik_candidates(p_tcp, R_tcp, q_seed, elbow_up, T_end=att)
 
     best_q, best_err, best_ok = candidates[0].copy(), 1e9, False
@@ -539,7 +578,7 @@ def inverse_kinematics(
         q, ok = _ik_refine(p_tcp, R_tcp, q_cand, T_end=att)
         T = forward_kinematics(q, T_end=att)
         err = float(np.linalg.norm(p_tcp - T[:3, 3]))
-        if err < best_err:
+        if (not ok, err) < (not best_ok, best_err):
             best_err = err; best_q = q; best_ok = ok
         if best_ok and best_err < 2e-3:
             break
@@ -591,19 +630,6 @@ def finger_fk(driver_angle: float,
     return np.array([x, 0.0, z])
 
 
-def _finger_ik(target_xz: np.ndarray,
-               l_prox: float, l_dist: float,
-               k_p: float) -> float:
-    """IK 2-link → ângulo driver. Retorna nan se fora do alcance."""
-    xf, zf = float(target_xz[0]), float(target_xz[1])
-    D = (xf*xf + zf*zf - l_prox*l_prox - l_dist*l_dist) / (2.0 * l_prox * l_dist)
-    if abs(D) > 1.0:
-        return float('nan')
-    t2 = math.atan2(-math.sqrt(max(0.0, 1.0 - D*D)), D)
-    t1 = math.atan2(zf, xf) - math.atan2(l_dist*math.sin(t2), l_prox + l_dist*math.cos(t2))
-    return t1 / k_p
-
-
 # Valores re-mapeados para o cap 1.0 rad (driver, todos). Pontos
 # importantes:
 #   • palm_grip/claw_grip pedem fechamento próximo do máximo para
@@ -651,109 +677,11 @@ HAND_LIMITS: dict[str, float] = dict(HAND_DRIVER_UPPER_RAD)
 HAND_LOWER: dict[str, float] = dict(HAND_DRIVER_LOWER_RAD)
 
 
-# FK 3D completa da mão COVVI Origens dos MCPs em hand_base_link, extraídas
-# direto do URDF (joints `*_proximal_j_input_joint`).
-_HAND_MCP: dict[str, tuple] = {
-    'Index':  (+0.02310, +0.09136, -0.01476),
-    'Middle': (+0.00336, +0.09438, -0.01554),
-    'Ring':   (-0.01620, +0.09438, -0.01089),
-    'Little': (-0.03292, +0.08433, -0.00395),
-    # thumb_proximal_j_input em thumb_chassis (rotacionado por Rotate)
-    # — não diretamente em hand_base_link, ver _thumb_tip_hand abaixo.
-}
-
-# Thumb chassis pivot (Rotate joint) — URDF: parent=base_link.
-_THUMB_CHASSIS_PIVOT = np.array([0.02424, 0.02292, 0.01255])
-_THUMB_CHASSIS_AXIS  = np.array([0.0, -1.0, 0.0])     # rotação ≈ -hand_y
-_THUMB_CHASSIS_MULT  = 1.53339618                      # mimic Rotate
-
-# Em thumb_chassis (frame após Rotate): origem do MCP do polegar.
-_THUMB_MCP_IN_CHASSIS = np.array([0.04595, 0.02166, 0.01041])
-# Eixo de curl do thumb_proximal no frame thumb_chassis.
-_THUMB_PROX_AXIS = np.array([0.14867, -0.13053, 0.98024])
-
-
 def _rotate_axis_angle(v: np.ndarray, axis: np.ndarray, theta: float) -> np.ndarray:
     """Fórmula de Rodrigues — rotaciona v em torno de axis por theta (rad)."""
     k = axis / (np.linalg.norm(axis) + 1e-12)
     c, s = math.cos(theta), math.sin(theta)
     return v * c + np.cross(k, v) * s + k * (k @ v) * (1.0 - c)
-
-
-def _finger_tip_in_hand_long(finger: str, primary: float) -> np.ndarray:
-    """Ponta dos 4 dedos longos (Index/Middle/Ring/Little) em hand_base_link."""
-    mx, my, mz = _HAND_MCP[finger]
-    tip = finger_fk(primary, k_p=_K_P_FINGER, k_d=_K_D_FINGER)
-    fx, _fy, fz = float(tip[0]), 0.0, float(tip[2])
-    return np.array([mx, my + fx, mz + fz])
-
-
-def _thumb_tip_in_hand(thumb_primary: float, rotate_primary: float) -> np.ndarray:
-    """Ponta do polegar em hand_base_link, considerando o Rotate (que gira
-    o chassis do polegar) e em seguida o curl do thumb_proximal/distal.
-    """
-    # 1) Curl planar do polegar relativo ao MCP, no plano do chassis.
-    tip_planar = finger_fk(thumb_primary, k_p=_K_P_THUMB, k_d=_K_D_FINGER)
-    fx, _, fz = float(tip_planar[0]), 0.0, float(tip_planar[2])
-    # No frame chassis, o MCP está em _THUMB_MCP_IN_CHASSIS; o dedo
-    # estende ao longo de +y_chassis e curla em +z_chassis (aproximação).
-    tip_in_chassis = _THUMB_MCP_IN_CHASSIS + np.array([0.0, fx, fz])
-
-    # 2) Rotaciona o resultado pelo ângulo Rotate em torno do pivô do chassis.
-    theta = _THUMB_CHASSIS_MULT * rotate_primary
-    v = tip_in_chassis - _THUMB_CHASSIS_PIVOT
-    v_rot = _rotate_axis_angle(v, _THUMB_CHASSIS_AXIS, theta)
-    return _THUMB_CHASSIS_PIVOT + v_rot
-
-
-def hand_fk(hand_state: dict) -> dict[str, np.ndarray]:
-    """FK completa da mão COVVI para um estado de juntas.
-
-    Args:
-        hand_state: dict com chaves 'Thumb','Index','Middle','Ring','Little'
-                    em rad (ângulo do driver, 0=aberto), opcionalmente 'Rotate'.
-    Returns:
-        Dict com:
-          fingertip positions: 'tip_<finger>' → (3,) em hand_base_link
-          MCP positions:        'mcp_<finger>' → (3,) em hand_base_link
-          'palm_center':        (3,) — centroide dos MCPs (ponto da palma)
-        Todos em metros, frame hand_base_link.
-    """
-    out: dict[str, np.ndarray] = {}
-    rotate = float(hand_state.get('Rotate', 0.0))
-
-    for finger in ('Index', 'Middle', 'Ring', 'Little'):
-        primary = float(hand_state.get(finger, 0.0))
-        out['mcp_' + finger] = np.array(_HAND_MCP[finger])
-        out['tip_' + finger] = _finger_tip_in_hand_long(finger, primary)
-
-    thumb_primary = float(hand_state.get('Thumb', 0.0))
-    # MCP do polegar em hand_base_link já considera o Rotate (girar pivô).
-    v_mcp = _THUMB_MCP_IN_CHASSIS - _THUMB_CHASSIS_PIVOT
-    theta = _THUMB_CHASSIS_MULT * rotate
-    out['mcp_Thumb'] = (_THUMB_CHASSIS_PIVOT
-                        + _rotate_axis_angle(v_mcp, _THUMB_CHASSIS_AXIS, theta))
-    out['tip_Thumb'] = _thumb_tip_in_hand(thumb_primary, rotate)
-
-    out['palm_center'] = np.mean(
-        [out[f'mcp_{f}'] for f in ('Thumb', 'Index', 'Middle', 'Ring', 'Little')],
-        axis=0)
-    return out
-
-
-def grasp_center_in_hand(hand_state: dict, grip_type: str) -> np.ndarray:
-    """Centro do grasp (ponto de contato com o objeto) em hand_base_link."""
-    fks = hand_fk(hand_state)
-    grip_type = grip_type.lower()
-    if 'fingertip' in grip_type or 'pinch' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index']]
-    elif 'claw' in grip_type or 'tripod' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index'], fks['tip_Middle']]
-    else:  # palm / cylindrical / default
-        pts = [fks[f'tip_{f}'] for f in
-               ('Thumb', 'Index', 'Middle', 'Ring', 'Little')]
-        pts.append(fks['palm_center'])
-    return np.mean(pts, axis=0)
 
 
 def hand_ik(grasp_type: str, obj_diameter: float = 0.0) -> dict[str, float]:

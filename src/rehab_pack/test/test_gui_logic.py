@@ -57,6 +57,7 @@ def tick(estado='ATIVO', **kw):
 def app():
     a = RehabGui.__new__(RehabGui)
     a.br, a.said, a.confirma = Ponte(), [], []
+    a._jog_js, a._jog_alvo, a._jog_alvo_ant = set(), None, None
     a.root = NS(focus_get=lambda: None, after=lambda *x: 'id', destroy=lambda: a.said.append('destroy'),
                 after_cancel=lambda i: a.said.append('cancelado'))
     a._say = lambda t, ok=True: a.said.append(t)

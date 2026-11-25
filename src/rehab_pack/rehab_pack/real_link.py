@@ -16,12 +16,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
 
 import numpy as np
 
-from .constants import (GRIP_MASS_KG, HOME_Q_RAD, PLATE_MASS_KG,
-                        REAL_STATUS_STALE_S, ROBOT_MODES_OK, SIM_ROBOT_IP,
-                        SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD)
+from .constants import (ARM_PUBS, GRIP_MASS_KG, HOME_Q_RAD, JOG_MAX_DEG_S, JS_STALE_S, PLATE_MASS_KG,
+                        REAL_STATUS_STALE_S, ROBOT_MODES_OK, SERVO_STEP_SLACK, SIM_ROBOT_IP,
+                        SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD, T_ARM_CMD)
 
 DEADBAND_RAD = 1.0e-5          # o mesmo SERVOJ_DEADBAND_RAD do touch_pack
 DEFAULT_IP = '192.168.5.2'
@@ -40,15 +41,38 @@ def sync_error_rad(q_sim, q_real) -> float:
                                - np.asarray(q_real, float))))
 
 
+class StepTooLarge(RuntimeError):
+    """O próximo ServoJ pediria um tranco: quem chama para e espera o operador."""
+
+
+def is_feedback_timeout(exc) -> bool:
+    """Leitura de feedback atrasada, com a conexão mantida pelo driver?"""
+    try:
+        from touch_pack.real_driver import CR10FeedbackTimeout
+    except ImportError:
+        return False
+    return isinstance(exc, CR10FeedbackTimeout)
+
+
+def arm_intruders(node) -> list:
+    """Publicadores de T_ARM_CMD que não são do rehab (ou repetidos)."""
+    pubs = [p.node_name for p in node.get_publishers_info_by_topic(T_ARM_CMD)]
+    return [p for i, p in enumerate(pubs) if p not in ARM_PUBS or p in pubs[:i]]
+
+
 def real_ok(status: dict | None, age_s: float,
             stale_s: float = REAL_STATUS_STALE_S) -> tuple[bool, str]:
     """(ok, motivo) a partir do JSON de /rehab/real/status."""
     if status is None or age_s > stale_s:
         return False, 'sem status do robô real (rehab_mirror fora do ar?)'
+    if status.get('parada'):             # antes de tudo: o braço pode estar andando
+        return False, status['parada']
     if not status.get('conectado'):
         return False, 'desconectado (IP inalcançável ou controlador desligado)'
     if status.get('estop'):
         return False, 'E-Stop do robô real acionado'
+    if status.get('travado'):
+        return False, status['travado']
     modo = status.get('robot_mode')
     if modo is not None and modo not in ROBOT_MODES_OK:
         return False, (f'RobotMode {modo} (E-Stop físico, alarme, colisão ou pausa): '
@@ -106,17 +130,22 @@ class SimulatedDriver:
     def stop_motion(self):
         self.stopped += 1
 
+    def emergency_stop(self):
+        self.estop_engaged = True
+        return True
 
-def default_factory(ip: str, period_s: float, feedback_port: int | None = None,
-                    sim_offset_j1_deg: float = 0.0):
+    def release_emergency_stop(self):
+        self.estop_engaged = False
+
+
+def default_factory(ip: str, period_s: float):
     """Driver real do touch_pack (import adiado) ou o simulado."""
     if ip == SIM_ROBOT_IP:
-        return SimulatedDriver(offset_j1_deg=sim_offset_j1_deg)
-    from touch_pack.real_driver import (CR10RealDriver, CR10RealDriverConfig,
-                                        FEEDBACK_PORT)
+        return SimulatedDriver()
+    from touch_pack.real_driver import CR10RealDriver, CR10RealDriverConfig
     return CR10RealDriver(ip=ip, config=CR10RealDriverConfig(
         payload_kg=PAYLOAD_KG, payload_cog_m=(0.0, 0.0, PAYLOAD_COG_Z_M),
-        servoj_period_s=period_s, feedback_port=feedback_port or FEEDBACK_PORT))
+        servoj_period_s=period_s))
 
 
 class RealLink:
@@ -127,8 +156,12 @@ class RealLink:
         self.ip, self.period_s, self._factory = ip, period_s, factory
         self.log = log or (lambda m: None)
         self.drv = None
-        self._last_q = None
+        self._last_q, self._last_t = None, 0.0
+        self._folga = 0.0            # atraso do laço ainda por recuperar [rad]
         self.last_error = ''
+        self.parada = ''             # Stop não confirmado: o que fazer; até reconectar
+        self.rearmar = False         # o E-STOP de software é nosso: o Conectar o solta
+        self.max_step_rad = math.radians(JOG_MAX_DEG_S) * period_s * SERVO_STEP_SLACK
 
     @property
     def connected(self) -> bool:
@@ -149,7 +182,10 @@ class RealLink:
         try:
             drv = self._factory(self.ip, self.period_s)
             drv.connect()
-            drv.enable()
+            if self.rearmar:         # EmergencyStop(0) + ClearError + enable
+                drv.release_emergency_stop()
+            else:
+                drv.enable()
             return drv, ''
         except Exception as exc:
             if drv is not None:
@@ -161,6 +197,7 @@ class RealLink:
 
     def attach(self, drv) -> None:
         self.drv, self.last_error = drv, ''
+        self.parada, self.rearmar = '', False
         self.log(f'CR10 conectado em {self.ip}.')
 
     def fail(self, err: str) -> None:
@@ -207,14 +244,35 @@ class RealLink:
     def reset_stream(self) -> None:
         self._last_q = None
 
-    def stream(self, q_sim) -> bool:
-        """Um ponto de ServoJ. False se estacionário (banda morta) ou sem robô."""
+    def stream(self, q_sim, q_real=None) -> bool:
+        """Um ponto de ServoJ. False se estacionário (banda morta) ou sem robô.
+
+        StepTooLarge se o ponto salta do último enviado (no 1º, da pose real)."""
         if self.drv is None:
             return False
         q = np.asarray(q_sim, float)
+        ref = self._last_q if self._last_q is not None else q_real
+        passo = 0.0 if ref is None else sync_error_rad(q, ref)
+        # atraso do laço: o alvo pode estar mais longe o que o jog anda nesse tempo (até
+        # JS_STALE_S), mas cada ponto leva no máximo max_step_rad. A folga some a um passo
+        # de jog por ponto: alvo que segue longe trava.
+        agora, v = time.monotonic(), math.radians(JOG_MAX_DEG_S)
+        if self._last_q is None:
+            self._folga = 0.0
+        else:
+            extra = min(agora - self._last_t, JS_STALE_S) - self.period_s
+            self._folga = min(max(self._folga - v * self.period_s, 0.0) + v * max(extra, 0.0),
+                              v * max(JS_STALE_S - self.period_s, 0.0))
+        teto = self.max_step_rad + self._folga + 1e-9
+        if not np.all(np.isfinite(q)) or not passo <= teto:   # NaN reprova
+            raise StepTooLarge(f'salto de {math.degrees(passo):.1f}° num ServoJ '
+                               f'(máx {math.degrees(teto):.1f}°)')
+        self._last_t = agora
         if (self._last_q is not None
                 and float(np.max(np.abs(q - self._last_q))) < DEADBAND_RAD):
             return False
+        if passo > self.max_step_rad:
+            q = ref + (q - np.asarray(ref, float)) * (self.max_step_rad / passo)
         try:
             self.drv.servo_j_urdf(q)
             self._last_q = q
@@ -223,13 +281,28 @@ class RealLink:
             self.drop(exc)     # nunca limpa alarme sozinho: só o enable() do Conectar
             return False
 
-    def halt(self) -> None:
-        """Para o movimento e limpa a fila, sem desabilitar o robô."""
-        if self.drv is not None:
-            try:
-                self.drv.stop_motion()
-            except Exception as exc:
-                self.log(f'stop_motion falhou: {exc}')
+    def halt(self) -> bool:
+        """Para o movimento e limpa a fila, sem desabilitar o robô. Stop não confirmado
+        vira E-STOP. False: nem o E-STOP foi confirmado."""
+        drv = self.drv
+        if drv is None:
+            return True
+        try:
+            drv.stop_motion()
+            return True
+        except Exception as exc:
+            self.log(f'stop_motion falhou: {exc}')
+        self.rearmar = True
+        try:
+            ok = bool(drv.emergency_stop())
+        except Exception as exc:
+            self.log(f'E-STOP falhou: {exc}')
+            ok = False
+        self.parada = (
+            'Stop não confirmado: E-STOP do robô acionado. Desconectar e Conectar para rearmar'
+            if ok else 'PARADA NÃO CONFIRMADA: o braço pode estar andando, use o E-Stop físico')
+        self.log(self.parada)
+        return ok
 
     def disconnect(self) -> None:
         """Pedido do operador: Stop + DisableRobot e fecha, como o touch_pack."""

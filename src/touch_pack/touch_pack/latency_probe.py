@@ -68,6 +68,7 @@ from rcl_interfaces.msg import ParameterDescriptor
 from sensor_msgs.msg import JointState
 
 from .constants import ARM_JOINTS, ROBOT_CONFIG_FILE, LATENCY_DIR
+from .latency_report import xcorr_lag
 
 try:
     from .real_driver import CR10RealDriver, CR10RealDriverConfig
@@ -180,41 +181,7 @@ class LatencyProbe(Node):
                 t_next = time.monotonic()
 
     # ── análise ───────────────────────────────────────────────────────
-    @staticmethod
-    def _xcorr_lag(sig_s: np.ndarray, sig_r: np.ndarray, dt: float,
-                   max_lag: int) -> tuple[float, float]:
-        """Atraso (s) de sig_r em relação a sig_s por correlação cruzada.
-
-        Retorna (lag_s, corr_pico). lag_s > 0 → REAL atrasado (Sim→Real);
-        lag_s < 0 → SIM atrasado (Real→Sim). Refino parabólico sub-amostra.
-        """
-        s = sig_s - sig_s.mean()
-        r = sig_r - sig_r.mean()
-        n = len(s)
-        lags = np.arange(-max_lag, max_lag + 1)
-        scores = np.full(len(lags), -2.0)
-        for i, d in enumerate(lags):
-            # r[k] ≈ s[k-d]  →  d>0 significa REAL atrasado em relação ao SIM
-            if d >= 0:
-                a, b = (s[:n - d] if d else s), r[d:]
-            else:
-                a, b = s[-d:], r[:n + d]
-            m = min(len(a), len(b))
-            if m < 20:
-                continue
-            a, b = a[:m], b[:m]
-            if a.std() < 1e-9 or b.std() < 1e-9:
-                continue
-            scores[i] = float(np.corrcoef(a, b)[0, 1])
-        ki = int(np.argmax(scores))
-        best_k = float(lags[ki])
-        peak = float(scores[ki])
-        if 0 < ki < len(lags) - 1:
-            y0, y1, y2 = scores[ki - 1], scores[ki], scores[ki + 1]
-            denom = (y0 - 2 * y1 + y2)
-            if abs(denom) > 1e-12:
-                best_k += 0.5 * (y0 - y2) / denom
-        return best_k * dt, peak
+    _xcorr_lag = staticmethod(xcorr_lag)
 
     def analyze(self):
         with self._lock:
@@ -383,7 +350,7 @@ class LatencyProbe(Node):
             fig, ax = plt.subplots(figsize=(9, 4.2))
             ax.plot(t, sim_deg, label='Gêmeo digital (sim)', lw=1.6)
             ax.plot(t, real_deg, label='Braço físico (real)', lw=1.6, alpha=0.85)
-            ax.plot(t + shift, real_deg, '--', lw=1.0, alpha=0.6,
+            ax.plot(t - shift, real_deg, '--', lw=1.0, alpha=0.6,
                     label=f'Real deslocado ({res["latency_ms"]:.0f} ms)')
             ax.set_xlabel('Tempo (s)')
             ax.set_ylabel(f'{res["joint_name"]} (°)')

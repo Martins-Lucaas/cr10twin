@@ -300,6 +300,9 @@ def _build_robot_urdf():
 
 
 def generate_launch_description():
+    # trava contra o rehab_pack (ADR 0003): este launch sobe outro controlador do braço
+    from touch_pack.pack_lock import acquire
+    acquire('touch_pack')
     pkg_grasp  = get_package_share_directory('grasp_ml_pack')
     pkg_gazebo = get_package_share_directory('gazebo_ros')
 

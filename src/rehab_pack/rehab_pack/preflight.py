@@ -18,7 +18,6 @@ import socket
 import subprocess
 import sys
 
-from .real_link import SimulatedDriver  # noqa: F401  (garante o módulo importável)
 from .real_link import robot_ip as resolve_ip
 
 DASHBOARD_PORT = 29999

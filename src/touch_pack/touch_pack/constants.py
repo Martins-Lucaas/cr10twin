@@ -27,6 +27,32 @@ ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
 # outro deixa passar), e o tactile_explorer para avisar quando a onda pedida é
 # tão pequena que sai QUANTIZADA por ela.
 SERVOJ_DEADBAND_RAD = 1.0e-5
+
+# Divergência máxima entre a pose REAL e a do simulador para o espelho começar
+# (ou recomeçar) a mandar ServoJ. 2° num tick de 30 ms já é um tranco de ~67°/s;
+# a coincidência normal depois do pré-home é < 0,3°.
+SERVO_SYNC_TOL_RAD = 0.0349
+# /joint_states mais velho que isto, com o braço sendo comandado = simulador
+# parado: o ponto seguinte seria um salto.
+MIRROR_JS_STALE_S = 0.3
+# Velocidade máxima de junta do CR10 (180°/s), o teto do explorer: um passo de
+# ServoJ que a exigisse maior não é movimento, é descontinuidade.
+MIRROR_MAX_RAD_S = 3.1416
+MIRROR_STEP_DT_MAX_S = 0.1
+# Tolerância a feedback perdido na conferência de sincronismo (nada é mandado
+# ao braço enquanto isso).
+SYNC_FEEDBACK_GRACE_S = 0.5
+
+
+def mirror_step_error(step_rad: float, dt_s: float, age_s: float) -> str:
+    """Motivo para NÃO mandar o próximo ServoJ do espelho; '' = pode."""
+    if age_s > MIRROR_JS_STALE_S:
+        return f'/joint_states parado há {age_s:.2f} s'
+    teto = MIRROR_MAX_RAD_S * min(dt_s, MIRROR_STEP_DT_MAX_S)
+    if step_rad > teto:
+        return (f'salto de {math.degrees(step_rad):.1f}° no simulador '
+                f'(teto {math.degrees(teto):.1f}°)')
+    return ''
 # Alcance usado para converter a banda morta acima em micrômetros de TCP. É
 # ordem de grandeza para mensagem de aviso, não cinemática — quem precisa do
 # número exato chama o Jacobiano.
@@ -311,6 +337,9 @@ SYNC_MAX_AGE_S = 0.25
 
 TOUCH_FRAME_TOPIC = '/touch_sensor/frame'
 TOUCH_EVENT_TOPIC = '/touch_sensor/spike_event'  # std_msgs/String: RA|SA|CN_MM|CN_RA|CN_SA
+# RELIABLE com fila funda nos dois lados: um chunk da serial traz dezenas de
+# eventos de uma vez, e com best-effort/depth 1 só o último chegava ao logger.
+TOUCH_EVENT_QOS_DEPTH = 1000
 
 
 class TouchSensorSpec(NamedTuple):

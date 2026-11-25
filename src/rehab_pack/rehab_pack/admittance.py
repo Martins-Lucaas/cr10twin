@@ -142,11 +142,14 @@ class AdmittanceController:
         x0 = self.x
         self.x = self.x + self.v * self.dt
 
-        for c in (self.x_ref, self.origin):     # origin por último: é o limite absoluto
+        # sem mola x_ref não limita nada; origin por último: é o limite absoluto
+        for c in ([self.x_ref] if self.k > 0.0 else []) + [self.origin]:
             d = self.x - c
             dn = np.linalg.norm(d)
-            if dn > self.max_excursion:
-                self.x = c + d * (self.max_excursion / dn)
+            # já fora (referência ou excursão mudou): só não se afasta mais, nunca é arrastado
+            lim = max(self.max_excursion, float(np.linalg.norm(x0 - c)))
+            if dn > lim:
+                self.x = c + d * (lim / dn)
                 # mata a componente de velocidade que empurra para fora
                 out = d / dn
                 self.v -= max(0.0, float(self.v @ out)) * out

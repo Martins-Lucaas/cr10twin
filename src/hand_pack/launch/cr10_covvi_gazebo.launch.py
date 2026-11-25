@@ -148,6 +148,9 @@ def _build_gazebo_urdf():
 
 
 def generate_launch_description():
+    # trava contra o rehab_pack (ADR 0003): este launch sobe outro controlador do braço
+    from touch_pack.pack_lock import acquire
+    acquire('touch_pack')
     hand_pack_share = get_package_share_directory('hand_pack')
     combined_urdf, minimal_urdf = _build_gazebo_urdf()
     world_file = os.path.join(hand_pack_share, 'worlds', 'factory.world')

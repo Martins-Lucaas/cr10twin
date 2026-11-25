@@ -7,6 +7,10 @@ controle algum: `touch_pack/pack_lock.py` (flock, máquina toda, inclusive entre
 
 - O launch e o `main()` dos nós de controle tomam a trava. `ft_receiver` não:
   é usado pelos dois packs. A porta serial é aberta com `exclusive=True`.
+- Os produtores do mesmo comando em `hand_pack` e `grasp_ml_pack` tomam a trava do
+  `touch_pack`: convivem com ele, não com o rehab.
+- Fora da trava (outra máquina, `ros2 topic pub`): o rehab conta os publicadores do
+  comando do braço ao habilitar, no jog e a cada tick; um de fora recusa ou aborta.
 - Trava na máquina, não no domínio: o hardware é um só. Para uma simulação
   isolada, sem hardware, use outro `CR10_PACK_LOCK_DIR`.
 - Fica em `/run/lock/cr10twin`, que o `docker-compose.yml` monta. Outro computador e

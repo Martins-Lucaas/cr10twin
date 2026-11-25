@@ -40,6 +40,7 @@ from .ui_helpers import (
     BG,
     BORDER,
     BTN_NEUTRAL,
+    call_bounded,
     DANGER,
     DANGER_HV,
     FONT_HEAD,
@@ -197,16 +198,27 @@ class PosesMixin:
                 aviso = tool_stamp_mismatch(data, what='o poses.json')
                 if aviso:
                     self.get_logger().warn(f'[FERRAMENTA] {aviso}')
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        except (FileNotFoundError, json.JSONDecodeError, KeyError,
+                AttributeError, TypeError) as exc:
+            # Ilegível NÃO é vazio: o próximo save apagaria o que sobrou.
+            if not isinstance(exc, FileNotFoundError):
+                os.replace(POSES_FILE, POSES_FILE + '.bak')
+                self.get_logger().error(
+                    f'poses.json ilegível ({exc}) — guardado em '
+                    f'{POSES_FILE}.bak')
             self._poses = []
             self._movements = []
             self._next_pose_id = 1
             self._next_movement_id = 1
     def _save_poses_data(self) -> None:
         os.makedirs(os.path.dirname(POSES_FILE), exist_ok=True)
-        with open(POSES_FILE, 'w') as f:
+        tmp = POSES_FILE + '.tmp'
+        with open(tmp, 'w') as f:
             json.dump({'poses': self._poses, 'movements': self._movements,
                        **tool_stamp()}, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, POSES_FILE)
     # Lookup helpers
     def _pose_by_id(self, pid: int) -> dict | None:
         for p in self._poses:
@@ -553,6 +565,15 @@ class PosesMixin:
         mov = self._movement_by_id(mov_id)
         if mov is None:
             return
+        if getattr(self, '_estop_latched', False):
+            self._set_status('E-STOP is engaged — release it first.', DANGER)
+            return
+        # Duas fontes no mesmo JTC, e MovJ contra ServoJ no braço real.
+        if (self._latest_phase not in ('IDLE', 'DONE', 'ABORTED')
+                or getattr(self, '_prehoming', False)
+                or self._starting_palpation):
+            self._set_status('Palpation in progress — stop it first.', WARN)
+            return
         if not mov['pose_ids']:
             self._set_status('Add poses to the sequence before running.', WARN)
             return
@@ -570,17 +591,25 @@ class PosesMixin:
         # Não limpa _exec_movement_id aqui — o finally do worker faz isso.
         if (self._robot_mode == 'MIRROR' and self._robot_connected
                 and self._real_driver is not None):
-            try:
-                self._real_driver.halt()
-            except Exception as exc:
-                # Engolir aqui dizia "Execution stopped." com o braço real
-                # possivelmente ainda em movimento. Mesmo tratamento de
-                # _on_stop_palpation: o operador precisa saber.
-                self.get_logger().warning(f'Halt após stop falhou: {exc}')
-                self._set_status(
-                    f'Stop sent, but Halt() failed: {exc}', DANGER)
-                return
+            self._stop_motion_bounded('Execution stopped.')
+            return
         self._set_status('Execution stopped.', WARN)
+
+    def _stop_motion_bounded(self, feito: str) -> None:
+        """Stop() no braço sem prender o Tk; só diz `feito` se confirmado."""
+        def _fim(_r, erro):
+            if erro:
+                self._set_status(f'STOP NOT CONFIRMED: {erro}', DANGER)
+            else:
+                self._set_status(feito, WARN)
+        pronto, res, erro = call_bounded(
+            self.root, self._real_driver.stop_motion, _fim)
+        if pronto:
+            _fim(res, erro)
+        else:
+            self._set_status('Stopping the arm — waiting for confirmation…',
+                             WARN)
+
     def _execute_movement_worker(self, mov: dict, loop: bool) -> None:
         try:
             self._run_movement_once(mov)
@@ -624,40 +653,38 @@ class PosesMixin:
             msg.points = pontos
             self._arm_pub.publish(msg)
 
-        if mode == 'MIRROR':
+        drv = self._real_driver
+        if mode == 'MIRROR' and drv is not None and self._robot_connected:
             # Robô real: MovJ + mão por pose, cadenciado por dur_s — paralelo ao Gazebo.
-            drv = self._real_driver
-            if drv is not None and self._robot_connected:
+            drv._send_dash(f'SpeedFactor({speed_pct})')
+            for pose in poses:
+                if self._exec_stop.is_set():
+                    break
+                t_step_start = time.monotonic()
                 try:
-                    drv._send_dash(f'SpeedFactor({speed_pct})')
-                except Exception:
-                    pass
-                for pose in poses:
-                    if self._exec_stop.is_set():
+                    if _urdf_to_dobot is not None:
+                        q_urdf = np.array(
+                            [math.radians(float(v)) for v in pose['q_deg']])
+                        q_dobot_deg = np.degrees(_urdf_to_dobot(q_urdf)).tolist()
+                    else:
+                        q_dobot_deg = list(pose['q_deg'])
+                    drv.mov_j_joint_deg(q_dobot_deg)
+                except Exception as exc:
+                    # raise, não break: com Loop o break recomeçava o
+                    # movimento na hora, por cima da recusa.
+                    self._exec_stop.set()
+                    raise RuntimeError(f'MovJ falhou: {exc}') from exc
+                # Aplica pose da mão COVVI se armazenada (Tk-safe via after).
+                self._apply_hand_pose_from_movement(pose)
+                # Aguarda o restante de dur_s para este passo,
+                # verificando _exec_stop a cada 100 ms.
+                deadline = t_step_start + dur_s
+                while not self._exec_stop.is_set():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.0:
                         break
-                    t_step_start = time.monotonic()
-                    try:
-                        if _urdf_to_dobot is not None:
-                            q_urdf = np.array(
-                                [math.radians(float(v)) for v in pose['q_deg']])
-                            q_dobot_deg = np.degrees(_urdf_to_dobot(q_urdf)).tolist()
-                        else:
-                            q_dobot_deg = list(pose['q_deg'])
-                        drv.mov_j_joint_deg(q_dobot_deg)
-                    except Exception as exc:
-                        log.warning('MovJ falhou: %s', exc)
-                        break
-                    # Aplica pose da mão COVVI se armazenada (Tk-safe via after).
-                    self._apply_hand_pose_from_movement(pose)
-                    # Aguarda o restante de dur_s para este passo,
-                    # verificando _exec_stop a cada 100 ms.
-                    deadline = t_step_start + dur_s
-                    while not self._exec_stop.is_set():
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0.0:
-                            break
-                        self._exec_stop.wait(min(0.1, remaining))
-        elif mode == 'SIM_ONLY':
+                    self._exec_stop.wait(min(0.1, remaining))
+        elif mode in ('SIM_ONLY', 'MIRROR'):
             # Itera por pose aplicando mão a cada passo; aguarda dur_s por pose.
             for pose in poses:
                 if self._exec_stop.is_set():

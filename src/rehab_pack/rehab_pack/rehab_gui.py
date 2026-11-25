@@ -26,7 +26,7 @@ from . import gui_theme as th
 from . import tasks as T
 from .gui_charts import LineChart
 
-IDX = {n: i for i, n in enumerate(C.TICK_FIELDS)}
+REC_STALE_S = 1.5            # registrador calado por mais que isso: não está gravando
 LIVE_S = 0.5                 # LED verde se a última mensagem tem menos que isto
 POLL_MS = 33
 VIEW_SPAN_M = 0.56           # largura do mundo visível no quadro do jogo
@@ -79,7 +79,6 @@ ACTION = {C.S_TARE: ('Tara', 'rehab_force_source'),
           C.S_ENABLE: ('Habilitar/Desabilitar', 'rehab_admittance'),
           C.S_ESTOP: ('PARAR', 'rehab_admittance'),
           C.S_RESET: ('Reset', 'rehab_admittance'),
-          C.S_HOME: ('Home', 'rehab_admittance'),
           C.S_REAL_CONNECT: ('Robô real', C.NODE_MIRROR),
           C.S_REAL_MODE: ('Modo do robô real', C.NODE_MIRROR),
           C.S_SESSION_START: ('Iniciar sessão', 'rehab_logger'),
@@ -105,6 +104,8 @@ class RehabGui:
         self._estop_alert = ''           # PARAR não confirmado: fica no banner
         self._enable_wait, self._enable_done = 0.0, False   # pedido do botão em curso
         self._jog_synced = False         # os 6 sliders já mostraram a pose do braço
+        self._jog_js = set()             # juntas mexidas desde o último envio (vazio = as 6)
+        self._jog_alvo = self._jog_alvo_ant = None   # último alvo enviado [°] e o anterior a ele
         self._task_z = 0.0
         self.origin = None
         self._dlg = None
@@ -115,7 +116,7 @@ class RehabGui:
         self._n_poll = 0
         self._drawn = set()
         self._closing = False
-        self.session_open = False
+        self.session_open, self._session_t = False, 0.0   # aberta?; última mudança vinda de um serviço
         self.enabled = self.moving = False
         self.trail = collections.deque()
         self._co_result = {}             # alvo -> 'hit' | 'miss' (centro-fora)
@@ -554,7 +555,8 @@ class RehabGui:
         cb.pack(fill='x')
         cb.bind('<<ComboboxSelected>>', lambda e: self.var_task.set(
             next(k for k, v in TASK_LABELS.items() if v == self.var_task_label.get())))
-        self.var_task.trace_add('write', lambda *_: self._task_changed())
+        self.var_task.trace_add('write', lambda *_: (
+            self._task_changed(), self.var_task_meta.set(self.var_task.get())))
         self.tp_frame = tk.Frame(c, bg=th.PANEL)
         self.tp_frame.pack(fill='x', pady=(th.PAD, 0))
         self.tv, self.tp_rows = {}, []
@@ -565,6 +567,7 @@ class RehabGui:
             sp = ttk.Spinbox(self.tp_frame, from_=lo, to=hi, increment=st, textvariable=v, width=6)
             self.tp_rows.append((quais, lab, sp))
         self.var_assist = tk.BooleanVar(value=False)
+        self.var_assist.trace_add('write', lambda *_: self._assist_changed())
         self.chk_assist = ttk.Checkbutton(self.tp_frame, text='Assistência (puxa para o túnel;\n'
                                                               'use o perfil Assistido, K > 0)',
                                           variable=self.var_assist)
@@ -605,8 +608,10 @@ class RehabGui:
         self.tp_frame.columnconfigure(1, weight=1)
         if grupo == 'tunel':
             self.chk_assist.grid(row=r, column=0, columnspan=2, sticky='w', pady=(4, 0))
-        if hasattr(self, 'var_task_meta'):
-            self.var_task_meta.set(name)
+
+    def _assist_changed(self):
+        if isinstance(self.task, T.TunnelTask) and not self.task.done:
+            self._emit([('PARAMS', dict(assistencia=int(self.var_assist.get())))])
 
     def _cv_resize(self, e):
         self._scale = min(e.width, e.height) / VIEW_SPAN_M
@@ -663,7 +668,7 @@ class RehabGui:
         if not self.tick:
             self._say('Sem posição do braço: o nó rehab_admittance não está no ar.', False)
             return
-        if self._state_name(True) != 'ATIVO':
+        if self._state_name(self._live()) != 'ATIVO':
             self._say('Habilite o braço (estado ATIVO) antes de iniciar a tarefa.', False)
             return
         if self.task and not self.task.done:
@@ -708,7 +713,11 @@ class RehabGui:
         self.cv.delete('trace')
         self._drawn = set()
         self._co_result, self._flash = {}, None
-        self._emit(self.task.start(t))
+        ev = self.task.start(t)
+        if isinstance(self.task, T.TunnelTask):
+            ev[0][1]['assistencia'] = int(self.var_assist.get())
+        ev[0][1].update(x0=cx, y0=cy)
+        self._emit(ev)
         self._say(f'Tarefa iniciada: {TASK_LABELS.get(name, name)}'
                   + (f' ({g[chave]:.0f} cm).' if chave else '.'))
 
@@ -727,7 +736,7 @@ class RehabGui:
     def _ref_recenter(self):
         """Referência no ponto atual: com K > 0 não puxa o braço para o fim da trajetória.
         O nó só a aceita em ATIVO; em SEM_FORCA/LIMITE espera a volta."""
-        st = self._state_name(True)
+        st = self._state_name(self._live())
         if not self._ref_sent or st in ('SEM_FORCA', 'LIMITE'):
             return
         if st == 'ATIVO':
@@ -794,13 +803,13 @@ class RehabGui:
                            width=9, anchor='e')
             cur.grid(row=r, column=1, padx=th.PAD_L)
             v = tk.DoubleVar(value=0.0)
-            sc = ttk.Scale(c, from_=lo, to=hi, variable=v, command=lambda _x: self._jog_user())
+            sc = ttk.Scale(c, from_=lo, to=hi, variable=v, command=lambda _x, j=j: self._jog_user(j))
             sc.grid(row=r, column=2, sticky='ew', padx=th.PAD_L)
             sp = ttk.Spinbox(c, from_=lo, to=hi, increment=1.0, textvariable=v, width=8,
-                             format='%.1f', command=self._jog_user)
+                             format='%.1f', command=lambda j=j: self._jog_user(j))
             sp.grid(row=r, column=3, padx=th.PAD_L)
             # só no Enter: digitar '120' passaria por 1° e 12°
-            sp.bind('<Return>', lambda e: self._jog_user())
+            sp.bind('<Return>', lambda e, j=j: self._jog_user(j))
             for ev in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
                 sp.bind(ev, lambda e: 'break')   # rolar a página não move o braço
             sp.bind('<Key>', lambda e: setattr(self, '_jog_t', time.monotonic()))
@@ -829,10 +838,13 @@ class RehabGui:
                  font=th.FONT_SMALL).grid(row=11, column=0, columnspan=6, sticky='w',
                                           pady=(th.PAD, 0))
 
-    def _jog_user(self):
-        """Slider ou seta: envia o alvo 80 ms depois da última mexida (como o touch_pack)."""
+    def _jog_user(self, j=None):
+        """Slider, seta ou Enter na junta `j` (None = as 6, Home): envia o alvo 80 ms depois
+        da última mexida (como o touch_pack)."""
         self._jog_t = time.monotonic()
+        pend = self._jog_js if self._jog_after is not None else set()
         self._jog_cancel()
+        self._jog_js = set(range(6)) if j is None else pend | {j}
         self._jog_after = self.root.after(80, self._jog_send)
 
     def _jog_cancel(self):
@@ -842,15 +854,17 @@ class RehabGui:
 
     def _jog_send(self):
         self._jog_after = None
-        goal = self._jog_goal_deg()
+        estado = self._state_name(self._live())
+        goal = self._jog_goal_deg(estado)
         if goal is None:
             self._jog_msg('Valor inválido em algum campo.', False)
         elif not self._jog_synced or self._jog_current_deg() is None:
             # sem isto os sliders não mexidos mandariam 0°
             self._jog_msg('Pose atual das juntas desconhecida: espere os sliders seguirem o braço.', False)
-        elif self._state_name(self.br.age('tick') < LIVE_S) not in ('PARADO', 'POSICIONANDO'):
+        elif estado not in ('PARADO', 'POSICIONANDO'):
             self._jog_msg('Só com o braço PARADO.', False)
         else:
+            self._jog_alvo_ant, self._jog_alvo = self._jog_alvo, goal
             self.br.publish_goto([math.radians(g) for g in goal], self.jog_speed.get())
 
     def _jog_msg(self, texto, ok=True):
@@ -923,6 +937,8 @@ class RehabGui:
             self._jog_raw = raw
             try:
                 r = json.loads(raw)
+                if not r.get('ok') and not r.get('fim'):   # recusado: segue valendo o anterior
+                    self._jog_alvo = self._jog_alvo_ant
                 self.lbl_jog_res.configure(
                     text=('✔ ' if r.get('ok') else '✖ ') + str(r.get('motivo', '')),
                     fg=th.OK if r.get('ok') else th.DANGER_HV)
@@ -931,9 +947,13 @@ class RehabGui:
         self.lbl_jog_est.configure(text='' if pode else
                                    f'Só em PARADO (agora: {STATE_LABEL.get(nome, nome)}).')
 
-    def _jog_goal_deg(self):
+    def _jog_goal_deg(self, estado='PARADO'):
+        """Só as juntas mexidas vêm dos campos: um valor meio digitado noutra não vai de carona."""
+        js = self._jog_js or set(range(6))
+        base = (self._jog_alvo if estado == 'POSICIONANDO' else None) or self._jog_current_deg()
         try:
-            return [float(v.get()) for v in self.jog_var]
+            return [float(v.get()) if j in js or base is None else base[j]
+                    for j, v in enumerate(self.jog_var)]
         except (tk.TclError, ValueError):
             return None
 
@@ -1033,8 +1053,11 @@ class RehabGui:
 
     def mark(self):
         txt = self.var_mark.get().strip()
+        if not self.session_open:
+            self._say('Marcador NÃO gravado: nenhuma sessão gravando.', False)
+            return
         self.br.publish_event(T.format_event('MARK', texto=txt))
-        self._say(f'Marcador registrado: {txt or "(sem texto)"}')
+        self._say(f'Marcador enviado ao registrador: {txt or "(sem texto)"}')
 
     def session_start(self):
         sid = self.var_id.get().strip()
@@ -1082,7 +1105,7 @@ class RehabGui:
             elif not self.task_name and self.tick:
                 self._ref_recenter()
             if (self.task and not self.task.done and self.tick and
-                    self._state_name(True) in ('PARADO', 'ABORTADO', 'POSICIONANDO', 'SEM DADOS')):
+                    self._state_name(self._live()) in ('PARADO', 'ABORTADO', 'POSICIONANDO', 'SEM DADOS')):
                 self.task_stop()         # nada de referência velha ao reabilitar
             if self._estop_wait and time.monotonic() - self._estop_wait > 0.5:
                 self._estop_wait = 0.0
@@ -1120,11 +1143,11 @@ class RehabGui:
             else:
                 self._say(f'{acao} falhou: {msg}', False)
             if nome == C.S_SESSION_START and ok:
-                self.session_open = True
+                self.session_open, self._session_t = True, time.monotonic()
                 self.lbl_session.configure(text=f'● Sessão aberta — gravando em {msg}', fg=th.OK)
                 self.lbl_sub.configure(text=f'Sessão aberta: {self.var_id.get()} · gravando')
             if nome == C.S_SESSION_STOP and ok:
-                self.session_open = False
+                self.session_open, self._session_t = False, time.monotonic()
                 self.lbl_session.configure(text='○ Sessão encerrada.', fg=th.MUTED)
                 self.lbl_sub.configure(text='Nenhuma sessão de coleta aberta')
 
@@ -1172,6 +1195,9 @@ class RehabGui:
             self._ref_recenter()
 
     # ── atualização visual (≈ 10 Hz) ────────────────────────────────────
+    def _live(self):
+        return self.br.age('tick') < LIVE_S
+
     def _state_name(self, live_adm):
         d = self.tick
         if not (live_adm and d):
@@ -1182,6 +1208,7 @@ class RehabGui:
     def _refresh_real(self, br):
         """Linhas 'Robô real' e 'Célula FA7155' do cartão Conexões."""
         st = None
+        self._parada = ''
         if br.age('real') < 1.0:
             try:
                 st = json.loads(br.last['real'])
@@ -1193,6 +1220,7 @@ class RehabGui:
                 text='○ fora do ar',
                 fg=th.MUTED)
         else:
+            self._parada = st.get('parada') or ''
             if not self.var_ip.get() and st.get('ip'):
                 self.var_ip.set(st['ip'])
             ligado = st.get('conectado') or st.get('conectando')
@@ -1205,19 +1233,24 @@ class RehabGui:
             self.btn_mode.configure(text=f"Modo: {st.get('modo', 'MIRROR')}")
             partes = ['conectado' if st.get('conectado') else
                       'conectando…' if st.get('conectando') else 'DESCONECTADO']
+            if st.get('parada'):
+                partes.insert(0, st['parada'])
             if st.get('erro') and not st.get('conectado'):
                 partes.append(str(st['erro'])[:60])
             if st.get('robot_mode') not in (None, *C.ROBOT_MODES_OK):
                 partes.append(f"RobotMode {st['robot_mode']}")
             if st.get('estop'):
                 partes.append('E-STOP ACIONADO')
+            if st.get('travado'):
+                partes.append(st['travado'])
             partes.append('em sincronia' if st.get('sync_ok')
                           else 'FORA DE SINCRONIA %.1f°' % st.get('max_dq_deg', 0.0))
             if st.get('armado'):
                 partes.append('ARMADO (o real segue o sim)')
             bom = (st.get('robot_mode') in (None, *C.ROBOT_MODES_OK)
-                   and st.get('conectado') and st.get('sync_ok') and not st.get('estop'))
-            if st.get('modo') == 'SIM_ONLY' and not ligado and not st.get('erro'):
+                   and st.get('conectado') and st.get('sync_ok') and not st.get('estop')
+                   and not st.get('travado') and not st.get('parada'))
+            if st.get('modo') == 'SIM_ONLY' and not ligado and not st.get('erro') and not st.get('parada'):
                 self.conn['real'].configure(text='○ SIM_ONLY · desconectado', fg=th.MUTED)
             else:
                 self.conn['real'].configure(
@@ -1252,14 +1285,15 @@ class RehabGui:
         pill_bg, pill_fg, icon, ban_bg, ban_fg = th.STATE_STYLE[nome]
         if nome == 'ABORTADO':
             self._estop_alert = ''
-        elif self._estop_alert:          # fica até o braço confirmar a parada
+        alerta = self._estop_alert or self._parada
+        if alerta and nome != 'ABORTADO':          # fica até o braço confirmar a parada
             ban_bg, ban_fg = th.STATE_STYLE['ABORTADO'][3:]
         self.pill.configure(bg=pill_bg)
         self.lbl_state_icon.configure(text=icon, bg=pill_bg, fg=pill_fg)
         self.lbl_state.configure(text=STATE_LABEL.get(nome, nome), bg=pill_bg, fg=pill_fg)
         self.banner.configure(bg=ban_bg)
-        self.lbl_banner.configure(text=f'{icon}  {self._estop_alert or BANNER[nome]}', bg=ban_bg, fg=ban_fg,
-                                  font=th.FONT_TITLE if nome == 'ABORTADO' or self._estop_alert else th.FONT)
+        self.lbl_banner.configure(text=f'{icon}  {alerta or BANNER[nome]}', bg=ban_bg, fg=ban_fg,
+                                  font=th.FONT_TITLE if nome == 'ABORTADO' or alerta else th.FONT)
         self._set_banner_action(nome)
         d = self.tick
         if nome != 'SEM DADOS':
@@ -1293,10 +1327,10 @@ class RehabGui:
         s = br.last.get('summary')
         if s and s != self._summary_shown:
             self._summary_shown = s
-            self.session_open = False    # o logger fechou (encerrada ou abortada)
-            self.lbl_session.configure(text='○ Sessão fechada: não está gravando.', fg=th.MUTED)
-            self.lbl_sub.configure(text='Nenhuma sessão de coleta aberta')
+            if not self._rec():          # latched antigo: quem diz se há sessão é o T_SESSION_REC
+                self._session_closed()
             self._show_summary(s)
+        self._refresh_session()
 
         tab = self._tab()
         if tab == 3:
@@ -1304,6 +1338,33 @@ class RehabGui:
                 ch.redraw()
         elif tab == 2:
             self._draw_game()
+
+    def _rec(self):
+        """Pasta em gravação, '' se nenhuma, None se o registrador não responde."""
+        return self.br.last.get('rec') if self.br.age('rec') < REC_STALE_S else None
+
+    def _session_closed(self):
+        self.session_open = False
+        self.lbl_session.configure(text='○ Sessão fechada: não está gravando.', fg=th.MUTED)
+        self.lbl_sub.configure(text='Nenhuma sessão de coleta aberta')
+
+    def _refresh_session(self):
+        """O que o registrador diz vence o que a tela lembra."""
+        rec = self._rec()
+        if time.monotonic() - self._session_t < REC_STALE_S:
+            return                       # acabou de abrir/encerrar: o aviso ainda é o anterior
+        if rec and not self.session_open:     # painel reaberto no meio da sessão
+            self.session_open = True
+            self.lbl_session.configure(text=f'● Sessão aberta — gravando em {rec}', fg=th.OK)
+            self.lbl_sub.configure(text='Sessão aberta · gravando')
+        elif rec == '' and self.session_open:
+            self._session_closed()
+        elif rec is None and self.session_open:
+            self.session_open = False
+            self.lbl_session.configure(text='✖ GRAVAÇÃO PERDIDA: o registrador não responde. Relance-o '
+                                       'e inicie outra sessão.', fg=th.DANGER_HV)
+            self.lbl_sub.configure(text='GRAVAÇÃO PERDIDA')
+            self._say('GRAVAÇÃO PERDIDA: o registrador não responde.', False)
 
     def _set_banner_action(self, nome):
         # sem Habilitar aqui: um duplo clique em Reset habilitaria o braço
@@ -1519,6 +1580,8 @@ class RehabGui:
                                       'estar se movendo. Use a parada de emergência física. Fechar mesmo assim?',
                                       'Fechar mesmo assim')):
             return
+        if self.task and not self.task.done:
+            self.task_stop()             # TASK_END e alvo NaN antes de sair
         self._closing = True
         self.br.shutdown()
         self.root.destroy()

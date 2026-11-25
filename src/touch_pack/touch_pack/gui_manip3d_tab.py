@@ -116,6 +116,7 @@ class Manip3DTabMixin:
             on_state=self._manip_on_state,
             on_drag_change=self._manip_on_drag_change,
             T_end=self._manip_T_end())
+        self._manip_view.on_gpu_lost = self._manip_gpu_lost
         self._manip_view.pack(fill='both', expand=True)
 
         # TCP ao vivo
@@ -465,12 +466,24 @@ class Manip3DTabMixin:
             self._manip_view.set_scene(None, 'loading robot meshes…')
         threading.Thread(target=self._manip_scene_worker,
                          daemon=True, name='manip3d-scene').start()
+    # Uma vez sem GPU, a sessão segue em software.
+    _manip_gpu_failed = False
+
+    def _manip_gpu_lost(self) -> None:
+        self._manip_gpu_failed = True
+        self._manip_exact = False
+        self._manip_scene_state = 'idle'
+        self.get_logger().warning(
+            'Viewport 3D: GPU indisponível — recarregando malha '
+            'reduzida para o rasterizador em software.')
+        self._manip_load_scene()
     def _manip_scene_worker(self) -> None:
         scene, error = None, ''
         self._manip_scene_coarse = None
         # Com VTK disponível a malha vai INTEIRA para a GPU — é a mesma
         # geometria que o Gazebo carrega, triângulo por triângulo.
-        self._manip_exact = _MANIP3D_OK and _manip_vtk_available()
+        self._manip_exact = (_MANIP3D_OK and not self._manip_gpu_failed
+                             and _manip_vtk_available())
         try:
             scene = _build_scene(
                 self._end_effector,
@@ -512,12 +525,7 @@ class Manip3DTabMixin:
             if self._manip_exact and not view.rendering_exact:
                 # A GPU recusou o contexto depois de a cena exata já estar
                 # pronta.
-                self._manip_exact = False
-                self._manip_scene_state = 'idle'
-                self.get_logger().warning(
-                    'Viewport 3D: GPU indisponível — recarregando malha '
-                    'reduzida para o rasterizador em software.')
-                self._manip_load_scene()
+                self._manip_gpu_lost()
                 return
         self.get_logger().info(
             f'Viewport 3D: {len(scene.parts)} peças / '

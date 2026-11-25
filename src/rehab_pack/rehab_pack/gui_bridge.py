@@ -16,6 +16,7 @@ import rclpy
 from geometry_msgs.msg import PointStamped, WrenchStamped
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
+from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -49,10 +50,10 @@ class GuiBridge:
         self.seen = {}                                # chave -> time.monotonic()
 
         n.create_subscription(Float64MultiArray, C.T_TICK, self._on_tick, 10)
-        n.create_subscription(String, C.T_STATE, self._latch('state'), _QOS_LATCHED)
         n.create_subscription(String, C.T_PARAMS, self._on_params, _QOS_LATCHED)
         n.create_subscription(String, C.T_SESSION_SUMMARY,
                               self._latch('summary'), _QOS_LATCHED)
+        n.create_subscription(String, C.T_SESSION_REC, self._latch('rec'), 5)
         n.create_subscription(WrenchStamped, C.T_FT, self._touch('ft'), 10)
         n.create_subscription(JointState, C.T_JOINT_STATES, self._touch('joints'), 10)
         # modo mirror: status do rehab_mirror (JSON) e a FA7155 crua do ft_receiver
@@ -70,7 +71,7 @@ class GuiBridge:
         self._pub_meta = n.create_publisher(String, C.T_SESSION_META, _QOS_LATCHED)
 
         self._trig = {s: n.create_client(Trigger, s) for s in (
-            C.S_TARE, C.S_ESTOP, C.S_RESET, C.S_HOME,
+            C.S_TARE, C.S_ESTOP, C.S_RESET,
             C.S_SESSION_START, C.S_SESSION_STOP)}
         self._bool = {s: n.create_client(SetBool, s) for s in _SETBOOL}
         self._setparams = {
@@ -220,6 +221,11 @@ class GuiBridge:
         self._pub_meta.publish(String(data=json.dumps(meta, ensure_ascii=False)))
 
     def shutdown(self):
+        for p in (self._pub_event, self._pub_target):   # TASK_END e alvo NaN chegam ao registrador
+            try:
+                p.wait_for_all_acked(Duration(seconds=0.3))
+            except Exception:
+                pass
         self._stop.set()
         self._thread.join(timeout=1.0)
         try:

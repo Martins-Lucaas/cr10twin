@@ -201,6 +201,7 @@ def test_leitura_fresca_guarda_o_robot_mode_do_feedback():
     pkt = bytearray(FEEDBACK_PACKET_SIZE)
     struct.pack_into('<H', pkt, 0, FEEDBACK_PACKET_SIZE)
     struct.pack_into('<Q', pkt, 24, 9)
+    struct.pack_into('<Q', pkt, 48, 0x0123456789ABCDEF)
     threading.Timer(0.2, robot.sendall, args=(bytes(pkt),)).start()
     try:
         drv.read_joints_urdf_latest()

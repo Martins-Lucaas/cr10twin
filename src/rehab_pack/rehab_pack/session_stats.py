@@ -104,8 +104,9 @@ def _tarefas(eventos, t_ini, t_fim):
             if ini is not None:
                 out.append((ini, t))
             ini = t
-        elif tipo == 'TASK_END' and ini is not None:
-            out.append((ini, t))
+        elif tipo == 'TASK_END' and (ini is not None or not out):
+            # fim sem início: a tarefa começou antes da sessão
+            out.append((t_ini if ini is None else ini, t))
             ini = None
     if ini is not None:
         out.append((ini, t_fim))
@@ -117,7 +118,8 @@ def _tempo_fora_tunel(eventos, t_ini, t_fim):
     if not any(e[1] in ('TUNNEL_EXIT', 'TUNNEL_ENTER') for e in eventos):
         return None
     fora = 0.0
-    saiu = None
+    # 1º evento é ENTER: já estava fora quando o trecho começou
+    saiu = t_ini if next(e[1] for e in eventos if e[1].startswith('TUNNEL_')) == 'TUNNEL_ENTER' else None
     for t, tipo, _ in eventos:
         if tipo == 'TUNNEL_EXIT' and saiu is None:
             saiu = t
@@ -172,16 +174,20 @@ def resumir(amostras, eventos):
     if n:
         fn = [math.sqrt(a * a + b * b + c * c) for a, b, c in
               zip(amostras['fx_n'], amostras['fy_n'], amostras['fz_n'])]
-        totais['f_media_n'] = sum(fn) / n
-        totais['f_pico_n'] = max(fn)
+        fn = [f for f in fn if math.isfinite(f)]
+        if fn:
+            totais['f_media_n'] = sum(fn) / len(fn)
+            totais['f_pico_n'] = max(fn)
         if n > 1:
             # só o tempo das tarefas de túnel conta: nem intervalos, nem outras tarefas
             fora = total = 0.0
             for ini, fim in _tarefas(eventos, t[0], t[-1]):
                 # início aberto em TASK_END: o EXIT de uma tarefa não vaza para a seguinte
                 f = _tempo_fora_tunel([e for e in eventos if ini <= e[0] <= fim], ini, fim)
-                if f is None and any(e[1] == 'TASK_START' and ini == e[0] and 'tunel' in e[2]
-                                     for e in eventos):
+                if f is None and any(
+                        (e[1] == 'TASK_START' and ini == e[0] and 'tunel' in e[2])
+                        or (e[1] == 'TASK_END' and fim == e[0]
+                            and ('dentro_pct' in e[2] or 'progresso' in e[2])) for e in eventos):
                     f = 0.0           # túnel sem nenhuma saída
                 if f is not None:
                     fora, total = fora + f, total + fim - ini
@@ -190,5 +196,23 @@ def resumir(amostras, eventos):
     return {'alcances': alcances, 'totais': totais}
 
 
-def resumir_arquivos(samples_csv, events_csv):
-    return resumir(ler_colunas(samples_csv), ler_eventos(events_csv))
+def pico_de_forca(wrench_csv):
+    """Maior |F| finita das amostras cruas (samples.csv é a média do tick); None sem dados."""
+    pico = None
+    with open(wrench_csv, newline='', encoding='utf-8') as f:
+        for lin in csv.DictReader(f):
+            try:
+                n = math.hypot(*(float(lin[k]) for k in ('fx_n', 'fy_n', 'fz_n')))
+            except (TypeError, ValueError):     # última linha cortada
+                continue
+            if math.isfinite(n) and (pico is None or n > pico):
+                pico = n
+    return pico
+
+
+def resumir_arquivos(samples_csv, events_csv, wrench_csv=None):
+    r = resumir(ler_colunas(samples_csv), ler_eventos(events_csv))
+    pico = pico_de_forca(wrench_csv) if wrench_csv else None
+    if pico is not None:
+        r['totais']['f_pico_n'] = pico
+    return r

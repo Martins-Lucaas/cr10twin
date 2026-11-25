@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "code-review-graph": {
-      "command": "/home/biolabrobo2/.local/bin/code-review-graph",
+      "command": "code-review-graph",
       "args": [
         "serve"
       ],

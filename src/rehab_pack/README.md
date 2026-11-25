@@ -35,7 +35,11 @@ qualquer momento trava o braço em `ABORTADO`.
 **Painel:** se ele travar ou morrer por mais de 1 s com o braço se movendo, a admitância
 vai a `ABORTADO`. Vale só se o painel estava vivo ao iniciar o movimento.
 
-**Trava:** com o `touch_pack` aberto o rehab não inicia, e vice-versa (`docs/adr/0003`).
+**Trava:** com o `touch_pack` (ou `hand_pack`/`grasp_ml_pack`) aberto o rehab não inicia,
+e vice-versa (`docs/adr/0003`).
+
+**GRAVAÇÃO PERDIDA:** o painel confere o que o `rehab_logger` diz estar gravando; se ele
+morrer ou fechar a sessão (disco cheio = `erro_disco`), o cartão da sessão avisa.
 
 ## Pilha mecânica (eixo +Z do flange, mm)
 
@@ -71,11 +75,11 @@ combinações abaixo de 100 N/m e a GUI avisa abaixo de 300 N/m.
 Núcleo em
 `admittance.py`, cinemática em `kinematics.py` (cadeia `world → tcp_link` lida do
 URDF gerado), comando do braço por `/cr10_group_controller/joint_trajectory`
-(um ponto por tick). A orientação do mastro é mantida fixa: a tara vale a
-sessão toda.
+(um ponto por tick). A orientação do mastro é mantida fixa: em ATIVO a tara continua valendo.
+Inclinar mais de 2° → `LIMITE`.
 
 Estados: `PARADO`, `ATIVO`, `SEM_FORCA`, `LIMITE`, `ABORTADO`, `POSICIONANDO`. Segurança:
-|F| > limite (≤ 15 N) → `ABORTADO` travado; força com mais de 0,5 s → v = 0;
+|F| > limite (≤ 15 N) → `ABORTADO` travado (o motivo vai em `ABORT` no `events.csv`); força com mais de 0,5 s → v = 0;
 z do TCP ≥ 0,10 m; resíduo da IK > 5 mm → `LIMITE`. Parâmetros por
 `ros2 param set /rehab_admittance ...` (rejeita `abort_force_n` > 15 e
 combinações instáveis).
@@ -113,7 +117,9 @@ ros2 launch rehab_pack joystick_cell.launch.py control_mode:=mirror force_source
 **Intertravamentos (modo mirror):** a admitância só habilita com o robô conectado,
 sem E-Stop (inclusive o físico: RobotMode 5, 7 ou 8) e com sim e real a menos de 3°; durante o movimento tolera 8° de
 atraso. Perdeu qualquer condição em `ATIVO` → `ABORTADO`, e o `rehab_mirror`
-manda `Stop()` + `Continue()` ao robô. O espelho só corre com a admitância `ATIVA`.
+manda `Stop()` + `Continue()` ao robô. `Stop()` sem confirmação vira E-STOP do robô (para
+rearmar: Desconectar e Conectar); se nem ele confirmar, o painel mostra
+**PARADA NÃO CONFIRMADA**: use o E-Stop físico. O espelho só corre com a admitância `ATIVA`.
 O painel mostra o estado do robô real e da célula no cartão Conexões.
 O padrão é `control_mode:=sim_only`: nada move o robô real sem pedir.
 
@@ -121,12 +127,19 @@ O padrão é `control_mode:=sim_only`: nada move o robô real sem pedir.
 falha, a tela recusa e o nó não habilita (e aborta). Exceção: `robot_ip:=sim`. Habilitar exige força recente e ≤ 3 N; pico de
 UMA amostra acima do limite aborta; célula muda em MIRROR aborta (não retoma sozinha);
 dois nós publicando `/rehab/ft/wrench` recusam; tara só em PARADO/ABORTADO, obrigatória
-com a célula real e refeita se ela girar mais de 5°. Torque no centro da empunhadura
+com a célula real e refeita se ela girar mais de 5°, emudecer, for re-zerada no `ft_receiver`
+ou se o robô conectar/desconectar (em ATIVO isso aborta). Torque no centro da empunhadura
 acima de 2 N·m aborta (`abort_torque_nm`, PROVISÓRIO: sem norma). Em ATIVO a célula
 fica ≥ 5 cm e cotovelo/punho ≥ 10 cm sobre a mesa (senão `LIMITE`); coxas e cadeira
 NÃO são conferidas. Ordem com paciente: braço apoiado (tipoia/apoio), mastro solto,
 tarar, habilitar, só então segurar. Ao armar, a diferença sim−real some em 1,5 s. PARAR vai
 também direto ao `rehab_mirror`. Conexão que cai só volta pelo operador.
+
+**Trava do ServoJ:** salto do simulado maior que o passo permitido (1,44° por ponto
+a 30 ms; um atraso do laço de até 0,1 s é recuperado em vários pontos desse tamanho) ou `/joint_states`
+vencido para o robô e a admitância aborta; só volta com **Reset**, e só rearma com o
+simulado a menos de 3° do robô real. Outro nó publicando o comando do braço também
+aborta e recusa Habilitar e jog.
 
 **Pré-voo (somente leitura):** `ros2 run rehab_pack rehab_preflight --robot-ip 192.168.5.2 --ft-port /dev/ttyUSB0`
 confere, sem enviar nada ao robô: se o `install` é o do `src` (não uma cópia
@@ -153,7 +166,7 @@ Cabeçalho: LEDs por nó, estado do braço, |F| ao vivo e **PARAR**. A faixa aba
 diz o que fazer em cada estado. Abas: 1 Sessão, 2 Admitância (perfis e margem
 de estabilidade), 3 Tarefas (centro-fora, túnel, alcance), 4 Gráficos (10 s),
 5 Juntas.
-Atalhos: 1–5 trocam de aba, Espaço = PARAR.
+Atalhos: 1–5 trocam de aba, M = marcador, Espaço = PARAR.
 
 ### Juntas (aba 5)
 
@@ -180,15 +193,16 @@ lado_paretico, tarefa, notas) e chame `/rehab/session/start`; ele falha sem
 fecha sozinha com status `abortada`.
 
 - `samples.csv`: uma linha por tick (33 Hz): `TICK_FIELDS`, alvo (NaN sem alvo), q1..q6
-  do simulado e q1..q6 do CR10 real (NaN sem robô). Posição e TCP são do simulado.
+  do simulado e q1..q6 do CR10 real (NaN sem robô). `x_m…z_m` é o TCP do simulado; `xr_m…zr_m`, o do CR10 real.
 - `wrench.csv`: força e torque na taxa nativa, com o frame.
-- `events.csv`: `t_s, tipo, detalhe` (inclui `PARAMS` quando um parâmetro muda).
+- `events.csv`: `t_s, tipo, detalhe` (inclui `PARAMS` quando um parâmetro muda, `ABORT` com o
+  motivo e `ROBO` quando o robô conecta, cai ou muda de modo).
 - `emg.csv`: só com `emg_channels` > 0 (ponto de extensão; sem driver de EMG).
-- `meta.json`: esquema 2, commit do git, parâmetros, fonte de força, massas do mastro, status.
-- `summary.json`: por alcance (tempo, caminho, retilinearidade, picos de velocidade) e totais.
+- `meta.json`: esquema 2, commit do git, parâmetros INICIAIS, fonte de força, massas do mastro, status.
+- `summary.json`: por alcance (tempo, caminho, retilinearidade, picos de velocidade) e totais;
+  o pico de força vem do `wrench.csv` (todas as amostras, não a média do tick).
 
-O `t_s` dos ticks é tempo simulado; o `/clock` do Gazebo sai a 10 Hz, então os
-nós de controle usam timer de relógio de parede e interpolam o `t_s`.
+O `t_s` de todos os arquivos é o relógio monotônico da máquina (`relogio: monotonic`).
 
 ## Laboratório (`rehab_lab.world`)
 
@@ -228,7 +242,7 @@ python3 scripts/check_sim_ft.py            # com o Gazebo no ar e sim_ft:=true
 - **Furação da placa:** a peça real é aparafusada direto na FA7155 (operador, 24/11/2026),
   mas o `cad/Joystick.step` não tem essa furação: os 2 furos ⌀5 a ±22 mm não coincidem
   com a face móvel (M5 a ±17,7 mm; M6 em (0, ±25) e (±11, 0)). O CAD está diferente da peça.
-- `sim_sign = +1` é inferido pelo peso do mastro (Fz = −0,77 N); o teste com
+- `sim_sign = +1` é inferido pelo peso do mastro (Fz = −0,77 N, medido antes da massa atual); o teste com
   `/apply_link_wrench` não moveu o sensor. Confirme com uma força real em modo `sim`.
 - O estado `LIMITE` (resíduo da IK) não foi exercitado em simulação.
 - `sim_ft:=true` preserva a junta célula→placa fora do lumping do ODE; em HOME

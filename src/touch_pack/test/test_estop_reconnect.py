@@ -16,8 +16,6 @@ botão, porque é quando alguma coisa já deu errado:
    objeto antigo, a trava de software se perdia junto e o braço voltava
    aceitando ServoJ.
 """
-import re
-from pathlib import Path
 
 import pytest
 
@@ -28,13 +26,6 @@ from touch_pack.real_driver import (                         # noqa: E402
     CR10RealDriver,
     CR10RealDriverError,
 )
-
-
-def _corpo(nome: str) -> str:
-    src = Path(gui_robot.__file__).read_text()
-    m = re.search(rf'def {nome}\(.*?(?=\n    def )', src, re.S)
-    assert m, f'{nome} sumiu de gui_robot'
-    return m.group(0)
 
 
 # ── A trava local é independente da rede ──────────────────────────────
@@ -94,47 +85,52 @@ def test_engage_nao_exige_conexao_viva():
     """A condição é `driver existe`, não `_robot_connected`: é justamente
     com ele False (reconexão em curso) que o braço pode estar executando o
     que já está na fila."""
-    corpo = _corpo('_estop_engage')
-    # Só o CÓDIGO: os comentários falam de `_robot_connected` de propósito,
-    # para explicar por que ele saiu da condição.
-    codigo = '\n'.join(linha for linha in corpo.splitlines()
-                       if not linha.lstrip().startswith('#'))
-    trecho = codigo.split('hw_ok')[1].split('elif')[0]
-    assert '_real_driver is not None' in trecho
-    assert 'self._robot_connected' not in trecho, (
-        'a chamada do E-STOP voltou a exigir conexão viva')
+    drv = _DrvFalso()
+    g = _portador(_real_driver=drv, _robot_connected=False)
+    gui_robot.RobotMixin._estop_engage(g)
+    assert drv.estop_engaged and g._estop_latched
+    assert g.freeze                       # explorer congelado junto
 
 
 def test_engage_nasce_pessimista():
     """`hw_ok = True` como default fazia todo caminho que não falou com o
     controlador ser anunciado como sucesso."""
-    assert 'hw_ok = False' in _corpo('_estop_engage')
+    for modo in ('MIRROR', 'SIM_ONLY'):
+        g = _portador(_robot_mode=modo)   # sem driver: nada foi enviado
+        gui_robot.RobotMixin._estop_engage(g)
+        assert g._estop_latched
+        assert 'disabled and alarmed' not in g.status[-1]
 
 
 # ── A reconexão não desfaz o E-STOP ───────────────────────────────────
 
-def test_reconexao_nao_reabilita_com_estop_travado():
+@pytest.mark.parametrize('travado', [True, False])
+def test_reconexao_nao_reabilita_com_estop_travado(travado, monkeypatch):
     """`enable()` faz PowerOn + EnableRobot e espera o modo 5 — rodar isso
     com a trava acesa é a reconexão rearmando o braço por conta própria."""
-    corpo = _corpo('_robot_reconnect_worker')
-    i_latch = corpo.find('_estop_latched')
-    i_enable = corpo.find('drv.enable()')
-    assert i_latch != -1, 'o worker voltou a reabilitar sem olhar a trava'
-    assert i_enable != -1
-    assert i_latch < i_enable, 'a checagem tem de vir ANTES do enable()'
+    from types import SimpleNamespace
+    drv = _DrvFalso()
+    monkeypatch.setattr(gui_robot, 'CR10RealDriver', lambda **k: drv)
+    monkeypatch.setattr(gui_robot, 'time', SimpleNamespace(
+        sleep=lambda s: None, monotonic=lambda: 0.0, time=lambda: 0.0))
+    g = _portador(_estop_latched=travado)
+    gui_robot.RobotMixin._robot_reconnect_worker(g, '127.0.0.1')
+    assert drv.ordem == (['connect'] if travado else ['connect', 'enable'])
+    assert len(g.fila) == 1               # entregue à GUI nos dois casos
 
 
-def test_driver_novo_recebe_a_trava_de_volta():
+@pytest.mark.parametrize('travado', [True, False])
+def test_driver_novo_recebe_a_trava_de_volta(travado):
     """`_estop_engaged` mora no objeto do driver. Um driver novo nasce com
-    ela False, então o único ponto em que ele entra em serviço é o único em
-    que a trava pode ser reimposta."""
-    corpo = _corpo('_finish_robot_connect')
-    assert '_estop_latched' in corpo
-    assert 'emergency_stop()' in corpo
-    i_atribui = corpo.find('self._real_driver = drv')
-    i_reimpoe = corpo.find('emergency_stop()')
-    assert i_atribui < i_reimpoe, (
-        'a trava tem de ser reimposta depois de o driver entrar em serviço')
+    ela False, então ela tem de ser reimposta quando ele entra em serviço."""
+    drv = _DrvFalso()
+    g = _portador(_estop_latched=travado)
+    gui_robot.RobotMixin._finish_robot_connect(g, '127.0.0.1', drv, '{5}')
+    assert g._real_driver is drv
+    assert drv.estop_engaged is travado
+    assert g._estop_latched is travado
+    if travado:
+        assert any('ENGAGED' in s for s in g.status)
 
 
 # ── E-Stop vindo do CONTROLADOR (botão físico) ────────────────────────
@@ -156,3 +152,54 @@ def test_alarme_do_controlador_trava_a_gui_e_ignora_leitura_velha():
     assert engajou == [1] and gui._estop_latched
     alarme(gui, 12.0)                   # já travada: não reengata
     assert engajou == [1]
+
+
+class _DrvFalso:
+    def __init__(self, ordem=None):
+        self.ordem = [] if ordem is None else ordem
+        self.estop_engaged = False
+
+    def connect(self):
+        self.ordem.append('connect')
+
+    def enable(self):
+        self.ordem.append('enable')
+
+    def robot_mode(self):
+        return '{5}'
+
+    def emergency_stop(self):
+        self.ordem.append('estop')
+        self.estop_engaged = True
+        return True
+
+    def _send_dash(self, c):
+        return '0'
+
+
+def _portador(**kw):
+    """GUI mínima para os métodos de E-STOP e reconexão de produção."""
+    import threading
+    from types import SimpleNamespace
+    log = SimpleNamespace(**{k: lambda *a, **k2: None for k in
+                             ('info', 'warn', 'error', 'warning', 'debug')})
+    g = SimpleNamespace(
+        status=[], freeze=[], fila=[],
+        _exec_stop=threading.Event(), _prehome_cancel=threading.Event(),
+        _stop_event=threading.Event(), _latest_joint_rad=None,
+        _robot_mode='MIRROR', _robot_connected=False, _real_driver=None,
+        _eci_enabled=False, _estop_latched=False, _robot_reconnecting=True,
+        _robot_connecting=False, _drag_enabled=False,
+        _servoj_period_s=0.030, _feedback_port=30004,
+        _payload_cfg=lambda: {}, _refresh_estop_button=lambda: None,
+        _close_driver_quietly=lambda d: None, _save_robot_config=lambda: None,
+        _start_robot_heartbeat=lambda: None, _sync_gazebo_to_real=lambda d: None,
+        _robot_connect_btn=SimpleNamespace(set_state=lambda *a, **k: None),
+        _robot_led=SimpleNamespace(config=lambda *a, **k: None),
+        speed_factor_var=SimpleNamespace(get=lambda: 10),
+        get_logger=lambda: log)
+    g._set_status = lambda t, c=None: g.status.append(t)
+    g._freeze_pub = SimpleNamespace(publish=g.freeze.append)
+    g.root = SimpleNamespace(after=lambda ms, fn=None, *a: g.fila.append(fn))
+    g.__dict__.update(kw)
+    return g

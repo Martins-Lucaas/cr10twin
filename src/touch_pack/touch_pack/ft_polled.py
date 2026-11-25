@@ -40,6 +40,7 @@ from contextlib import contextmanager
 from typing import Callable, Optional
 
 from .constants import FT_MODBUS_SLAVE_ID, FT_MODBUS_TIMEOUT_S
+from .ft_cmd_channel import LineBusyError
 from .ft_modbus import FtDevice, FtModbusClient, ModbusError, ModbusTimeout
 
 
@@ -179,7 +180,7 @@ class FtPolledDriver:
                                         slave_id=self._slave,
                                         timeout_s=self._timeout)
                 vals = FtDevice(client).read_wrench()
-        except RuntimeError:
+        except LineBusyError:
             # O canal de comando pegou a linha primeiro. Ele é curto e ganha:
             # perder uma amostra vale menos que atrasar um Set_Zero.
             self.busy_skips += 1

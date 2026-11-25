@@ -13,6 +13,7 @@ NÃO substitua por tuples ('Família', tamanho, 'peso').
 """
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 
 # ── Paleta (tema claro do laboratório) ─────────────────────────────────
@@ -136,3 +137,31 @@ def _hdr_btn(parent, icon: str, label: str, command, *,
                     activeforeground=fg)
     btn.set_state = set_state  # type: ignore[attr-defined]
     return btn  # type: ignore[return-value]
+
+
+def call_bounded(root, fn, late, wait_s: float = 0.25):
+    """Roda `fn` (E/S de rede) sem prender o Tk além de `wait_s`.
+
+    Devolve (pronto, resultado, erro). Se não ficou pronto, `late(resultado,
+    erro)` é chamado na thread do Tk quando ficar."""
+    trava = threading.Lock()
+    out: dict = {}
+
+    def _roda():
+        try:
+            r, e = fn(), ''
+        except Exception as exc:   # noqa: BLE001 — o chamador mostra
+            r, e = None, str(exc) or type(exc).__name__
+        with trava:
+            out['r'] = (r, e)
+            if not out.get('tarde'):
+                return
+        root.after(0, late, r, e)
+    t = threading.Thread(target=_roda, daemon=True)
+    t.start()
+    t.join(wait_s)
+    with trava:
+        if 'r' in out:
+            return (True, *out['r'])
+        out['tarde'] = True
+    return False, None, ''

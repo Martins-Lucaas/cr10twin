@@ -1,7 +1,7 @@
 """Lógica pura das tarefas de reabilitação (sem Tk, sem ROS).
 
 Frame `world`, SI, plano XY do TCP. A GUI alimenta `update(t, x, y)` a cada
-tick da admitância (t = t_s do tick, relógio de simulação) e publica os
+tick da admitância (t = t_s do tick, time.monotonic()) e publica os
 eventos devolvidos em /rehab/event.
 
 Convenção de tela (vista de cima, como o voluntário enxerga: ele fica em
@@ -138,7 +138,7 @@ class CenterOutTask:
         self.cx, self.cy = center
         self.reach_m, self.radius = reach_m, target_radius_m
         self.hold_s, self.timeout_s = hold_s, timeout_s
-        self.n_targets = n_targets
+        self.n_targets, self.seed = n_targets, seed
         self.order = shuffled_order(n_targets, seed)
         # Metas: (fase, índice do alvo, (x, y)); alvo k fica no ângulo k·360/n.
         self.goals = []
@@ -170,7 +170,9 @@ class CenterOutTask:
 
     def start(self, t):
         self.started, self._t0 = True, t
-        ev = [('TASK_START', dict(tarefa='centro_fora', n=self.n_targets))]
+        ev = [('TASK_START', dict(tarefa='centro_fora', n=self.n_targets, alcance=self.reach_m,
+                                  raio=self.radius, permanencia_s=self.hold_s,
+                                  limite_s=self.timeout_s, semente=self.seed))]
         return ev + self._next(t)
 
     def _next(self, t):
@@ -219,18 +221,14 @@ class CenterOutTask:
             return 0.0
         return min(1.0, (t - self._enter) / self.hold_s)
 
-    def score_text(self, t):
-        n = len(self.goals)
-        return (f'Alvos: acertos {self.hits}  erros {self.misses}  '
-                f'(meta {max(self.i, 0) + 1 if not self.done else n}/{n})')
-
 
 # ── Túnel ───────────────────────────────────────────────────────────────────
 def tunnel_path(shape: str, size_m: float, start, n: int = 400):
     """Trajetória [(x, y)…] que COMEÇA em `start` (o cursor já nasce dentro).
 
     reta: de `start` até +size_m em y (direita da tela).
-    circulo: diâmetro size_m, centro em start + (0, size/2); sentido horário na tela.
+    circulo: diâmetro size_m, centro em start + (0, size/2); sentido
+    anti-horário na tela (desce primeiro).
     oito: lemniscata, largura 2·size/2 em y e size/2 em x, cruzando em `start`.
     """
     x0, y0 = start
@@ -253,21 +251,27 @@ def tunnel_path(shape: str, size_m: float, start, n: int = 400):
 class TunnelTask:
     """Seguir a trajetória dentro de um túnel de largura `width_m`.
 
-    O progresso só avança por uma janela à frente do último índice (não pula
-    o cruzamento do oito). Termina ao chegar ao fim. Dentro/fora gera
+    O progresso só avança DENTRO do túnel, por uma janela à frente do último índice (não
+    pula o cruzamento do oito) e no ritmo do cursor: cortar caminho não conta. Quem sai e
+    volta mais à frente só avança o que andou na direção do túnel. Termina ao chegar ao fim. Dentro/fora gera
     TUNNEL_EXIT/TUNNEL_ENTER; `reference()` dá o ponto da assistência.
     """
 
     WINDOW = 0.15       # fração da trajetória procurada à frente
+    GAIN = 2.0          # avanço no caminho por deslocamento do cursor (curva por dentro)
+    HYST_M = 0.002      # folga para contar a volta: ruído na borda não vira saída
 
     def __init__(self, shape, start, size_m=0.20, width_m=0.04,
                  lookahead_m=0.02, n=400):
-        self.shape, self.width = shape, width_m
+        self.shape, self.width, self.size = shape, width_m, size_m
+        self._xy = tuple(start)      # cursor no tick anterior
+        self._saiu = None            # onde o cursor deixou o túnel
         self.path = tunnel_path(shape, size_m, start, n)
         self.n = len(self.path)
         seg = sum(math.dist(self.path[i], self.path[i + 1]) for i in range(n - 1))
         self.length_m = seg
-        self._look = max(1, int(round(lookahead_m / (seg / (n - 1)))))
+        self._ds = seg / (n - 1)
+        self._look = max(1, int(round(lookahead_m / self._ds)))
         self.idx = 0
         self.started = self.done = False
         self.inside = True
@@ -279,7 +283,7 @@ class TunnelTask:
     def start(self, t):
         self.started, self._t0, self._t_last = True, t, t
         return [('TASK_START', dict(tarefa='tunel_' + self.shape,
-                                    largura=self.width))]
+                                    largura=self.width, tamanho=self.size))]
 
     def stop(self, t):
         if self.done or not self.started:
@@ -299,16 +303,27 @@ class TunnelTask:
         if not self.started or self.done:
             return []
         lo = max(0, self.idx - 5)
-        hi = min(self.n, self.idx + int(self.WINDOW * self.n) + 1)
+        passo, antes, self._xy = math.dist(self._xy, (x, y)), self._xy, (x, y)
+        alem = 0.0                   # andado no sentido do túnel desde a saída
+        if self._saiu:
+            a, b = self.path[max(0, self.idx - 1)], self.path[min(self.idx + 1, self.n - 1)]
+            alem = ((x - self._saiu[0]) * (b[0] - a[0]) + (y - self._saiu[1]) * (b[1] - a[1])
+                    ) / math.dist(a, b)
+        hi = min(self.n, self.idx + max(int(self.WINDOW * self.n), int(alem / self._ds)) + 1)
         best = min(range(lo, hi),
                    key=lambda i: (self.path[i][0] - x) ** 2 + (self.path[i][1] - y) ** 2)
-        self.idx = max(self.idx, best)
         self.dist = math.hypot(self.path[best][0] - x, self.path[best][1] - y)
+        if self.dist <= self.width / 2.0:
+            self.idx = max(self.idx, min(
+                best, self.idx + math.ceil(max(self.GAIN * passo, alem) / self._ds)))
+            self._saiu = None
+        elif self._saiu is None:
+            self._saiu = antes
         dt = t - self._t_last
         self._t_last = t
         self.t_total += dt
         ev = []
-        now_in = self.dist <= self.width / 2.0
+        now_in = self.dist <= self.width / 2.0 - (0.0 if self.inside else self.HYST_M)
         if now_in:
             self.t_in += dt
         if self.inside and not now_in:
@@ -329,10 +344,6 @@ class TunnelTask:
     def inside_pct(self):
         return 100.0 * self.t_in / self.t_total if self.t_total > 0 else 100.0
 
-    def score_text(self, t):
-        return (f'Progresso {100 * self.progress:.0f}%  '
-                f'dentro {self.inside_pct:.0f}%  saídas {self.exits}')
-
 
 # ── Avaliação de alcance ────────────────────────────────────────────────────
 class ReachTask:
@@ -346,7 +357,8 @@ class ReachTask:
 
     def start(self, t):
         self.started, self._t0 = True, t
-        return [('TASK_START', dict(tarefa='alcance', dur=self.duration_s))]
+        return [('TASK_START', dict(tarefa='alcance', dur=self.duration_s,
+                                    meia_area=self.area.half, celula=self.area.cell))]
 
     def stop(self, t):
         if self.done or not self.started:
@@ -364,7 +376,3 @@ class ReachTask:
             return [('TASK_END', dict(motivo='concluida',
                                       area_cm2=round(self.area.area_m2 * 1e4, 1)))]
         return []
-
-    def score_text(self, t):
-        rest = max(0.0, self.duration_s - (t - self._t0)) if self.started else self.duration_s
-        return f'Área explorada {self.area.area_m2 * 1e4:.0f} cm²  restam {rest:.0f} s'

@@ -188,7 +188,7 @@ def test_erro_de_servoj_no_meio_do_movimento_nao_limpa_alarme():
     d = Falso(); l = link(d); l.connect_once()
     l.stream(np.zeros(6))
     d.falha_em = 'servo'
-    assert l.stream(np.ones(6)) is False
+    assert l.stream(np.full(6, 0.01)) is False      # passo válido: quem falha é o driver
     assert 'prepare' not in d.log and not l.connected
 
 

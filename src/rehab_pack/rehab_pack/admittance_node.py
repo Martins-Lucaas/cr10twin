@@ -27,23 +27,27 @@ from builtin_interfaces.msg import Duration
 from .admittance import (AdmittanceAbort, AdmittanceController,
                          arm_stiffness_limit)
 from .constants import (ARM_JOINTS, ARM_STIFFNESS_MIN_N_M, DT_S,
-                        ENABLE_MAX_N, LINK_CLEARANCE_M, MIN_CELL_Z, SIM_LAG_MAX_RAD,
+                        ENABLE_MAX_N, JS_STALE_S, JS_STALE_SIM_S, LINK_CLEARANCE_M,
+                        MIN_CELL_Z, SIM_LAG_MAX_RAD, TILT_MAX_RAD,
                         TABLE_HALF_XY, TARE_MAX_TILT_RAD,
                         TORQUE_ABORT_LIMIT_NM, T_TARED, FORCE_ABORT_LIMIT_N, FORCE_STALE_S, SIM_ROBOT_IP,
                         HOME_Q_RAD, JOG_MAX_DEG_S, JOG_SPEED_DEFAULT_PCT,
                         JOG_SPEED_MIN_PCT, JOINT_LIMITS_DEG,
                         MIN_TCP_Z, S_ENABLE, S_ESTOP, S_HOME,
-                        S_RESET, STATES, T_ARM_CMD, T_FT, T_JOG_GOTO, T_JOG_RESULT,
-                        T_JOINT_STATES, T_REAL_STATUS, JOG_MARGIN_S,
+                        S_RESET, STATES, T_ARM_CMD, T_EVENT, T_FT, T_JOG_GOTO, T_JOG_RESULT,
+                        T_JOINT_STATES, T_REAL_STATUS, JOG_MARGIN_S, REAL_STATUS_STALE_S,
                         T_PARAMS, T_REFERENCE, T_STATE, T_TCP_POSE, T_TICK,
                         GUI_STALE_S, T_GUI_ALIVE, home_q)
 from .kinematics import Chain, _log
 from .jog import BRAKE_S, brake_point, plan_jog
-from .real_link import real_ok
+from .real_link import arm_intruders, real_ok
+from .tasks import format_event
 from .urdf_builder import build_robot_urdf
 
 Q_REAL_STALE_S = 0.2      # pose real mais velha que isso não é gravada
 IK_RESIDUAL_M = 0.005     # acima disto: LIMITE
+IK_ITERS = 5              # o passo por tick é ≤ 7,5 mm; sem convergir não pode comer o tick
+REF_MARGIN_M = 0.01       # folga do x medido além da excursão ao recentrar a referência
 # rad/s por junta; acima: LIMITE. A 0,10 m/s a guia pede até 13,8°/s num raio de 15 cm do HOME
 MAX_DQ_RAD_S = math.radians(JOG_MAX_DEG_S)
 P, A, S_, L, AB, J = STATES  # PARADO ATIVO SEM_FORCA LIMITE ABORTADO POSICIONANDO
@@ -109,7 +113,7 @@ class AdmittanceNode(Node):
         self.lim_hi = np.minimum(lim[:, 1], soft[:, 1])
 
         self.state = P
-        self.q = None            # medido
+        self.q, self.q_t = None, 0.0   # medido; chegada (relógio de parede)
         self.dq = np.zeros(6)    # rad/s, derivado da posição
         self._dq_ref = None      # (carimbo, q) de onde se deriva
         self.q_cmd = None        # último comandado
@@ -125,7 +129,6 @@ class AdmittanceNode(Node):
         self.tare_R = None           # orientação da célula na última tara
         self.t_start = time.monotonic()
         self.f_peak = 0.0            # maior |F| de amostra desde o último tick
-        self.last_msg = ''
         # modo mirror (CR10 real): sem robô conectado, sem E-Stop e em sincronia
         # com o sim, nada de habilitar — e se perder isso em ATIVO, aborta.
         self.declare_parameter('require_real', False)
@@ -141,6 +144,7 @@ class AdmittanceNode(Node):
         self.pub_pose = self.create_publisher(PoseStamped, T_TCP_POSE, 10)
         self.pub_state = self.create_publisher(String, T_STATE, latched)
         self.pub_params = self.create_publisher(String, T_PARAMS, latched)
+        self.pub_event = self.create_publisher(String, T_EVENT, 10)
         self.pub_jog = self.create_publisher(String, T_JOG_RESULT, 10)
         self.create_subscription(WrenchStamped, T_FT, self._on_ft, 50)
         self.create_subscription(JointState, T_JOINT_STATES, self._on_js, 20)
@@ -171,6 +175,8 @@ class AdmittanceNode(Node):
         for k, (lo, hi) in RANGES.items():
             if not lo <= p[k] <= hi:          # NaN também cai aqui
                 raise ValueError(f'{k}={p[k]} fora de [{lo}; {hi}]')
+        if p['traj_lead_s'] < p['dt_s']:       # o JTC pararia entre um ponto e o seguinte
+            raise ValueError('traj_lead_s menor que dt_s')
         if not math.isfinite(p['abort_force_n']) or p['abort_force_n'] > FORCE_ABORT_LIMIT_N or p['abort_force_n'] <= 0:
             raise ValueError(f'abort_force_n deve estar em (0; '
                              f'{FORCE_ABORT_LIMIT_N}] N')
@@ -210,13 +216,22 @@ class AdmittanceNode(Node):
             self._send(self.q, 0.3)   # cancela a trajetória do JTC em curso
         self.pub_state.publish(String(data=s))
 
+    def _abort(self, why):
+        """Motivo no log e em T_EVENT: quem lê a sessão depois não tem o log do nó."""
+        self.get_logger().error(f'ABORTADO: {why}')
+        if self.state != AB:
+            self.pub_event.publish(String(data=format_event('ABORT', motivo=why)))
+        self._set_state(AB)
+
     # ── entradas ────────────────────────────────────────────────────────
     def _on_js(self, msg: JointState):
         try:
-            self.q = np.array([msg.position[msg.name.index(j)]
-                               for j in ARM_JOINTS])
-        except ValueError:
+            q = np.array([msg.position[msg.name.index(j)] for j in ARM_JOINTS])
+        except (ValueError, IndexError):     # junta ausente ou posição faltando
             return
+        if not np.all(np.isfinite(q)):       # passaria por todas as comparações do enable
+            return
+        self.q, self.q_t = q, time.monotonic()
         # a velocidade que o Gazebo publica é ~0 com o braço em movimento: deriva a posição,
         # no tempo do carimbo (o mesmo em que o JTC vai executar a freada)
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -228,15 +243,26 @@ class AdmittanceNode(Node):
 
     def _on_tared(self, msg):
         # tara anterior a este nó (mensagem latched): orientação desconhecida
-        ok = msg.data > self.t_start and self.q is not None
-        self.tare_R = self.chain_ft.fk(self.q)[:3, :3] if ok else None
+        self.tare_R = self._R_cell() if msg.data > self.t_start else None
+
+    def _R_cell(self):
+        """Orientação da célula, ou None: a do robô REAL se ele está conectado (é ele
+        que a segura), senão a do simulado."""
+        q = self.q
+        if (self.real or {}).get('conectado'):
+            q = (self.real.get('q_real')
+                 if time.monotonic() - self.real_t < REAL_STATUS_STALE_S else None)
+        return None if q is None else self.chain_ft.fk(q)[:3, :3]
 
     def _tare_check(self):
         if self.p['force_source'] != 'real':
             return True, ''
         if self.tare_R is None:
             return False, 'tare a célula antes de habilitar'
-        ang = float(np.linalg.norm(_log(self.chain_ft.fk(self.q)[:3, :3] @ self.tare_R.T)))
+        R = self._R_cell()
+        if R is None:
+            return False, 'sem a pose do robô real: a inclinação da célula é desconhecida'
+        ang = float(np.linalg.norm(_log(R @ self.tare_R.T)))
         if ang > TARE_MAX_TILT_RAD:
             return False, f'a célula girou {math.degrees(ang):.0f}° desde a tara: tare de novo'
         return True, ''
@@ -258,9 +284,14 @@ class AdmittanceNode(Node):
 
     def _on_real(self, msg: String):
         try:
-            self.real, self.real_t = json.loads(msg.data), time.monotonic()
+            novo = json.loads(msg.data)
         except ValueError:
-            pass
+            return
+        if not isinstance(novo, dict):
+            return
+        if bool(novo.get('conectado')) != bool((self.real or {}).get('conectado')):
+            self.tare_R = None       # tarada noutro braço (simulado × real): inclinação incerta
+        self.real, self.real_t = novo, time.monotonic()
 
     def _mirror(self) -> bool:
         """Último modo visto do rehab_mirror; antes disso, o do launch. Se o nó
@@ -286,6 +317,16 @@ class AdmittanceNode(Node):
             return True, 'ok'
         return real_ok(self.real, time.monotonic() - self.real_t)
 
+    def _arm_check(self):
+        """(ok, motivo): /joint_states em dia e ninguém mais comandando o braço."""
+        age = time.monotonic() - self.q_t
+        if age > (JS_STALE_S if self._mirror() else JS_STALE_SIM_S):
+            return False, f'/joint_states parado há {age:.1f} s (Gazebo travado?)'
+        outros = arm_intruders(self)
+        if outros:
+            return False, f'outro nó comanda o braço ({", ".join(outros)}): feche-o'
+        return True, 'ok'
+
     def _active_check(self):
         """(ok, motivo) para a admitância: robô real em dia E força confiável."""
         ok, why = self._real_check()
@@ -297,13 +338,13 @@ class AdmittanceNode(Node):
                            'segue a célula (relance com force_source:=real)')
         if self.count_publishers(T_FT) > 1:
             return False, f'mais de um nó publica {T_FT}: feche o outro launch'
-        return True, 'ok'
+        return self._arm_check()
 
     def _jog_check(self):
         """(ok, motivo) para posicionar. Em MIRROR a força precisa estar viva, senão o
         aborto por força não protege ninguém; fora dele o jog funciona sem célula."""
         if not self._mirror():
-            return True, 'ok'
+            return self._arm_check()
         ok, why = self._active_check()
         if ok and (self.ft_t is None or time.monotonic() - self.ft_t > FORCE_STALE_S):
             ok, why = False, 'sem força em MIRROR (não retoma sozinho)'
@@ -364,8 +405,13 @@ class AdmittanceNode(Node):
 
     def _on_ref(self, msg: PointStamped):
         ref = np.array([msg.point.x, msg.point.y, msg.point.z])
-        if self.state == A and np.all(np.isfinite(ref)):
-            self.ctrl.set_reference(ref)
+        if self.state != A or not np.all(np.isfinite(ref)):
+            return
+        if np.linalg.norm(ref - self.ctrl.origin) > self.p['max_excursion_m'] + REF_MARGIN_M:
+            self.get_logger().warn('referência fora da excursão: recusada',
+                                   throttle_duration_sec=1.0)
+            return
+        self.ctrl.set_reference(ref)
 
     def _on_ft(self, msg: WrenchStamped):
         f = np.array([msg.wrench.force.x, msg.wrench.force.y,
@@ -431,13 +477,14 @@ class AdmittanceNode(Node):
         return res
 
     def _srv_estop(self, _req, res):
-        self._set_state(AB)
+        self._abort('PARAR (e-stop)')
         res.success, res.message = True, 'e-stop: ABORTADO'
         return res
 
     def _srv_reset(self, _req, res):
-        if self.state == AB:
+        if self.state in (AB, P):        # em PARADO também: destrava o rehab_mirror
             self._set_state(P)
+            self.pub_event.publish(String(data=format_event('RESET')))
             res.success, res.message = True, 'PARADO'
         else:
             res.success, res.message = False, 'não está ABORTADO'
@@ -511,9 +558,11 @@ class AdmittanceNode(Node):
                 why = 'o braço simulado não segue o comando (outro nó o move?)'
             elif self.state != J and self._mirror() and age > FORCE_STALE_S:
                 why = 'sem força em MIRROR (não retoma sozinho)'
+            elif (self.state != J and self.p['force_source'] == 'real'
+                  and self.tare_R is None):
+                why = 'a tara deixou de valer (célula muda, re-zerada ou robô trocado)'
         if why:
-            self.get_logger().error(f'ABORTADO: {why}')
-            self._set_state(AB)
+            self._abort(why)
         elif self.state == J:
             if self._now() >= self.jog_end:
                 err = float(np.degrees(np.max(np.abs(self.q - self.jog_goal))))
@@ -529,13 +578,16 @@ class AdmittanceNode(Node):
             self.ctrl.reset(x)   # fica pronto para habilitar sem salto
         self._publish_tick(now, x, age)
 
+    def _giro(self, T) -> float:
+        """Quanto o mastro girou [rad] desde a orientação em que se habilitou."""
+        return float(np.linalg.norm(_log(T[:3, :3] @ self.R0.T)))
+
     def _active_step(self, age, v_meas):
         c = self.ctrl
         try:
             sp = c.step(self.force_w, age, v_meas)
         except AdmittanceAbort as e:
-            self.get_logger().error(f'ABORTADO: {e}')
-            self._set_state(AB)
+            self._abort(str(e))
             return
         if age > FORCE_STALE_S:
             if self.state != S_:
@@ -545,17 +597,22 @@ class AdmittanceNode(Node):
             sp[2] = MIN_TCP_Z
             c.x[2] = MIN_TCP_Z
             c.v[2] = max(c.v[2], 0.0)
-        q, res = self.chain.ik(self.q_cmd, sp, self.R0)
+        q, res = self.chain.ik(self.q_cmd, sp, self.R0, iters=IK_ITERS)
         # já fora do limite: o clip vira um salto, que MAX_DQ_RAD_S recusa (LIMITE)
         q = np.clip(q, self.lim_lo, self.lim_hi)
-        res = float(np.linalg.norm(self.chain.fk(q)[:3, 3] - sp))
+        T = self.chain.fk(q)
+        res = float(np.linalg.norm(T[:3, 3] - sp))
+        # o clip em J6 não desloca o TCP (ele está no eixo): só a orientação acusa
+        giro = self._giro(T)
+        torto = giro > TILT_MAX_RAD and giro > self._giro(self.chain.fk(self.q_cmd))
         # invadir a folga só é aceito se estiver saindo dela
         folga = self._clearance(q)
         baixo = folga < 0.0 and folga < self._clearance(self.q_cmd)
-        if (baixo or res > IK_RESIDUAL_M
+        if (baixo or torto or not res <= IK_RESIDUAL_M
                 or np.max(np.abs(q - self.q_cmd)) > MAX_DQ_RAD_S * self.p['dt_s']):
             self.get_logger().warn(
-                f'LIMITE: resíduo IK {res * 1e3:.1f} mm, folga {folga * 1e3:.0f} mm',
+                f'LIMITE: resíduo IK {res * 1e3:.1f} mm, folga {folga * 1e3:.0f} mm, '
+                f'giro {math.degrees(giro):.1f}°',
                 throttle_duration_sec=1.0)
             if self.state != L:
                 self._set_state(L)

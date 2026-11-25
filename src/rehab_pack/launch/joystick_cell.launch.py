@@ -6,6 +6,7 @@
     ros2 launch rehab_pack joystick_cell.launch.py force_source:=sim sim_ft:=true
     ros2 launch rehab_pack joystick_cell.launch.py painel:=false  # sem o painel Tk
 """
+import math
 import os
 import tempfile
 
@@ -97,13 +98,17 @@ def launch_setup(context, *args, **kwargs):
                     arguments=['cr10_group_controller',
                                '--controller-manager', '/controller_manager'])
 
+    ft_sign = float(LaunchConfiguration('ft_sign').perform(context))
+    ft_yaw = float(LaunchConfiguration('ft_yaw_deg').perform(context))
+    if ft_sign not in (1.0, -1.0) or not math.isfinite(ft_yaw):
+        raise RuntimeError(f'ft_sign={ft_sign} deve ser 1 ou -1 e ft_yaw_deg={ft_yaw} finito')
+
     sim_time = {'use_sim_time': True}
     nodes = [Node(package='rehab_pack', executable='rehab_force_source',
                   parameters=[sim_time, {
                       'source': source,
-                      'real_sign': float(LaunchConfiguration('ft_sign').perform(context)),
-                      'real_yaw_deg': float(
-                          LaunchConfiguration('ft_yaw_deg').perform(context))}])]
+                      'real_sign': ft_sign,
+                      'real_yaw_deg': ft_yaw}])]
     if source == 'real':
         # Mesmo nó e mesmos argumentos do touch_pack: o ft_receiver é o único
         # dono da porta serial da FA7155 e publica /ft_sensor/wrench.

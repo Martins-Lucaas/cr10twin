@@ -22,7 +22,9 @@ class FakeBridge:
         self.targets = []
         self.gotos = []
 
-    def age(self, key): return float('inf')
+    no_ar = True                 # a admitância manda tiques?
+
+    def age(self, key): return 0.0 if key == 'tick' and self.no_ar else float('inf')
     def service_ready(self, name): return False
     def call_trigger(self, name): self.calls.append(name)
     def call_enable(self, on): self.calls.append((C.S_ENABLE, on))
@@ -375,3 +377,131 @@ def test_confirmacao_nao_segura_o_grab_e_parar_a_cancela(app):
     a.root.after(200, durante)
     assert a._confirm('t', 'x') is False
     assert visto == [None] and C.S_ESTOP in br.calls
+
+
+# ── auditoria de 24/11/2026 ─────────────────────────────────────────────────
+def test_r03_valor_meio_digitado_em_outra_junta_nao_vai_junto(app):
+    import math
+    a, br = app
+    _braco_no_ar(br); a._poll(); a._refresh_ui()
+    a.jog_spin[0].delete(0, 'end'); a.jog_spin[0].insert(0, '1')     # ia digitar 12
+    a.jog_var[1].set(-40.0)
+    a.root.tk.call(a.jog_widgets[2].cget('command'), '-40.0')        # arrasta J2
+    a.root.after_cancel(a._jog_after); a._jog_send()
+    assert br.gotos[0][0] == pytest.approx(C.HOME_Q_RAD[0], abs=1e-6)
+    assert br.gotos[0][1] == pytest.approx(math.radians(-40.0))
+    # em movimento, as outras juntas seguem para o último alvo, não para a pose do meio
+    meio = list(C.HOME_Q_RAD); meio[1] += 0.01
+    _braco_no_ar(br, meio, 'POSICIONANDO'); a._poll()
+    a.jog_var[2].set(-100.0)
+    a.root.tk.call(a.jog_widgets[4].cget('command'), '-100.0')
+    a.root.after_cancel(a._jog_after); a._jog_send()
+    assert br.gotos[1][1] == pytest.approx(math.radians(-40.0))
+    assert br.gotos[1][2] == pytest.approx(math.radians(-100.0))
+    # recusado pelo nó: vale o alvo anterior
+    import json
+    br.last['jog'] = json.dumps({'ok': False, 'motivo': 'x'})
+    br.age = lambda k: 0.0 if k in ('joints', 'tick', 'jog') else float('inf')
+    a._refresh_jog(True)
+    assert a._jog_alvo[2] == pytest.approx(math.degrees(C.HOME_Q_RAD[2]))
+
+
+def _rec(br, valor):
+    br.last['rec'] = valor
+    br.age = lambda k: 0.0 if k == 'tick' or (k == 'rec' and valor is not None) else float('inf')
+
+
+def test_r16_registrador_morto_mostra_gravacao_perdida(app):
+    a, br = app
+    br.results.append((C.S_SESSION_START, True, '/tmp/x')); a._poll()
+    a._refresh_ui()
+    assert a.session_open                                   # acabou de abrir
+    a._session_t = getattr(a, '_session_t', 0.0) - 5.0
+    _rec(br, '/tmp/x'); a._refresh_ui()
+    assert a.session_open and 'gravando' in a.lbl_session.cget('text')
+    _rec(br, None); a._refresh_ui()
+    assert 'GRAVAÇÃO PERDIDA' in a.lbl_session.cget('text') and not a.session_open
+    _rec(br, '/tmp/x'); a._refresh_ui()                     # só um engasgo: voltou
+    assert a.session_open
+    _rec(br, ''); a._refresh_ui()                           # o nó foi relançado sem sessão
+    assert 'não está gravando' in a.lbl_session.cget('text')
+
+
+def test_r16_painel_reaberto_com_resumo_antigo_nao_diz_que_fechou(app):
+    a, br = app
+    a._session_t = -100.0
+    br.last['summary'] = '{"status": "concluida"}'          # latched da sessão anterior
+    _rec(br, '/tmp/sessao2'); a._refresh_ui()
+    assert a.session_open and '/tmp/sessao2' in a.lbl_session.cget('text')
+
+
+def test_r20_marcador_sem_sessao_avisa_e_nao_finge(app):
+    a, br = app
+    a.mark()
+    assert 'NÃO gravado' in a.status.cget('text') and not br.events
+    a.session_open = True
+    a.mark()
+    assert br.events[-1].startswith('MARK')
+
+
+def test_r21_fechar_o_painel_encerra_a_tarefa(app):
+    import math
+    a, br = app
+    a._confirm = lambda *x, **k: True
+    br.ticks.append(tick(0.0)); a._poll(); a.var_task.set('alcance'); a.task_start()
+    br.ticks.append(tick(0.1, state=1.0)); a._poll()
+    ordem = []
+    br.shutdown = lambda: ordem.append(list(br.events))
+    a.close()
+    assert any(e.startswith('TASK_END') for e in ordem[0])
+    assert math.isnan(br.targets[-1][0])
+
+
+def test_r25_admitancia_morta_nao_inicia_e_encerra_a_tarefa(app):
+    a, br = app
+    br.ticks.append(tick(0.0)); a._poll()
+    br.no_ar = False
+    a.task_start()
+    assert a.task is None and not br.events
+    br.no_ar = True
+    a.var_task.set('alcance'); a.task_start()
+    assert a.task and not a.task.done
+    br.no_ar = False; a._poll()
+    assert a.task.done and br.events[-1].startswith('TASK_END')
+
+
+def test_r26_tunel_registra_assistencia_e_a_mudanca(app):
+    a, br = app
+    br.ticks.append(tick(0.0)); a._poll()
+    a.var_task.set('tunel_circulo'); a.task_start()
+    ini = br.events[0]
+    assert ini.startswith('TASK_START') and 'assistencia=0' in ini and 'tamanho=0.15' in ini
+    a.var_assist.set(True)
+    assert br.events[-1] == 'PARAMS;assistencia=1'
+
+
+def test_xr18_sessao_nasce_livre(app):
+    a, br = app
+    assert a.var_task_meta.get() == 'livre'
+    a.var_task.set('alcance')
+    assert a.var_task_meta.get() == 'alcance'
+
+
+def test_parada_nao_confirmada_aparece_na_tela_e_no_banner(app):
+    a, br = app
+    for modo in ('MIRROR', 'SIM_ONLY'):
+        _real(br, modo=modo, conectado=False, parada='PARADA NÃO CONFIRMADA: use o E-Stop físico')
+        a._refresh_ui()
+        assert a.conn['real'].cget('text').startswith('✖ PARADA NÃO CONFIRMADA')
+        assert 'PARADA NÃO CONFIRMADA' in a.lbl_banner.cget('text')
+    _real(br)
+    a._refresh_ui()
+    assert 'PARADA' not in a.lbl_banner.cget('text')
+
+
+def test_trava_do_espelho_aparece_na_tela(app):
+    a, br = app
+    _real(br, travado='ServoJ travado (salto): dê Reset para liberar')
+    a._refresh_real(br)
+    t = a.conn['real'].cget('text')
+    assert t.startswith('✖') and 'ServoJ travado' in t

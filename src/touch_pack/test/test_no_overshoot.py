@@ -65,43 +65,11 @@ def m():
     return tactile_explorer
 
 
-# ── espelho do bloco de decisão da rampa ─────────────────────────────
-
 def _ramp_step(m, *, target_f, tol_n, fz, est, in_contact, crossed, sign0,
                dynamic=False):
-    """Reproduz UM passo da lei do `_qs_regulate` (rampa a v constante).
-
-    ESPELHO do bloco de decisão de passo — mexer lá pede mexer aqui. A
-    alternativa seria instanciar o nó ROS inteiro só para exercitar vinte
-    linhas de aritmética. Devolve (step_m, crossed, sign0).
-    """
-    err = target_f - fz
-    in_band = abs(err) <= tol_n
-    if not crossed and (in_band or (sign0 != 0.0 and sign0 * err <= 0.0)):
-        crossed = True
-    if crossed:
-        if err > tol_n:
-            sign_now = 1.0
-        elif err < -tol_n:
-            sign_now = -1.0
-        else:
-            sign_now = 0.0
-    else:
-        if sign0 == 0.0:
-            sign0 = 1.0 if err > 0.0 else -1.0
-        sign_now = (1.0 if err > 0.0 else -1.0) if dynamic else sign0
-    if sign_now == 0.0:
-        return 0.0, crossed, sign0
-    step_mag = m._QS_RAMP_V_MS * m._CTRL_DT
-    if in_contact:
-        k_cap = est.value if est.estimated else est.k_upper
-        step_mag = min(
-            step_mag,
-            m._QS_RAMP_DF_CAP_N / max(k_cap, m._K_MIN_NM),
-            m._QS_NO_CROSS_FRAC * abs(err) / max(est.k_upper, m._K_MIN_NM))
-    else:
-        step_mag = min(step_mag, m._QS_FREE_STEP_MAX_M)
-    return sign_now * step_mag, crossed, sign0
+    """UM passo pela função de PRODUÇÃO que o `_qs_regulate` chama."""
+    return m.qs_ramp_step(target_f - fz, tol_n, in_contact, crossed, sign0,
+                          m._QS_RAMP_V_MS * m._CTRL_DT, est, dynamic)
 
 
 def _x_at_force(curva, f_n, hi_mm=60.0):

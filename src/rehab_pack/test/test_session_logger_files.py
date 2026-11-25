@@ -27,7 +27,7 @@ def _tick(t, state=1, fx=1.0):
 def _sessao(tmp_path, emg=0):
     w = SessionWriter(str(tmp_path))
     pasta = w.abrir(META, PARAMS, {'fonte': 'virtual', 'topico_origem': '/rehab/virtual_wrench',
-                                   'sim_sign': 1.0}, [0.0] * 6, emg_canais=emg)
+                                   'ft_sign': 1.0}, [0.0] * 6, emg_canais=emg)
     return w, pasta
 
 
@@ -81,7 +81,7 @@ def test_meta_segue_esquema(tmp_path):
         assert k in m, k
     assert set(m['codigo']) == {'git_commit', 'git_dirty', 'versao_pacote'}
     assert m['admitancia'] == PARAMS
-    assert set(m['forca']) == {'fonte', 'topico_origem', 'sim_sign'}
+    assert set(m['forca']) == {'fonte', 'topico_origem', 'ft_sign'}
     assert set(m['mastro']) == {'massa_empunhadura_kg', 'massa_placa_kg', 'tcp_offset_m'}
     assert 'summary.json' in m['arquivos']
 
@@ -101,7 +101,7 @@ def test_params_mudam_gera_evento(tmp_path):
     w.fechar('concluida')
     ev = list(csv.reader(open(os.path.join(pasta, 'events.csv'))))[1:]
     assert len(ev) == 1 and ev[0][1] == 'PARAMS' and ev[0][2] == 'mass_kg=5.0'
-    assert json.load(open(os.path.join(pasta, 'meta.json')))['admitancia']['mass_kg'] == 5.0
+    assert json.load(open(os.path.join(pasta, 'meta.json')))['admitancia'] == PARAMS   # o inicial
 
 
 def test_emg_opcional(tmp_path):

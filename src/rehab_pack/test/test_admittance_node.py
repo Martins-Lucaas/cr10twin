@@ -15,14 +15,14 @@ from rehab_pack import admittance_node as an                  # noqa: E402
 from rehab_pack.constants import HOME_Q_RAD, T_FT             # noqa: E402
 
 OK = {'conectado': True, 'estop': False, 'sync_ok': True, 'modo': 'MIRROR',
-      'ip': '10.0.0.1', 'robot_mode': 5}
+      'ip': '10.0.0.1', 'robot_mode': 5, 'q_real': list(HOME_Q_RAD)}
 
 
 @pytest.fixture
 def node():
     rclpy.init(domain_id=78)
     n = an.AdmittanceNode()
-    n.q = np.array(HOME_Q_RAD)
+    n.q, n.q_t = np.array(HOME_Q_RAD), np.inf      # simulado sempre em dia
     n._on_tared(Float64(data=time.monotonic()))
     yield n
     n.destroy_node()
@@ -148,6 +148,7 @@ def test_tara_vale_so_na_orientacao_em_que_foi_feita(node):
     assert node.tare_R is None
     node._on_tared(Float64(data=time.monotonic()))
     node.q = node.q + np.array([0, 0, 0, 0, 0.2, 0])
+    real(node, 'real', q_real=list(node.q))             # o real segue o sim
     assert 'girou' in enable(node).message
     node._on_tared(Float64(data=0.0))                   # force_source reiniciou
     assert node.tare_R is None
@@ -282,7 +283,7 @@ def test_jog_manda_velocidade_final_zero_e_freia_antes_de_trocar_o_alvo(com_jtc)
 def test_joint_states_sem_velocidade_vira_zero(node):
     from sensor_msgs.msg import JointState
     node._on_js(JointState(name=an.ARM_JOINTS, position=HOME_Q_RAD, velocity=[0.1] * 6))
-    assert np.allclose(node.dq, 0.1)
+    assert np.allclose(node.dq, 0.0)         # o campo do Gazebo não vale: deriva da posição
     node._on_js(JointState(name=an.ARM_JOINTS, position=HOME_Q_RAD))
     assert np.allclose(node.dq, 0.0)
 

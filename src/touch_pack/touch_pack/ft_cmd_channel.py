@@ -22,6 +22,10 @@ from contextlib import contextmanager
 from typing import Optional
 
 
+class LineBusyError(RuntimeError):
+    """Outra sessão de comando está com a linha — diferente de porta fechada."""
+
+
 class LineTapMixin:
     """Dá a um transporte o par (write, read) que o cliente Modbus espera.
 
@@ -72,7 +76,7 @@ class LineTapMixin:
         """
         with self._tap_lock:
             if self._tap_buf is not None:
-                raise RuntimeError(
+                raise LineBusyError(
                     'já existe uma sessão de comando aberta nesta linha')
             self._tap_buf = bytearray()
         try:

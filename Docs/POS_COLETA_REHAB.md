@@ -13,7 +13,7 @@ Faça na ordem. Se um passo falhar, pare.
 4. `source install/setup.bash` e, com o ambiente do passo 2, um arquivo por vez em
    `src/rehab_pack/test`. `test_gui_smoke.py` precisa de tela.
 5. Trava, com o CR10 desconectado e **em outro terminal sem `CR10_PACK_LOCK_DIR`**:
-   - touch_pack aberto: o launch do rehab tem de recusar com "touch_pack está aberto".
+   - touch_pack aberto: o launch do rehab tem de recusar com "touch_pack (ou hand_pack/grasp_ml_pack) está aberto".
    - rehab aberto: o launch do touch_pack tem de recusar.
    - `kill -9` no que estiver aberto: o outro tem de abrir.
 6. Painel do rehab (sim): lista suspensa aberta + Espaço envia PARAR; roda do mouse não

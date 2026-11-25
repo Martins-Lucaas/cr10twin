@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # ── deps de Python (numpy<2 = ABI do cv_bridge do Humble) ────────────────
-RUN pip install --no-cache-dir "numpy<2" pyserial matplotlib
+RUN pip install --no-cache-dir "numpy<2" pyserial matplotlib pandas scipy
 
 # extras opcionais do grasp_ml_pack (torch CPU); constraints mantêm numpy<2 e opencv compatível
 RUN printf 'numpy<2\nopencv-python<4.11\nopencv-python-headless<4.11\n' > /tmp/c.txt \

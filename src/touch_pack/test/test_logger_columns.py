@@ -97,9 +97,17 @@ def _run_once(tmpdir, monkeypatch, mode, sensor='5', n_taxels=25,
     p_touch = pub.create_publisher(TouchFrame, TOUCH_FRAME_TOPIC,
                                    PL._QOS_SENSOR)
     p_evt = pub.create_publisher(String, '/touch_sensor/spike_event',
-                                 PL._QOS_SENSOR)
+                                 PL.TOUCH_EVENT_QOS_DEPTH)
     p_js = pub.create_publisher(JointState, '/joint_states', 50)
     nodes = [logger, pub]
+    # O descobrimento do DDS não tem prazo: publicar best-effort antes de o
+    # logger casar perde a amostra, e o run sai sem linha nenhuma.
+    t_end = time.monotonic() + 15.0
+    pubs = (p_start, p_status, p_lc, p_touch, p_evt, p_js)
+    while time.monotonic() < t_end and any(
+            p.get_subscription_count() < 1 for p in pubs):
+        _spin(nodes, 0.02)
+    assert all(p.get_subscription_count() >= 1 for p in pubs)
 
     p_start.publish(_start_msg(mode, **start_kw))
     _spin(nodes)

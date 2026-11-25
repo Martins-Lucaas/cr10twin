@@ -28,3 +28,7 @@ bool origin_valid           # true depois que a origem foi descoberta
 float64 origin_x_m          # origem = TCP no primeiro contato (mundo URDF, m)
 float64 origin_y_m
 float64 origin_z_m
+
+# run_id do PalpationStart que este status descreve ('' = nenhum ainda). É o que
+# separa o fim do run anterior, republicado a 10 Hz, do run recém-aberto.
+string run_id

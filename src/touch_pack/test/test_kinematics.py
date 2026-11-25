@@ -110,6 +110,42 @@ def test_ik_roundtrip(att):
     assert np.all(q <= JOINT_MAX + 1e-9)
 
 
+def test_ik_nunca_devolve_ok_fora_dos_limites():
+    """Com e sem semente: solução aceita cabe nos limites e atinge o alvo."""
+    rng = np.random.default_rng(0)
+    n_ok = 0
+    for k in range(400):
+        q0 = rng.uniform(JOINT_MIN * 0.9, JOINT_MAX * 0.9)
+        T0 = forward_kinematics(q0, T_end=T_HAND_ATTACH)
+        seed = None if k % 2 else q0 + rng.normal(0, 0.3, 6)
+        q, ok = inverse_kinematics(T0[:3, 3], T0[:3, 2], q_seed=seed,
+                                   T_end=T_HAND_ATTACH)
+        if not ok:
+            continue
+        n_ok += 1
+        T = forward_kinematics(q, T_end=T_HAND_ATTACH)
+        assert np.all(q >= JOINT_MIN - 1e-9) and np.all(q <= JOINT_MAX + 1e-9), k
+        assert np.linalg.norm(T[:3, 3] - T0[:3, 3]) < 1e-2, k
+        assert T[:3, 2] @ T0[:3, 2] > 0.96, k      # tolerância de 0,25 rad da IK
+    assert n_ok >= 370     # a IK de antes aceitava 380, 23 delas fora do limite
+
+
+def test_pulso_nao_depende_de_arredondamento(monkeypatch):
+    """Na pose que oscilava no CI os dois ramos do pulso empatam (~1e-13): um
+    ruído dessa ordem no erro de orientação não pode trocar o ramo."""
+    from touch_pack import kinematics as K
+    q0 = np.deg2rad([15, -20, -80, 5, 80, 0]).astype(float)
+    R = forward_kinematics(q0, T_end=T_HAND_ATTACH)[:3, :3]
+    rot_error, saidas = K._rot_error, []
+    for favorecido in (0, 1):
+        n = iter(range(2))
+        monkeypatch.setattr(K, '_rot_error', lambda a, b: rot_error(a, b) + (
+            0.0 if next(n) == favorecido else 1e-12))
+        saidas.append(K._set_wrist(q0.copy(), R, T_end=T_HAND_ATTACH))
+    assert np.allclose(saidas[0], saidas[1])
+    assert np.allclose(saidas[0], q0, atol=1e-6)     # o ramo da pose atual
+
+
 # ── Conversão URDF ↔ DOBOT ─────────────────────────────────────────────
 
 def test_urdf_dobot_roundtrip():

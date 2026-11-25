@@ -9,7 +9,6 @@ eram os mesmos 5,0 s, então os dois valores coincidiam e nada denunciava.
 A janela da estatística assentada tinha o problema espelhado: era cravada em
 1,0 s, então um dwell de 5 s descartava 80 % da medição.
 """
-import inspect
 
 import pytest
 
@@ -21,35 +20,39 @@ from touch_pack.palpation_report import (      # noqa: E402
 
 # ── O dwell vem da GUI ─────────────────────────────────────────────────
 
-def test_phase_hold_consulta_o_pedido_da_gui():
-    from touch_pack.tactile_explorer import TactileExplorer
-    src = inspect.getsource(TactileExplorer._phase_hold)
-    assert '_hold_stable_s' in src, (
+def test_phase_hold_consulta_o_pedido_da_gui(braco):
+    braco._hold_stable_s = 12.5
+    assert _dwells(braco) == [12.5], (
         'o campo hold_stable_s voltou a não ser lido — o dwell da GUI não '
         'governa nada de novo')
 
 
-def test_dwell_default_so_vale_sem_pedido():
+def test_dwell_default_so_vale_sem_pedido(braco):
     """`dwell_s=None` = use a GUI; ausência de pedido = default do código."""
     from touch_pack.tactile_explorer import _HOLD_DWELL_S
-    sig = inspect.signature(
-        __import__('touch_pack.tactile_explorer', fromlist=['x'])
-        .TactileExplorer._phase_hold)
-    assert sig.parameters['dwell_s'].default is None, (
-        'o default virou um número de novo: aí o pedido da GUI nunca é '
-        'consultado')
     assert _HOLD_DWELL_S > 0.0
+    braco._hold_stable_s = None
+    assert _dwells(braco) == [_HOLD_DWELL_S]
+    assert _dwells(braco, dwell_s=1.25) == [1.25]
 
 
-def test_a_escada_continua_mandando_no_seu_dwell():
-    """Quem passa `dwell_s` explícito não é sobrescrito pela GUI.
-
-    A escada mede cada patamar por conta própria (`step_dwell_s`) e chama
-    `_phase_hold(dwell_s=0.0)`; se o pedido da GUI vencesse ali, cada degrau
-    ganharia um dwell extra que ninguém pediu."""
-    import touch_pack.tactile_explorer as te
-    src = inspect.getsource(te)
-    assert '_phase_hold(dwell_s=0.0)' in src
+def test_a_escada_continua_mandando_no_seu_dwell(braco, monkeypatch):
+    """Quem passa `dwell_s` explícito não é sobrescrito pela GUI: a onda
+    estabiliza na média sem dwell, e cada degrau cumpre o SEU."""
+    from touch_pack.force_wave import _ForceProfile
+    braco._hold_stable_s = 12.5
+    assert _dwells(braco, dwell_s=0.0) == []
+    pedidos = []
+    braco._phase_hold = lambda **k: (pedidos.append(k), 'stop')[1]
+    braco._phase_hold_modulated(_ForceProfile('SINE', 1.0, 2.0, 1.0, 2))
+    assert pedidos == [{'dwell_s': 0.0}]
+    janelas = []
+    braco._qs_regulate = lambda alvo, *a, **k: (
+        janelas.append((alvo, k['stable_s'])), ('ok', alvo))[1]
+    braco._approach_dir = None
+    assert braco._phase_hold_staircase([1.0, 2.0], 3.0) == 'ok'
+    assert [s for _, s in janelas if s >= 1.0] == [3.0, 3.0]
+    assert 12.5 not in [s for _, s in janelas]
 
 
 # ── A janela da estatística segue o dwell ──────────────────────────────
@@ -99,15 +102,39 @@ def test_campo_zerado_tambem_cai_na_reserva():
 
 # ── O teto do campo na GUI ─────────────────────────────────────────────
 
-def test_gui_permite_dwell_longo():
+def test_gui_permite_dwell_longo(gui_real):
     """O teto era 5,0 s — o mesmo valor do default, então não havia como
-    pedir uma medição mais longa que a de fábrica."""
-    import re
-    from pathlib import Path
-    import touch_pack.palpation_gui as gui
-    src = Path(gui.__file__).read_text()
-    trecho = re.search(r"label='HOLD — Stable Window'.*?\)\n", src, re.S)
-    assert trecho, 'não achei o campo HOLD — Stable Window'
-    vmax = re.search(r'vmax=([\d.]+)', trecho.group(0))
-    assert vmax and float(vmax.group(1)) >= 30.0, (
-        'o teto do dwell voltou a ser curto demais para uma medição longa')
+    pedir uma medição mais longa que a de fábrica. Vale no widget e no valor
+    que sai no start."""
+    import tkinter as tk
+    nome = str(gui_real.hold_stable_var)
+
+    def filhos(w):
+        for c in w.winfo_children():
+            yield c
+            yield from filhos(c)
+    tetos = [float(c.cget('to')) for c in filhos(gui_real.root)
+             if isinstance(c, (tk.Spinbox, tk.Scale))
+             and nome in (str(c.cget('textvariable'))
+                          if isinstance(c, tk.Spinbox)
+                          else str(c.cget('variable')))]
+    assert tetos and min(tetos) >= 30.0
+    saiu = []
+    gui_real._do_palpation_start = saiu.append
+    try:
+        gui_real._on_palp_mode('TOUCH')
+        gui_real.hold_stable_var.set(30.0)
+        gui_real._collect_and_start()
+    finally:
+        del gui_real._do_palpation_start
+    assert saiu[0]['hold_stable_s'] == 30.0
+
+
+def _dwells(braco, **kw):
+    """(janela pedida ao regulador, fase) de cada chamada de um HOLD real."""
+    vistos = []
+    braco._qs_regulate = lambda *a, **k: (
+        vistos.append((k['stable_s'], k['phase'])), ('ok', 2.0))[1]
+    braco._fz_corrected = lambda: 2.0
+    assert braco._phase_hold(**kw) == 'ok'
+    return [s for s, f in vistos if f.endswith('DWELL')]
