@@ -48,8 +48,7 @@ jobs:
           rosdep init 2>/dev/null || true
           rosdep update
           # uma chamada só do apt; o rosdep faz uma por pacote. A 2ª linha pega o resto.
-          apt-get install -y $(rosdep install --from-paths src --ignore-src -r --simulate 2>/dev/null             | sed -n 's/.*apt-get install\( -y\)\? //p' | tr '
-' ' ')
+          apt-get install -y $(rosdep install --from-paths src --ignore-src -r --simulate 2>/dev/null | grep -oP 'apt-get install( -y)? \K.*' | xargs)
           rosdep install --from-paths src --ignore-src -r -y
 
       # covvi_interfaces é o submódulo: leva ~3 min e quase nunca muda.
@@ -65,7 +64,7 @@ jobs:
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
-          colcon --log-base .covvi/log build --base-paths src/eci_ros --packages-select covvi_interfaces             --build-base .covvi/build --install-base .covvi/install
+          colcon --log-base .covvi/log build --base-paths src/eci_ros --packages-select covvi_interfaces --build-base .covvi/build --install-base .covvi/install
           touch .covvi/COLCON_IGNORE
 
       - name: colcon build
