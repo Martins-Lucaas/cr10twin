@@ -2426,6 +2426,10 @@ class PalpationGUI(SensorsMixin, PosesMixin, RobotMixin, FtAxesMixin, FtChartsMi
         # Sliders publicam sem velocities e continuam passando normalmente.
         if self._mirror_following and pontos[-1].velocities:
             return
+        # Idem para o eco da sincronização da conexão (_sync_gazebo_to_real).
+        if (self._sync_echo_q is not None and pontos[-1].velocities
+                and list(pontos[-1].positions) == self._sync_echo_q):
+            return
         positions_rad = list(pontos[-1].positions)
         if len(positions_rad) < 6:
             return

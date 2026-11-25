@@ -542,13 +542,32 @@ class RobotMixin:
         # Mais robusto que set_model_configuration: usa o controller já ativo.
         threading.Thread(target=self._sync_gazebo_to_real, args=(drv,),
                          daemon=True, name='gazebo-sync').start()
+    _SYNC_READS = 10
+    _sync_echo_q = None      # pose medida que a sincronização mandou ao Gazebo
+
     def _sync_gazebo_to_real(self, drv) -> None:
         """Lê as juntas do robô real, move o Gazebo via JTC e atualiza os sliders."""
         time.sleep(2.0)
-        try:
-            q_urdf = drv.read_joints_urdf()   # 6 valores em RADIANOS (URDF)
-        except Exception as exc:
-            self.get_logger().warning(f'[SYNC] Leitura de juntas falhou: {exc}')
+        q_urdf, motivo = None, 'leitura zerada'
+        for _ in range(self._SYNC_READS):
+            try:
+                q = drv.read_joints_urdf_latest()   # 6 valores em RADIANOS (URDF)
+            except Exception as exc:
+                motivo = str(exc)
+            else:
+                # Guard: firmware zero-blip. Sem ele os zeros iam ao Gazebo e
+                # voltavam ao braço real como MovJ(0,0,0,0,0,0).
+                if np.linalg.norm(q) >= 0.05:
+                    q_urdf = q
+                    break
+                motivo = 'leitura zerada'
+            time.sleep(0.1)
+        if q_urdf is None:
+            self.get_logger().error(
+                f'[SYNC] Gazebo NÃO sincronizado com o braço real: {motivo}.')
+            self.root.after(0, self._set_status,
+                            f'Sim not synced to the real arm ({motivo}) — '
+                            'reconnect before moving.', DANGER)
             return
 
         # 1. Move o Gazebo via JTC (radianos — formato exigido pelo controller).
@@ -560,6 +579,7 @@ class RobotMixin:
             pt.velocities = [0.0] * 6
             pt.time_from_start = Duration(sec=3, nanosec=0)
             msg.points = [pt]
+            self._sync_echo_q = list(pt.positions)   # antes: o eco chega já
             self._arm_pub.publish(msg)
         except Exception as exc:
             self.get_logger().warning(f'[SYNC] Publicação JTC falhou: {exc}')
