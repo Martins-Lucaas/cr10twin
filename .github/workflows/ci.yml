@@ -2,6 +2,8 @@ name: ci
 
 on:
   push:
+    branches: [main]         # nas outras branches quem roda é o pull_request
+    paths-ignore: ['sensors/Data/**', 'Docs/**', 'docs/**', 'graphify-out/**', '**.md']
   pull_request:
 
 # Um build por ref: um push novo cancela o anterior ainda rodando.
@@ -24,6 +26,9 @@ jobs:
       - name: Ferramentas de build
         shell: bash
         run: |
+          # sem "recomendados" (o rosdep também herda) e sem fsync por arquivo
+          echo 'APT::Install-Recommends "false";' > /etc/apt/apt.conf.d/99ci
+          echo force-unsafe-io > /etc/dpkg/dpkg.cfg.d/99ci
           apt-get update
           apt-get install -y --no-install-recommends \
             git python3-pip python3-colcon-common-extensions python3-rosdep \
@@ -42,13 +47,33 @@ jobs:
         run: |
           rosdep init 2>/dev/null || true
           rosdep update
+          # uma chamada só do apt; o rosdep faz uma por pacote. A 2ª linha pega o resto.
+          apt-get install -y $(rosdep install --from-paths src --ignore-src -r --simulate 2>/dev/null             | sed -n 's/.*apt-get install\( -y\)\? //p' | tr '
+' ' ')
           rosdep install --from-paths src --ignore-src -r -y
+
+      # covvi_interfaces é o submódulo: leva ~3 min e quase nunca muda.
+      - name: cache do covvi_interfaces
+        id: covvi
+        uses: actions/cache@v4
+        with:
+          path: .covvi/install
+          key: covvi-humble-${{ hashFiles('src/eci_ros/**/*.msg', 'src/eci_ros/**/*.srv', 'src/eci_ros/**/CMakeLists.txt', 'src/eci_ros/**/package.xml') }}
+
+      - name: covvi_interfaces (só sem cache)
+        if: steps.covvi.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon --log-base .covvi/log build --base-paths src/eci_ros --packages-select covvi_interfaces             --build-base .covvi/build --install-base .covvi/install
+          touch .covvi/COLCON_IGNORE
 
       - name: colcon build
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
-          colcon build --symlink-install --event-handlers console_direct+
+          source .covvi/install/setup.bash
+          colcon build --symlink-install --packages-skip covvi_interfaces
 
       # touch_pack: só os testes puros (sem nó) e a trava. test_vtk_render derruba
       # o processo sem display: fica fora. Os demais
