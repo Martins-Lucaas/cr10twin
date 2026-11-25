@@ -300,7 +300,6 @@ def test_sliders_acompanham_o_braco_mas_nao_brigam_com_o_operador(app):
 
 
 def test_salvar_home_ir_para_home_e_reabrir(app, tmp_path, monkeypatch):
-    import math
     a, br = app
     monkeypatch.setattr(C, 'HOME_FILE', str(tmp_path / 'x' / 'home.json'))
     q = [0.1, -0.9, -1.9, -1.8, 1.5, 1.2]

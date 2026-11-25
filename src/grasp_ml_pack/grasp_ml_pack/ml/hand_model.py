@@ -9,7 +9,6 @@ Ordem dos drivers: Thumb, Index, Middle, Ring, Little, Rotate.
 """
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 from ..kinematics import _FINGER_CHAINS, HAND_LOWER

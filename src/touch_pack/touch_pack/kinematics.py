@@ -591,19 +591,6 @@ def finger_fk(driver_angle: float,
     return np.array([x, 0.0, z])
 
 
-def _finger_ik(target_xz: np.ndarray,
-               l_prox: float, l_dist: float,
-               k_p: float) -> float:
-    """IK 2-link → ângulo driver. Retorna nan se fora do alcance."""
-    xf, zf = float(target_xz[0]), float(target_xz[1])
-    D = (xf*xf + zf*zf - l_prox*l_prox - l_dist*l_dist) / (2.0 * l_prox * l_dist)
-    if abs(D) > 1.0:
-        return float('nan')
-    t2 = math.atan2(-math.sqrt(max(0.0, 1.0 - D*D)), D)
-    t1 = math.atan2(zf, xf) - math.atan2(l_dist*math.sin(t2), l_prox + l_dist*math.cos(t2))
-    return t1 / k_p
-
-
 # Valores re-mapeados para o cap 1.0 rad (driver, todos). Pontos
 # importantes:
 #   • palm_grip/claw_grip pedem fechamento próximo do máximo para
@@ -739,21 +726,6 @@ def hand_fk(hand_state: dict) -> dict[str, np.ndarray]:
         [out[f'mcp_{f}'] for f in ('Thumb', 'Index', 'Middle', 'Ring', 'Little')],
         axis=0)
     return out
-
-
-def grasp_center_in_hand(hand_state: dict, grip_type: str) -> np.ndarray:
-    """Centro do grasp (ponto de contato com o objeto) em hand_base_link."""
-    fks = hand_fk(hand_state)
-    grip_type = grip_type.lower()
-    if 'fingertip' in grip_type or 'pinch' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index']]
-    elif 'claw' in grip_type or 'tripod' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index'], fks['tip_Middle']]
-    else:  # palm / cylindrical / default
-        pts = [fks[f'tip_{f}'] for f in
-               ('Thumb', 'Index', 'Middle', 'Ring', 'Little')]
-        pts.append(fks['palm_center'])
-    return np.mean(pts, axis=0)
 
 
 def hand_ik(grasp_type: str, obj_diameter: float = 0.0) -> dict[str, float]:

@@ -118,9 +118,6 @@ class GraspQualityNet:
             t = torch.tensor(X, dtype=torch.float32)
             return self._model(t).squeeze(-1).numpy()
 
-    def predict(self, x: np.ndarray) -> float:
-        return float(self.predict_batch(x.reshape(1, -1))[0])
-
     # Treinamento
     @classmethod
     def train(cls, X: np.ndarray, y: np.ndarray,

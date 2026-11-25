@@ -61,7 +61,6 @@ from .ui_helpers import (
 from std_msgs.msg import Float32, String
 from touch_pack_msgs.msg import TouchFrame
 
-from .touch_source import DataFrameAssembler
 
 
 # Figura do toque + matplotlib: import OPCIONAL. Numa máquina sem matplotlib a

@@ -1,7 +1,6 @@
 """O mirror manda MovL só para o alvo do jog cartesiano; o resto vai em MovJ."""
 import threading
 
-import numpy as np
 import pytest
 
 gui_robot = pytest.importorskip('touch_pack.gui_robot')

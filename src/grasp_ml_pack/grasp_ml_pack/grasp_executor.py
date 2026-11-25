@@ -39,7 +39,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String, Bool, Int32
+from std_msgs.msg import String, Bool
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.action import FollowJointTrajectory
@@ -151,7 +151,6 @@ _TRANSIT_Z = 1.15 - _ROBOT_BASE_Z   # 0.745 m robot frame
 from .collision import (
     PICK_OBJ_BBOX   as _PICK_OBJ_BBOX,
     BIN_BBOX        as _BIN_BBOX,
-    WORLD_OBSTACLES as _WORLD_OBSTACLES,
 )
 
 # Offset vertical entre TCP e centro do objeto preso (TCP_world − obj_center).
@@ -252,7 +251,6 @@ def _grip_cfgs(obj: str) -> tuple[dict[str, float], dict[str, float]]:
 
 # Verificação de colisão — delega ao módulo `collision.py`
 from .collision import (
-    bbox_overlap     as _bbox_overlap,
     arm_clears_bbox  as _arm_clears_bbox,
     arm_clears_world as _arm_clears_world,
 )

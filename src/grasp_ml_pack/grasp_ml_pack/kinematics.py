@@ -653,21 +653,6 @@ def hand_fk(hand_state: dict) -> dict[str, np.ndarray]:
     return out
 
 
-def grasp_center_in_hand(hand_state: dict, grip_type: str) -> np.ndarray:
-    """Centro do grasp (ponto de contato com o objeto) em hand_base_link."""
-    fks = hand_fk(hand_state)
-    grip_type = grip_type.lower()
-    if 'fingertip' in grip_type or 'pinch' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index']]
-    elif 'claw' in grip_type or 'tripod' in grip_type:
-        pts = [fks['tip_Thumb'], fks['tip_Index'], fks['tip_Middle']]
-    else:  # palm / cylindrical / default
-        pts = [fks[f'tip_{f}'] for f in
-               ('Thumb', 'Index', 'Middle', 'Ring', 'Little')]
-        pts.append(fks['palm_center'])
-    return np.mean(pts, axis=0)
-
-
 def hand_ik(grasp_type: str, obj_diameter: float = 0.0,
             primitive: str | None = None) -> dict[str, float]:
     """IK da mão COVVI: retorna driver joints (rad) para o tipo de grasp.

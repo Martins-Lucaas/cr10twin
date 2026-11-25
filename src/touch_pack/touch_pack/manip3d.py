@@ -506,10 +506,6 @@ class Manip3DView(tk.Canvas):
     def q(self) -> np.ndarray:
         return self._q.copy()
 
-    @property
-    def dragging(self) -> bool:
-        return self._dragging
-
     def set_q(self, q, *, force: bool = False) -> None:
         """Define a pose desenhada. Ignorado durante o arrasto (a não ser
         com force=True) — quem manda no braço enquanto o mouse está
@@ -522,11 +518,6 @@ class Manip3DView(tk.Canvas):
         if not force and np.allclose(q_new, self._q, atol=1e-5):
             return
         self._q = q_new
-        self._pts = skeleton_points(self._q, self._T_end)
-        self._dirty = True
-
-    def set_end_effector(self, T_end: np.ndarray) -> None:
-        self._T_end = np.asarray(T_end, dtype=float)
         self._pts = skeleton_points(self._q, self._T_end)
         self._dirty = True
 

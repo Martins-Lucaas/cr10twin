@@ -511,14 +511,6 @@ class TouchSensorSource:
         except Exception:
             pass
 
-    def latest_voltages(self) -> np.ndarray:
-        """Cópia barata só da matriz de tensões (rows×cols), sob lock. Para o
-        gravador a 1 kHz, que não precisa do snapshot completo (spikes etc.) e
-        não pode pagar a cópia O(N) das listas a cada amostra. Devolve o último
-        frame COMPLETO (voltage_frame), não a matriz parcial em preenchimento."""
-        with self._lock:
-            return self.voltage_frame.copy()
-
     def latest_voltages_and_time(self) -> tuple[np.ndarray, float]:
         """Tensões (rows×cols) + o timestamp do STM32 (current_time, s) da
         última amostra, ambos sob o MESMO lock. O gravador usa o relógio do

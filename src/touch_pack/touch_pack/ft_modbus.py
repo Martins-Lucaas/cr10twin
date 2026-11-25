@@ -74,10 +74,6 @@ class ModbusTimeout(ModbusError):
     """Nenhuma resposta válida dentro do prazo."""
 
 
-class ModbusCrcError(ModbusError):
-    """Resposta com o tamanho certo e CRC errado."""
-
-
 class ModbusExceptionResponse(ModbusError):
     """O escravo respondeu, mas com função|0x80 e um código de exceção."""
 
@@ -553,4 +549,3 @@ def format_scan(scan: dict) -> str:
         else:
             linhas.append(f'0x{addr:04X}  {status}')
     return '\n'.join(linhas)
-

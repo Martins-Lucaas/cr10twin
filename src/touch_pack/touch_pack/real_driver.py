@@ -45,7 +45,7 @@ import struct
 import threading
 import time
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import numpy as np
 
@@ -71,11 +71,6 @@ FEEDBACK_PORT_SLOW = 30005
 # Offset (em bytes) do campo `q_actual` (6 × float64) dentro do struct de
 # 1440 B do feedback.
 FEEDBACK_Q_ACTUAL_OFFSET = 432
-# Offset (em bytes) do campo `actual_TCPForce` (6 × float64 = [Fx,Fy,Fz,Tx,Ty,Tz])
-# dentro do struct de 1440 B do feedback. Assume layout:
-#   q_actual(432) → qd_actual(480) → qdd_actual(528) → i_actual(576)
-#   → tool_vector_actual(624) → TCPSpeed_actual(672) → TCPForce(720)
-FEEDBACK_TCP_FORCE_OFFSET = 720
 FEEDBACK_PACKET_SIZE = 1440
 
 # Modo DragTeach reportado por RobotMode() no firmware V4.5.1.
@@ -922,34 +917,6 @@ class CR10RealDriver:
                         code, err_id.strip(), cmd)
             raise CR10RealDriverError(f'MovL falhou: {code}, GetErrorID={err_id.strip()}')
 
-    def mov_j_cartesian(self, x: float, y: float, z: float,
-                         rx: float, ry: float, rz: float) -> None:
-        """MovJ Cartesiano — PTP até pose (x,y,z,rx,ry,rz) em mm/graus.
-
-        Usa a sintaxe V4: MovJ(pose={x,y,z,rx,ry,rz}).
-        """
-        cmd = f'MovJ(pose={{{x:.3f},{y:.3f},{z:.3f},{rx:.3f},{ry:.3f},{rz:.3f}}})'
-        resp = self._send_motion(cmd)
-        if resp and not resp.startswith('0'):
-            log.warning('[MOVE] MovJ(pose) erro: %s', dash_error_text(resp))
-
-    def mov_l_cartesian(self, x: float, y: float, z: float,
-                         rx: float, ry: float, rz: float) -> None:
-        """MovL Cartesiano — interpolação linear até pose em mm/graus."""
-        cmd = f'MovL(pose={{{x:.3f},{y:.3f},{z:.3f},{rx:.3f},{ry:.3f},{rz:.3f}}})'
-        resp = self._send_motion(cmd)
-        if resp and not resp.startswith('0'):
-            log.warning('[MOVE] MovL(pose) erro: %s', dash_error_text(resp))
-
-    def rel_movl_user(self, dx: float, dy: float, dz: float,
-                       drx: float = 0.0, dry: float = 0.0,
-                       drz: float = 0.0) -> None:
-        """RelMovLUser — movimento relativo em mm/graus no frame usuário (User0)."""
-        cmd = f'RelMovLUser({dx:.3f},{dy:.3f},{dz:.3f},{drx:.3f},{dry:.3f},{drz:.3f})'
-        resp = self._send_motion(cmd)
-        if resp and not resp.startswith('0'):
-            log.warning('[MOVE] RelMovLUser erro: %s', dash_error_text(resp))
-
     def halt(self) -> None:
         """Halt() — pausa o movimento atual sem desabilitar o robô."""
         try:
@@ -1043,23 +1010,6 @@ class CR10RealDriver:
             log.info('[DASH] Continue → %s', resp)
         except CR10RealDriverError as exc:
             log.warning('[DASH] Continue falhou: %s', exc)
-
-    def sync(self, timeout_s: float = 30.0) -> None:
-        """Bloqueia até o robô terminar o movimento (RobotMode == 5)."""
-        if self.dry_run:
-            return
-        # The firmware takes a few hundred ms to process a MovJ command and
-        # enter mode 7 (RUNNING).
-        time.sleep(0.5)
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            resp = self.robot_mode() or ''
-            # resposta: "0,{5},RobotMode();" — extrair o inteiro entre { }
-            m = re.search(r'\{(\d+)\}', resp)
-            if m and int(m.group(1)) not in (7, 8):
-                return
-            time.sleep(0.1)
-        log.warning('sync() timeout após %.1f s', timeout_s)
 
     # leitura
     def _recv_exact(self, n: int) -> bytes:
@@ -1175,32 +1125,11 @@ class CR10RealDriver:
             q = dobot_to_urdf(q)
         return q
 
-    def read_tcp_force(self) -> np.ndarray:
-        """Lê o wrench externo estimado no TCP a partir do feedback do CR10.
-
-        Returns:
-            np.ndarray (6,) — [Fx, Fy, Fz, Tx, Ty, Tz] em N / N·m no
-            frame do TCP. Em `dry_run`, retorna zeros.
-        """
-        if self.dry_run:
-            return np.zeros(6, dtype=np.float64)
-        buf = self.read_feedback_raw()
-        return np.frombuffer(
-            buf, offset=FEEDBACK_TCP_FORCE_OFFSET,
-            count=6, dtype='<f8').copy()
-
     # diagnóstico
     def robot_mode(self) -> str | None:
         """RobotMode() — retorna a string crua do dashboard (5 = habilitado)."""
         try:
             return self._send_dash('RobotMode()')
-        except CR10RealDriverError:
-            return None
-
-    def get_angle_deg(self) -> str | None:
-        """GetAngle() — útil como sanity check fora do feedback estruturado."""
-        try:
-            return self._send_dash('GetAngle()')
         except CR10RealDriverError:
             return None
 
@@ -1210,11 +1139,6 @@ class CR10RealDriver:
             return self._send_dash('GetErrorID()')
         except CR10RealDriverError:
             return None
-
-    # DO da flange (24 V já alimenta a COVVI; ToolDOExecute opcional)
-    def tool_do(self, index: int, on: bool) -> None:
-        """ToolDOExecute(idx, 1|0) — DO_1/DO_2 do conector aviation M8."""
-        self._send_dash(f'ToolDOExecute({index},{1 if on else 0})')
 
     # context manager
     def __enter__(self):
@@ -1226,29 +1150,3 @@ class CR10RealDriver:
             self.stop()
         finally:
             self.close()
-
-
-# helpers livres
-def resample_trajectory(q_points: Iterable[np.ndarray],
-                         t_points: Iterable[float],
-                         period_s: float = 0.030) -> list[np.ndarray]:
-    """Reamostra uma trajetória articular (q_i, t_i) para uma malha uniforme."""
-    qs = [np.asarray(q, dtype=np.float64) for q in q_points]
-    ts = list(t_points)
-    if not qs or len(qs) != len(ts):
-        return []
-    t0, tf = ts[0], ts[-1]
-    n = max(2, int(round((tf - t0) / period_s)) + 1)
-    out: list[np.ndarray] = []
-    for i in range(n):
-        t = t0 + i * period_s
-        if t >= tf:
-            out.append(qs[-1])
-            break
-        # busca segmento
-        j = 0
-        while j + 1 < len(ts) and ts[j + 1] < t:
-            j += 1
-        a = (t - ts[j]) / max(1e-9, ts[j + 1] - ts[j])
-        out.append(qs[j] + a * (qs[j + 1] - qs[j]))
-    return out
