@@ -250,9 +250,6 @@ def main() -> int:
               f'iyz="{tensor[1][2]:.3e}" izz="{tensor[2][2]:.3e}"/>')
         print('    </inertial>')
 
-    # Só a pilha completa dá o TCP: nas outras a base 0 é a da peça avulsa.
-    if args.stack != 'ft6':
-        return 0
     parts = [(m, (c[0], c[1], c[2] + z_link[lk] * 1e-3), t)
              for lk in z_link for (m, c, t) in by_link[lk]]
     m_tot, com_tot, _ = _combine(parts)

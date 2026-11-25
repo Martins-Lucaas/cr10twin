@@ -29,14 +29,12 @@ from rclpy.node import Node
 
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
-from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from .constants import ARM_JOINTS as _ARM_JOINTS, ROBOT_CONFIG_FILE
 
 _CONTROLLER_ACTION = '/cr10_group_controller/follow_joint_trajectory'
 _MOVE_DURATION_S = 3.0
-_ARRIVED_TOL_RAD = 0.02
 
 try:
     from .real_driver import CR10RealDriver, CR10RealDriverConfig
@@ -111,32 +109,10 @@ class RealPoseSync(Node):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory = traj
 
-        arrived = []
-
-        def _on_joints(msg):
-            pos = dict(zip(msg.name, msg.position))
-            if all(abs(pos.get(j, math.inf) - q) <= _ARRIVED_TOL_RAD
-                   for j, q in zip(_ARM_JOINTS, arm_rad)):
-                arrived.append(True)
-
-        self.create_subscription(JointState, '/joint_states', _on_joints, 10)
-
         goal_future = self._client.send_goal_async(goal)
         rclpy.spin_until_future_complete(self, goal_future, timeout_sec=10.0)
-        if not goal_future.done():
-            # A resposta pode se perder no DDS com o goal já aceito. Não
-            # reenviar: preemptaria um movimento iniciado nesse meio-tempo.
-            if arrived:
-                self.get_logger().warn(
-                    '[pose_sync] Sem resposta do controller, mas o braço '
-                    'simulado chegou à pose real.')
-                return True
-            self.get_logger().error(
-                '[pose_sync] Sem resposta do controller e o braço simulado '
-                'não chegou à pose real.')
-            return False
         handle = goal_future.result()
-        if not handle.accepted:
+        if handle is None or not handle.accepted:
             self.get_logger().error('[pose_sync] Goal rejeitado pelo controller.')
             return False
 

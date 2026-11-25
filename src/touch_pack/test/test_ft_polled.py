@@ -19,7 +19,6 @@ from contextlib import contextmanager
 
 import pytest
 
-from touch_pack.ft_cmd_channel import LineBusyError  # noqa: E402
 from touch_pack.constants import (
     FT_MODBUS_DATA_ADDR, FT_MODBUS_DATA_REGS, ft_polled_max_rate_hz,
 )
@@ -57,7 +56,7 @@ class FakeLine:
     @contextmanager
     def command_session(self):
         if self._aberta:
-            raise LineBusyError('já existe uma sessão de comando aberta')
+            raise RuntimeError('já existe uma sessão de comando aberta')
         self._aberta = True
         self.sessoes += 1
         self._buf = bytearray(self._ruido)

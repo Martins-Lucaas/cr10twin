@@ -253,21 +253,6 @@ class HandCameraTeleop:
 
     # ── ciclo de vida ────────────────────────────────────────────────
     def start(self) -> None:
-        """Sobe a thread; abrir a câmera e carregar o mediapipe são DELA —
-        VideoCapture(url) bloqueia até o timeout de rede, e aqui isso seria a
-        thread do Tk (E-STOP da GUI sem resposta). Falha vira `self.error`."""
-        self._stop.clear()
-        self.error = None
-        self._oe = None
-        self._oe_arm = None
-        self._last_emitted = None
-        self._track_frames = 0
-        self._last_ts = None
-        self._thread = threading.Thread(
-            target=self._loop, name='hand-camera-teleop', daemon=True)
-        self._thread.start()
-
-    def _open(self) -> None:
         try:
             import cv2
             import mediapipe as mp
@@ -299,6 +284,16 @@ class HandCameraTeleop:
             static_image_mode=False, max_num_hands=1, model_complexity=0,
             min_detection_confidence=0.6, min_tracking_confidence=0.5)
 
+        self._stop.clear()
+        self.error = None
+        self._oe = None
+        self._oe_arm = None
+        self._last_emitted = None
+        self._track_frames = 0
+        self._last_ts = None
+        self._thread = threading.Thread(
+            target=self._loop, name='hand-camera-teleop', daemon=True)
+        self._thread.start()
         self._info(f'camera hand control ON (device {self._camera_index})')
 
     def stop(self) -> None:
@@ -307,20 +302,15 @@ class HandCameraTeleop:
         self._thread = None
         if t is not None and t.is_alive() and t is not threading.current_thread():
             t.join(timeout=2.0)
-            if t.is_alive():
-                # Presa no read()/open(): soltar a captura por baixo dela
-                # derruba o processo. Ela mesma libera ao sair.
-                self._warn('a thread da câmera ainda não saiu')
-                return
+        # Fallback: se a thread travou no join, ainda liberamos os recursos.
         self._release()
         self._info('camera hand control OFF')
 
     # ── loop da thread ──────────────────────────────────────────────
     def _loop(self) -> None:
+        cv2 = self._cv2
         fails = 0
         try:
-            self._open()
-            cv2 = self._cv2
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
                 if not ok:

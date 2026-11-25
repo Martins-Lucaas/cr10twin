@@ -181,8 +181,7 @@ class SerialSource(ReconnectingSource):
             self.error = self._absent_message()
             return None
         try:
-            ser = serial.Serial(port, self._baud, timeout=_SERIAL_TIMEOUT_S,
-                                exclusive=True)  # dois leitores corrompem o poll
+            ser = serial.Serial(port, self._baud, timeout=_SERIAL_TIMEOUT_S)
         except Exception as exc:
             self.error = str(exc)
             return None

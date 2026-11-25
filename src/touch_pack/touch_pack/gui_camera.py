@@ -17,7 +17,6 @@ Recortado de `palpation_gui.py` — os métodos operam sobre `self` como antes.
 from __future__ import annotations
 
 import math as _math
-import time
 import tkinter as tk
 
 from .gui_constants import HAND_LIMITS_DEG
@@ -25,15 +24,9 @@ from .constants import ARM_JOINTS, HAND_JOINTS
 from .gui_constants import ARM_LIMITS_DEG, MANIP_TRAJ_DURATION_S
 from .ui_helpers import BG, BTN_NEUTRAL, DANGER, OK, TEXT, TEXT_DIM, WARN
 
-# joint6 pela câmera: teto de velocidade, e o silêncio que refaz o zero.
-CAM_J6_MAX_DEG_S = 60.0
-CAM_J6_GAP_S = 0.5
-
 
 class CameraMixin:
     """gui_camera.py — teleoperação da mão pela webcam (MediaPipe)."""
-
-    _cam_j6: dict | None = None
 
     # ── Teleoperação da mão por câmera ───────────────────────────────
     # A webcam + MediaPipe (hand_camera_teleop) devolve flexão 0–1 por
@@ -52,13 +45,26 @@ class CameraMixin:
             self._set_status(
                 'Camera control needs the hand end-effector.', WARN)
             return
-        from touch_pack.hand_camera_teleop import HandCameraTeleop
+        try:
+            from touch_pack.hand_camera_teleop import (
+                HandCameraTeleop, CameraUnavailable)
+        except ImportError as exc:
+            self._set_status(
+                f'Camera control unavailable — pip install mediapipe ({exc}).',
+                DANGER)
+            return
         cam_idx = self._camera_index
-        self._cam_j6 = None
-        self._cam_teleop = HandCameraTeleop(
-            on_curl=self._on_camera_curl, camera_index=cam_idx,
-            logger=self.get_logger())
-        self._cam_teleop.start()
+        try:
+            self._cam_teleop = HandCameraTeleop(
+                on_curl=self._on_camera_curl, camera_index=cam_idx,
+                logger=self.get_logger())
+            self._cam_teleop.start()
+        except (CameraUnavailable, ImportError) as exc:
+            self._cam_teleop = None
+            self._cam_btn.set_state('📷', 'CAM OFF', BTN_NEUTRAL, TEXT)
+            self._set_status(
+                f'Camera not available (index {cam_idx}): {exc}', DANGER)
+            return
         self._cam_btn.set_state('📷', 'CAM ON', OK, 'white')
         tail = '' if self._eci_enabled else '  (sim only — ECI is OFF)'
         self._set_status(f'Camera hand control active.{tail}', OK)
@@ -98,44 +104,25 @@ class CameraMixin:
     def _apply_camera_j6(self, curl: dict, *, mirror_real: bool) -> None:
         """joint6 ← pronação do punho, palma↔dorso (chave 'ArmJ6'). Sempre
         move o sim; só espelha no CR10 real quando `mirror_real` E o robô
-        está em MIRROR.
-
-        RELATIVO e com rampa: a pronação do primeiro quadro é o zero e vale a
-        joint6 em que o braço está; perder a mão refaz o zero. joint1-5
-        seguram a pose corrente do braço."""
+        está em MIRROR. joint1-5 seguram o valor atual dos sliders."""
         j6 = curl.get('ArmJ6')
         if j6 is None or not getattr(self, 'arm_sliders', None):
             return
         with self._lock:
             phase = self._latest_phase
-        if (phase not in ('IDLE', 'DONE', 'ABORTED')
-                or getattr(self, '_estop_latched', False)
-                or self._exec_movement_id is not None
-                or getattr(self, '_prehoming', False)):
-            self._cam_j6 = None
+        if phase not in ('IDLE', 'DONE', 'ABORTED'):
             return
-        q_now = self._latest_joint_rad
-        if q_now is None:
-            return
-        now = time.monotonic()
-        st = self._cam_j6
-        if st is None or now - st['t'] > CAM_J6_GAP_S:
-            j6_now = _math.degrees(float(q_now[5]))
-            self._cam_j6 = {'zero': float(j6), 'base': j6_now,
-                            'cmd': j6_now, 't': now}
-            return
-        passo = CAM_J6_MAX_DEG_S * min(now - st['t'], 0.1)
-        alvo = st['base'] + float(j6) - st['zero']
-        st['cmd'] += max(-passo, min(passo, alvo - st['cmd']))
-        st['t'] = now
         q_deg: list[float] = []
         with self._suppress():
-            for j, q in zip(ARM_JOINTS, q_now):
-                v = _math.degrees(float(q))
+            for j in ARM_JOINTS:
+                lo, hi = ARM_LIMITS_DEG[j]
                 if j == 'joint6':
-                    lo, hi = ARM_LIMITS_DEG[j]
-                    v = st['cmd'] = max(lo, min(hi, st['cmd']))
+                    v = max(lo, min(hi, float(j6)))
                     self.arm_sliders[j].set(round(v, 1))
+                else:
+                    v = self._clamp_var(self.arm_sliders[j], lo, hi)
+                    if v is None:
+                        return
                 q_deg.append(v)
         q_rad = [_math.radians(d) for d in q_deg]
         mirror = mirror_real and self._robot_mode == 'MIRROR'

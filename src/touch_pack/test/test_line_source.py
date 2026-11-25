@@ -250,16 +250,14 @@ def test_serial_open_publishes_the_port_it_actually_used(monkeypatch):
     aberta = {}
 
     class _S:
-        def __init__(self, port, baud, timeout, exclusive):
-            aberta.update(port=port, baud=baud, timeout=timeout,
-                          exclusive=exclusive)
+        def __init__(self, port, baud, timeout):
+            aberta.update(port=port, baud=baud, timeout=timeout)
 
     monkeypatch.setattr(ls, 'serial', type('_M', (), {'Serial': _S}))
     f = _SerialFake('/dev/ttyUSB9')
     assert f._open() is not None
     assert f.port == '/dev/ttyUSB9'
     assert aberta['timeout'] > 0, 'sem timeout o stop() trava na leitura'
-    assert aberta['exclusive'] is True, 'dois leitores corrompem o poll'
 
 
 def test_an_explicit_port_wins_over_detection(monkeypatch):

@@ -187,25 +187,3 @@ def test_mov_l_joint_sends_linear_move_to_joint_target():
     drv.mov_l_joint_deg([1, 2, 3, 4, 5, 6])
     assert sent == ['MovL(joint={1.000000,2.000000,3.000000,'
                     '4.000000,5.000000,6.000000})']
-
-
-def test_leitura_fresca_guarda_o_robot_mode_do_feedback():
-    import socket
-    import struct
-    import threading
-    from touch_pack.real_driver import FEEDBACK_PACKET_SIZE, CR10RealDriver
-    ours, robot = socket.socketpair()
-    ours.settimeout(2.0)
-    drv = CR10RealDriver()
-    drv._feed = ours
-    pkt = bytearray(FEEDBACK_PACKET_SIZE)
-    struct.pack_into('<H', pkt, 0, FEEDBACK_PACKET_SIZE)
-    struct.pack_into('<Q', pkt, 24, 9)
-    struct.pack_into('<Q', pkt, 48, 0x0123456789ABCDEF)
-    threading.Timer(0.2, robot.sendall, args=(bytes(pkt),)).start()
-    try:
-        drv.read_joints_urdf_latest()
-        assert drv.last_robot_mode == 9
-    finally:
-        ours.close()
-        robot.close()

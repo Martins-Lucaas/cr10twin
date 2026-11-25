@@ -467,10 +467,7 @@ def _make_plot(rows: list[dict], summary: dict, out_png: str) -> bool:
     target = summary.get('target_force_n')
     sp_pts = [r['sp'] for r in rows if r.get('sp') is not None]
     n_cyc = summary.get('cycles_detected', 0)
-    nome = os.path.basename(out_png)
-    # Layout novo: <run_id>/plot.png — a data está na PASTA.
-    date = (nome.split('__')[0] if '__' in nome
-            else os.path.basename(os.path.dirname(os.path.abspath(out_png))))
+    date = os.path.basename(out_png).split('__')[0]
     band = _target_band(summary.get('params') or {})
     if band:
         sp = f'  —  faixa alvo {band[0]:g}–{band[1]:g} N'
@@ -565,9 +562,6 @@ def main(argv=None):
             + glob.glob(os.path.join(OUTPUT_DIR, '*', '*', '*', RUN_SAMPLES_CSV))
             + glob.glob(os.path.join(OUTPUT_DIR, '*__samples.csv')),
             key=os.path.getmtime)
-        # REHAB/ é do rehab_pack: mesmo nome de arquivo, outro formato.
-        candidates = [p for p in candidates if os.path.relpath(
-            p, OUTPUT_DIR).split(os.sep)[0] != 'REHAB']
         if not candidates:
             sys.exit(f'Nenhum run encontrado em {OUTPUT_DIR}.')
         paths = [candidates[-1]]

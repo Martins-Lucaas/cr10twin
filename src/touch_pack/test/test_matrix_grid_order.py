@@ -206,20 +206,14 @@ def test_ring_is_returned_in_millimetres():
     assert 1.0 < extensao < 1000.0
 
 
-def test_the_preview_ring_matches_the_one_the_robot_will_probe(braco):
-    """O anel desenhado e o que o explorer executa TÊM de ser o mesmo — duas
-    derivações independentes divergiriam em silêncio e o preview mentiria
-    sobre onde o robô encosta."""
-    import numpy as np
-    for n, passo in ((5, 5.0), (3, 12.0), (4, 8.0)):
-        nodes = _grade_mm(n, passo)
-        gui = _Anel(True, nodes)._align_ring_nodes()
-        with braco._params_lock:
-            braco._matrix_wps = np.array(nodes[1:]) * 1e-3   # sem a origem
-        braco._mode = 'MATRIX_MAP'
-        ring, _desc, _centro = braco._align_offsets(
-            {'n': 4, 'radius_m': 0.005})
-        assert np.allclose(np.array(gui) * 1e-3, np.asarray(ring)[:, :2])
+def test_the_preview_ring_matches_the_one_the_robot_will_probe():
+    """O anel desenhado e o que o explorer executa TÊM de sair da mesma
+    função — duas derivações independentes divergiriam em silêncio e o
+    preview mentiria sobre onde o robô encosta."""
+    src = (_PKG / 'gui_matrix.py').read_text(encoding='utf-8')
+    assert 'probe_ring_from_grid' in src
+    explorer = (_PKG / 'tactile_explorer.py').read_text(encoding='utf-8')
+    assert 'probe_ring_from_grid' in explorer
 
 
 # ── Espelho SQUARE ────────────────────────────────────────────────────

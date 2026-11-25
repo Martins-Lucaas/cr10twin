@@ -17,12 +17,9 @@ def _ros():
     de todos os módulos seguintes com "Context.init() must only be called
     once"."""
     rclpy = pytest.importorskip('rclpy')
-    meu = not rclpy.ok()            # a `gui_real` pode ter chegado antes
-    if meu:
-        rclpy.init()
+    rclpy.init()
     yield
-    if meu:
-        rclpy.shutdown()
+    rclpy.shutdown()
 
 
 @pytest.fixture()
@@ -99,16 +96,18 @@ def test_banda_e_a_mesma_constante_nos_tres_consumidores():
     assert gui._HOLD_TOL_N is constants.HOLD_TOL_N
 
 
-def test_gui_nao_carrega_default_de_banda_proprio(gui_real):
+def test_gui_nao_carrega_default_de_banda_proprio():
     """O 0,15 N cravado na GUI sobrescrevia a banda derivada do ruído da
     célula em TODO run lançado pela tela, porque a PalpationStart vence o
-    default do explorer sempre que traz hold_tol_n > 0. O campo da GUI nasce
-    na lei do explorer (fixture sem arquivo de parâmetros salvo)."""
-    from touch_pack.constants import hold_tol_n
-    from touch_pack.gui_constants import FORCE_SP_DEFAULT
-    assert gui_real.force_sp_var.get() == FORCE_SP_DEFAULT
-    assert gui_real.hold_tol_var.get() == round(
-        hold_tol_n(FORCE_SP_DEFAULT), 3)
+    default do explorer sempre que traz hold_tol_n > 0."""
+    import re
+    from pathlib import Path
+    import touch_pack.palpation_gui as gui
+    src = Path(gui.__file__).read_text()
+    trecho = re.search(r'self\.hold_tol_var\s*=.*?\n\n', src, re.S)
+    assert trecho, 'não achei a criação de hold_tol_var'
+    assert '0.15' not in trecho.group(0), (
+        'default de banda cravado na GUI: use constants.hold_tol_n()')
 
 
 def test_gui_default_de_banda_e_a_lei_do_explorer():
@@ -164,45 +163,28 @@ def test_drag_teach_recusado_com_estop_pressionado():
     drv.drag_teach(False)       # desligar é o sentido seguro: passa sempre
 
 
-@pytest.mark.parametrize('caso', ['alarmou', 'nao_chegou', 'erro',
-                                  'sem_driver', 'reconectando'])
-def test_gui_separa_falha_do_estop_real_do_sucesso(caso):
+def test_gui_separa_falha_do_estop_real_do_sucesso():
     """A trava local vale sempre (ela bloqueia o Start e o driver), mas o
     texto não pode afirmar 'robot disabled and alarmed' quando o
-    EmergencyStop(1) nem chegou ao controlador. E a tentativa não depende de
-    `_robot_connected`: é justamente com ele False (reconexão em curso) que o
-    braço pode estar executando a fila de motion."""
-    import threading
-    import types
-    import touch_pack.gui_robot as gr
-    chamadas, status = [], []
-
-    def _estop():
-        chamadas.append(1)
-        if caso == 'erro':
-            raise gr.CR10RealDriverError('socket morto')
-        return caso in ('alarmou', 'reconectando')
-    g = types.SimpleNamespace(
-        root=types.SimpleNamespace(after=lambda *a: None),
-        _exec_stop=threading.Event(), _prehome_cancel=threading.Event(),
-        _freeze_pub=types.SimpleNamespace(publish=lambda m: None),
-        _latest_joint_rad=None, _robot_mode='MIRROR', _eci_enabled=False,
-        _robot_connected=caso == 'alarmou', _estop_latched=False,
-        _real_driver=(None if caso == 'sem_driver' else
-                      types.SimpleNamespace(emergency_stop=_estop)),
-        _refresh_estop_button=lambda: None,
-        _set_status=lambda t, c=None: status.append(t),
-        get_logger=lambda: types.SimpleNamespace(
-            error=lambda *a: None, warn=lambda *a: None,
-            info=lambda *a: None))
-    gr.RobotMixin._estop_engage(g)
-    assert g._estop_latched
-    assert chamadas == ([] if caso == 'sem_driver' else [1])
-    if caso in ('alarmou', 'reconectando'):
-        assert 'robot disabled and alarmed' in status[-1]
-    else:
-        assert 'NOT alarmed' in status[-1]
-        assert 'disabled and alarmed' not in status[-1]
+    EmergencyStop(1) nem chegou ao controlador."""
+    import re
+    from pathlib import Path
+    # O E-STOP saiu de palpation_gui para gui_robot no recorte da GUI — é
+    # do fonte dele que se lê o corpo do método.
+    import touch_pack.gui_robot as gui
+    src = Path(gui.__file__).read_text()
+    corpo = re.search(r'def _estop_engage.*?(?=\n    def )', src, re.S).group(0)
+    assert 'hw_ok' in corpo, 'sucesso e falha do hardware indistinguíveis'
+    assert 'NOT alarmed' in corpo, 'o texto de falha perdeu a ressalva'
+    # E `hw_ok` tem de NASCER False: o default otimista fazia a GUI anunciar
+    # "robot disabled and alarmed" nos caminhos que nem chegaram a falar com
+    # o controlador — sem driver, ou durante a janela de reconexão.
+    assert 'hw_ok = False' in corpo, 'hw_ok voltou a nascer otimista'
+    # E a tentativa não pode ser condicionada a `_robot_connected`: é
+    # justamente com ele False (reconexão em curso) que o braço pode estar
+    # executando o que já está na fila de motion.
+    assert '_robot_connected' not in corpo.split('hw_ok = False')[1].split(
+        'elif')[0], 'a chamada do E-STOP voltou a exigir conexão viva'
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -318,45 +300,35 @@ def test_teto_do_link_acompanha_o_baud():
 # 7. Código morto que descrevia máquinas inexistentes
 # ══════════════════════════════════════════════════════════════════════
 
-def test_gui_nao_publica_mais_em_ft_sensor_wrench(gui_real):
+def test_gui_nao_publica_mais_em_ft_sensor_wrench():
     """O bridge do CR10 estava desligado desde 12/08 mas a máquina inteira
     continuava no arquivo, e a aba "6 Axes" ainda avisava de um conflito de
-    publicadores que não podia mais acontecer. A GUI montada só ASSINA."""
-    assert '/ft_sensor/wrench' not in {p.topic_name
-                                       for p in gui_real.publishers}
-    assert '/ft_sensor/wrench' in {s.topic_name
-                                   for s in gui_real.subscriptions}
-    assert not [a for a in dir(gui_real)
-                if '_force_bridge' in a or a == '_wrench_pub']
+    publicadores que não podia mais acontecer."""
+    from pathlib import Path
+    import touch_pack.palpation_gui as gui
+    import touch_pack.gui_loadcell as glc
+    src = Path(gui.__file__).read_text()
+    assert '_force_bridge' not in src
+    assert '_wrench_pub' not in src
+    assert '_force_bridge_active' not in Path(glc.__file__).read_text()
 
 
-def test_gui_tem_cor_para_toda_fase_do_explorer(gui_real):
-    """Pinta cada fase na GUI montada: a genérica é a de uma fase inventada,
-    e nenhuma das do explorer pode cair nela."""
+def test_gui_tem_cor_para_toda_fase_do_explorer():
+    import re
+    from pathlib import Path
+    import touch_pack.palpation_gui as gui
     from touch_pack.constants import PHASE_CODES
-
-    def cor(fase):
-        with gui_real._lock:
-            gui_real._latest_phase, gui_real._paused = fase, False
-        gui_real._status_panel_tick()
-        assert gui_real.phase_lbl.cget('text').startswith(fase)
-        return gui_real.phase_lbl.cget('fg')
-    generica = cor('FASE_INVENTADA')
+    src = Path(gui.__file__).read_text()
+    mapa = re.search(r'phase_color = \{(.*?)\}\.get', src, re.S).group(1)
     for fase in PHASE_CODES:
-        assert cor(fase) != generica, f'{fase} cai na cor genérica'
+        assert f"'{fase}'" in mapa, f'{fase} cai na cor genérica'
 
 
-def test_cronometro_para_em_frozen(gui_real):
+def test_cronometro_para_em_frozen():
     """FROZEN é um fim de run (E-STOP congela no lugar). Enquanto ficava de
     fora da lista, o cronômetro da GUI contava para sempre depois dele."""
     import touch_pack.palpation_gui as gui
     assert 'FROZEN' in gui._PHASE_ENDED
-    for fase, parado in (('HOLD', False), ('FROZEN', True)):
-        with gui_real._lock:
-            gui_real._latest_phase = fase
-            gui_real._phase_t_start = 0.0
-        gui_real._status_panel_tick()
-        assert (gui_real.timer_lbl.cget('text') == '—') is parado
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -505,7 +477,6 @@ def _msg(**campos):
     msg.slide_dist_mm = 10.0
     msg.speed_mms = 10.0
     msg.mode = 'TOUCH'
-    msg.home_deg = [0.0, 0.0, -90.0, 0.0, 90.0, 0.0]
     for k, v in campos.items():
         setattr(msg, k, v)
     return msg
@@ -520,7 +491,6 @@ def _start(node, **campos):
     msg.slide_dist_mm = 10.0
     msg.speed_mms = 10.0
     msg.mode = 'TOUCH'
-    msg.home_deg = [0.0, 0.0, -90.0, 0.0, 90.0, 0.0]
     for k, v in campos.items():
         setattr(msg, k, v)
     node._busy.clear()

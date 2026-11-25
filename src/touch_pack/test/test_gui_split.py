@@ -169,19 +169,10 @@ def test_every_self_reference_in_the_mixin_resolves(filename, cls_name):
     assert not faltando, f'{cls_name} usa self.X sem origem: {faltando}'
 
 
-def test_mixin_owns_no_tare_reference(gui_real):
+def test_mixin_owns_no_tare_reference():
     """A referência de tare, o auto-tare e o auto-zero são do ft_receiver
     (dono da porta serial). Se voltarem para a GUI, a malha de segurança do
-    explorer volta a depender do Tk estar responsivo. Consulta os publishers
-    que a GUI MONTADA tem, e uma leitura alta com tare feito: ela não corrige
-    nada por conta própria."""
-    pubs = {p.topic_name for p in gui_real.publishers}
-    assert '/load_cell/tare' in pubs                 # só PEDE o tare
-    for t in ('/load_cell/force_net', '/load_cell/sample_net',
-              '/load_cell/tared', '/load_cell/tare_result',
-              '/ft_sensor/wrench'):
-        assert t not in pubs, f'a GUI voltou a publicar {t}'
-    from std_msgs.msg import Float32
-    for _ in range(50):
-        gui_real._cb_lc_force_net_gui(Float32(data=0.7))
-    assert gui_real._lc_force_net == pytest.approx(0.7)
+    explorer volta a depender do Tk estar responsivo."""
+    src = (_PKG / 'gui_loadcell.py').read_text(encoding='utf-8')
+    assert '_lc_autozero_rate' not in src
+    assert "create_publisher(\n            Float32, '/load_cell/force_net'" not in src

@@ -30,7 +30,7 @@ setup(
     description=('Plataforma de palpação tátil — CR10 + COVVI Index FT, '
                  'reproduzindo o protocolo de Gupta et al. 2021.'),
     license='MIT',
-    extras_require={'test': ['pytest']},  # sem isto o colcon cai no unittest e roda 0 testes
+    tests_require=['pytest'],  # sem isto o colcon cai no unittest e roda 0 testes
     entry_points={
         'console_scripts': [
             'palpation_gui     = touch_pack.palpation_gui:main',

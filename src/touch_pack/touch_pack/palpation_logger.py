@@ -109,7 +109,7 @@ from .kinematics import forward_kinematics, T_TOUCH_TOOL_ATTACH
 from .constants import (
     ARM_JOINTS as _ARM_JOINTS,
     RUNS_DIR as OUTPUT_DIR,
-    TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC, TOUCH_EVENT_QOS_DEPTH,
+    TOUCH_FRAME_TOPIC, TOUCH_EVENT_TOPIC,
     TOUCH_SENSOR_DEFAULT, touch_sensor_spec, TOUCH_EVENT_TYPES,
     PHASE_CODES, run_dir, run_id_from_msg, LEARNING_RUN_TOPIC,
     discard_run_files,
@@ -310,7 +310,6 @@ class PalpationLogger(Node):
         self._adc_ts: float = 0.0
         # t_us do STM32 do último frame — o carimbo de HARDWARE do toque.
         self._adc_t_us: int = 0
-        self._report_thread: threading.Thread | None = None
         # Frames descartados por tamanho errado (ver _cb_touch_frame).
         self._adc_bad: int = 0
         self._evt_counts: dict[str, int] = {t: 0 for t in TOUCH_EVENT_TYPES}
@@ -344,7 +343,7 @@ class PalpationLogger(Node):
         self.create_subscription(
             TouchFrame, TOUCH_FRAME_TOPIC, self._cb_touch_frame, _QOS_SENSOR)
         self.create_subscription(
-            String, TOUCH_EVENT_TOPIC, self._cb_event, TOUCH_EVENT_QOS_DEPTH)
+            String, TOUCH_EVENT_TOPIC, self._cb_event, _QOS_SENSOR)
         self.create_subscription(
             JointState, '/joint_states', self._cb_joints, 50)
         # Uma mensagem por identação do MATRIX_MAP. Fila funda: perder um
@@ -377,11 +376,7 @@ class PalpationLogger(Node):
         except OSError as exc:
             self.get_logger().error(f'Falha ao gravar attack_ref: {exc}')
 
-    # Start repetido de um run que já tem arquivo, à espera de saber se ele
-    # ainda está em curso.
-    _retomar: PalpationStart | None = None
-
-    def _cb_start(self, msg: PalpationStart, continuacao=False) -> None:
+    def _cb_start(self, msg: PalpationStart) -> None:
         """Início de um novo run: cria CSV e dump dos parâmetros em JSON.
         O msg tipado vira dict (mesmas chaves dos campos) para o
         __params.json — o palpation_report lê 'force_n' etc. de lá."""
@@ -423,7 +418,6 @@ class PalpationLogger(Node):
             # faz samples.csv e sensors.csv caírem juntos. O run_id vem da
             # mensagem justamente para os dois não dependerem de chamar
             # strftime no mesmo segundo.
-            self._retomar = None
             ts = run_id_from_msg(msg)
             if ts in self._learning_runs:
                 self.get_logger().info(
@@ -432,15 +426,8 @@ class PalpationLogger(Node):
             try:
                 # base=OUTPUT_DIR e não o default: é o alias de módulo que o
                 # teste redireciona para um tmpdir.
-                k, pasta = 0, ts
-                while True:
-                    out_dir = run_dir(mode, pasta, base=OUTPUT_DIR,
-                                      sensor=self._sensor_key)
-                    if not (continuacao and os.path.exists(
-                            os.path.join(out_dir, RUN_SAMPLES_CSV))):
-                        break
-                    k += 1
-                    pasta = f'{ts}_cont{k}'
+                out_dir = run_dir(mode, ts, base=OUTPUT_DIR,
+                                  sensor=self._sensor_key)
             except OSError as exc:
                 self.get_logger().error(
                     f'Falha ao criar a pasta do run: {exc}')
@@ -449,20 +436,11 @@ class PalpationLogger(Node):
             json_path = os.path.join(out_dir, RUN_PARAMS_JSON)
             fh = None
             try:
-                # 'x': o start é TRANSIENT_LOCAL, e um logger que reinicia o
-                # recebe de novo — com 'w' ele truncava o run já gravado.
-                fh = open(csv_path, 'x', newline='')
+                fh = open(csv_path, 'w', newline='')
                 writer = csv.writer(fh)
                 writer.writerow(_build_header(self._n_taxels, mode_cols))
                 with open(json_path, 'w') as pf:
                     json.dump(params, pf, indent=2, sort_keys=True)
-            except FileExistsError:
-                self._retomar = msg
-                self.get_logger().warn(
-                    f'Run {ts} já existe em {_rel(csv_path)} — start repetido '
-                    '(latch), nada foi sobrescrito. Se ele ainda estiver em '
-                    'curso, o resto vai para uma pasta de continuação.')
-                return
             except OSError as exc:
                 self.get_logger().error(
                     f'Falha ao criar arquivos de run: {exc}')
@@ -533,17 +511,7 @@ class PalpationLogger(Node):
                 return
 
     def _cb_status(self, msg: PalpationStatus) -> None:
-        pend = self._retomar
-        if (pend is not None and self._csv_fh is None
-                and msg.run_id == run_id_from_msg(pend)
-                and msg.phase not in ('IDLE', 'DONE', 'ABORTED', 'FROZEN')):
-            self._cb_start(pend, continuacao=True)
         with self._lock:
-            # Status de OUTRO run (o fim do anterior segue saindo a 10 Hz até
-            # o explorer pegar o start novo): não diz nada sobre este.
-            if (self._csv_fh is not None and msg.run_id
-                    and msg.run_id != self._run_stamp):
-                return
             self._phase = msg.phase
             self._cycle = int(msg.cycle)
             # Setpoint INSTANTÂNEO do experimento. É esta a fonte autoritativa
@@ -882,10 +850,9 @@ class PalpationLogger(Node):
         # Relatório pós-run (summary JSON + gráfico) em background — só
         # para runs concluídos com dados; 'superseded' é um run substituído.
         if run_path and n_samples > 0 and reason != 'superseded':
-            self._report_thread = threading.Thread(
+            threading.Thread(
                 target=self._generate_report, args=(run_path,),
-                daemon=True, name='palpation-report')
-            self._report_thread.start()
+                daemon=True, name='palpation-report').start()
 
     def _generate_report(self, csv_path: str) -> None:
         try:
@@ -900,9 +867,6 @@ class PalpationLogger(Node):
     def close(self) -> None:
         with self._lock:
             self._close_run_locked('shutdown')
-        # daemon: sem o join, fechar logo após o run perdia summary e gráfico.
-        if self._report_thread is not None:
-            self._report_thread.join(timeout=20.0)
 
 
 def main(args=None):

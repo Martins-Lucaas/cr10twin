@@ -186,7 +186,7 @@ class SensorsMixin:
             log.debug('retry touch source falhou: %s', exc)
         finally:
             self.root.after(2000, self._retry_touch_source)
-    def _on_touch_sample(self, i_final: float, volt, t_stm: float) -> None:
+    def _on_touch_sample(self, i_final: float) -> None:
         """Callback da thread serial: republica I_final em ROS e atualiza o
         estado interno, sem tocar em widgets Tk.
         """
@@ -206,7 +206,7 @@ class SensorsMixin:
         # Gravação do stream força+toque a 1 kHz (se ligada) — fora do lock acima
         # porque _record_row pega self._lock por conta própria.
         if self._rec_writer is not None:
-            self._record_row(i_final, volt, t_stm)
+            self._record_row(i_final)
     # Aba "Sensores": todos os plots lado a lado
     def _build_sensors_tab(self, root: tk.Frame) -> None:
         """Dashboard: os quatro gráficos do touch sensor (heatmap, raster
@@ -539,7 +539,7 @@ class SensorsMixin:
             out_dir = run_dir(mode or '', run_id or new_run_id(),
                               sensor=self._touch_spec.key)
             path = os.path.join(out_dir, RUN_SENSORS_CSV)
-            fh = open(path, 'x', newline='')
+            fh = open(path, 'w', newline='')
             writer = csv.writer(fh)
             writer.writerow(self._rec_header)
         except OSError as exc:
@@ -582,17 +582,23 @@ class SensorsMixin:
             'home learning run — not recorded (the next run here records)',
             TEXT_MUTED)
 
-    def _record_row(self, i_final: float, volt, t_stm: float) -> None:
+    def _record_row(self, i_final: float) -> None:
         """Grava UMA linha do stream força+toque. Chamado por _on_touch_sample
         (thread serial, ~1 kHz) — é isto que dá ao sensors.csv a taxa de 1 kHz.
         """
         if self._rec_writer is None:
             return   # fast-path sem lock; reconferido sob o lock abaixo
         now = time.time()
-        # Tensões e relógio do STM32 do MESMO frame de que saiu i_final.
-        volt_cols = [f'{volt[r, c]:.4f}'
-                     for r in range(self._touch_rows)
-                     for c in range(self._touch_cols)]
+        if self._touch_source is not None and self._touch_source.connected:
+            # Tensões + relógio do STM32 sob o MESMO lock: o timestamp do
+            # firmware (1 kHz) é o que data a amostra na planilha.
+            volt, t_stm = self._touch_source.latest_voltages_and_time()
+            volt_cols = [f'{volt[r, c]:.4f}'
+                         for r in range(self._touch_rows)
+                         for c in range(self._touch_cols)]
+        else:
+            t_stm = 0.0
+            volt_cols = [''] * self._touch_taxels
         with self._lock:
             if self._rec_writer is None:
                 return   # _stop_recording correu entre o fast-path e aqui

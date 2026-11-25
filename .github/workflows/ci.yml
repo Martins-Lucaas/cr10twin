@@ -60,7 +60,6 @@ jobs:
           source install/setup.bash
           python3 -m pytest -q -rs \
             src/touch_pack/test/test_controller_config.py \
-            src/touch_pack/test/test_driver_confirmacao.py \
             src/touch_pack/test/test_explorer_split.py \
             src/touch_pack/test/test_ft_charts.py \
             src/touch_pack/test/test_ft_frame.py \

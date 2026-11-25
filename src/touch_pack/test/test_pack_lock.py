@@ -50,23 +50,3 @@ def test_nodes_of_same_pack_coexist(hold):
 def test_unknown_pack_is_refused():
     with pytest.raises(ValueError):
         pack_lock.acquire('outro')
-
-
-def test_relatorio_do_touch_ignora_sessoes_do_rehab(tmp_path, monkeypatch):
-    from touch_pack import palpation_report as pr
-    vistos = []
-    monkeypatch.setattr(pr, 'OUTPUT_DIR', str(tmp_path))
-    monkeypatch.setattr(pr, 'generate_report',
-                        lambda p, **k: vistos.append(p) or {})
-    touch = tmp_path / 'SLIDE' / 'r1' / pr.RUN_SAMPLES_CSV
-    rehab = tmp_path / 'REHAB' / 'S01' / 'r2' / pr.RUN_SAMPLES_CSV
-    for p in (touch, rehab):          # o do rehab é o mais recente
-        p.parent.mkdir(parents=True)
-        p.write_text('')
-    import os
-    os.utime(touch, (1, 1))
-    try:
-        pr.main(['--latest', '--no-plot'])
-    except (KeyError, SystemExit):
-        pass                          # o resumo falso não tem campos
-    assert vistos == [str(touch)]

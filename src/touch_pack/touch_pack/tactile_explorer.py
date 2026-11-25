@@ -68,6 +68,7 @@ Interface ROS:
 
 Parâmetros ROS:
   approach_v_max_mms   50.0   velocidade inicial da descida (mm/s)
+  approach_v_min_mms    5.0   velocidade final da descida (mm/s)
 
 Calibração dinâmica do ângulo de ataque (opcional, desligada por padrão):
   Uma fase CALIBRATING roda UMA vez por experimento, logo após a HOME, e
@@ -125,7 +126,6 @@ _QOS_SENSOR = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST, depth=1)
 
 from std_msgs.msg import String, Float32, Bool, Empty
-from geometry_msgs.msg import WrenchStamped
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
@@ -138,7 +138,6 @@ from .kinematics import (
     T_TOUCH_TOOL_ATTACH,
 )
 from .explorer_attack import AttackMixin
-from .explorer_guards import GuardsMixin
 from .plane_probe import (
     angle_between_deg as _angle_between_deg,
     attack_dir_from_normal as _attack_dir_from_normal,
@@ -205,10 +204,6 @@ from .constants import (   # noqa: F401 — alguns só são reexportados
 # `tactile_explorer.X` continua resolvendo para quem já importava de cá.
 from .explorer_constants import (   # noqa: F401 — reexportação
     _POINTING_SEED_Q, _SLIDING_SAFETY_M, _FORCE_SAFE_LIMIT_N,
-    _LATERAL_SAFE_LIMIT_N, _FORCE_LATCH_S, _STALL_DF_N,
-    _ARRIVE_TOL_M, _ARRIVE_TOL_RAD, _ARRIVE_TIMEOUT_S,
-    _ARRIVE_MOVE_RAD, _ARRIVE_RTF_MAX,
-    _ATTACK_MAX_JOINT_JUMP_DEG, _SLIDE_SPEED_MAX_MMS, _APPROACH_SPEED_MAX_MMS,
     _K_DEFAULT_NM, _K_MIN_NM, _K_MAX_NM, _K_EMA_ALPHA,
     _K_PAIR_MIN_DF_N, _K_PAIR_MIN_DX_M, _FX_MIN_POINTS, _FX_MIN_SPAN_N,
     _FX_MIN_SEG_DF_N, _DEADBEAT_DX_MAX_M, _SLIDE_MAX_SINK_M,
@@ -228,9 +223,8 @@ from .explorer_constants import (   # noqa: F401 — reexportação
     _QS_RELIEF_FLOOR_N, _QS_DF_DEAD_N, _QS_BOOST_MAX, _QS_DF_HARD_N,
     _QS_DF_TARGET_FRAC, _QS_DX_PROBE_M, _QS_DX_PROBE_MAX_M,
     _QS_FREE_STEP_MAX_M, _QS_K_PUSH_MARGIN, _QS_NO_CROSS_FRAC,
-    _QS_RAMP_DF_CAP_N, _CTRL_WIN,
     _QS_STEP_GROWTH, _QS_DX_FLOOR_M, _QS_FREE_RESET_TICKS,
-    _QS_ARRIVE_S, _QS_TIMEOUT_S, _QS_RAMP_V_MS,
+    _QS_ARRIVE_S, _QS_TIMEOUT_S, _QS_RAMP_V_MS, _QS_RAMP_DF_CAP_N,
     _HOLD_STABLE_S, _HOLD_TIMEOUT_S, _HOLD_DWELL_S, _ALIGN_ORI_TOL_DEG,
     _TIP_HALF_DIAG_M, _TARE_SETTLE_S, _TARE_TIMEOUT_S, _TARE_FREE_AIR_MAX_N,
     _ALIGN_TRANSIT_MS, _ALIGN_ZONE_EXTRA_M, _STEP_START_DEFAULT_N,
@@ -246,7 +240,7 @@ from .explorer_constants import (   # noqa: F401 — reexportação
     _FMOD_LIMIT_RECOVER_STEP, _FMOD_MIN_MEAS_RATE_MULT,
     _FMOD_DEADBAND_MIN_RATIO,
     _FMOD_QUIET_FLOOR_M, _FORCE_STALE_S, _START_MAX_AGE_S, _CTRL_DT,
-    _CTRL_LOOK, _SLIDE_WIN, _JAC_LAM, _ORI_GAIN,
+    _CTRL_LOOK, _CTRL_WIN, _SLIDE_WIN, _JAC_LAM, _ORI_GAIN,
     _SLIDE_END_TOL_M, _SLIDE_LATE_S, _SLIDE_CATCHUP_STEPS, _PACE_MAX_PERIOD_S,
     _Z_CORR_GAIN, _HOME_MAX_RAD_S, _SETTLE_TICKS,
     _SETTLE_STILL_TOL_RAD_S, _SETTLE_STILL_MAX_TICKS,
@@ -259,16 +253,19 @@ from .force_wave import (           # noqa: F401 — reexportação
 )
 from .stiffness import (            # noqa: F401 — reexportação
     _ContactCurve, _StiffnessEstimator, crawl_v_ms, impact_peak_n,
-    qs_ramp_step, setpoint_resolvable, slide_force_step
+    setpoint_resolvable, slide_force_step
 )
 
 
-class TactileExplorer(AttackMixin, GuardsMixin, Node):
+class TactileExplorer(AttackMixin, Node):
 
     def __init__(self):
         super().__init__('tactile_explorer')
 
+        self.declare_parameter('retract_mm',          80.0)
+        self.declare_parameter('arm_base_z',          0.78)
         self.declare_parameter('approach_v_max_mms',  50.0)
+        self.declare_parameter('approach_v_min_mms',   5.0)
         # Persistência do contato aprendido por home (ver _load_learned).
         # max_age_h = 0 desliga o vencimento (entradas valem para sempre).
         #
@@ -558,20 +555,11 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                                   self._cb_set_force, 10, callback_group=cb)
         self.create_subscription(Empty, '/palpation/forget_contact',
                                   self._cb_forget_contact, 10, callback_group=cb)
-        # Fila funda: com profundidade 1 uma rajada da célula entregava só a
-        # última amostra, e o pico do meio nunca chegava à guarda de força.
-        qos_force = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST, depth=100)
         self.create_subscription(Float32, '/load_cell/force_net',
-                                  self._cb_lc_force_net, qos_force, callback_group=cb)
+                                  self._cb_lc_force_net, _QOS_SENSOR, callback_group=cb)
         self.create_subscription(LoadCellSample, '/load_cell/sample_net',
-                                  self._cb_lc_sample_net, qos_force,
+                                  self._cb_lc_sample_net, _QOS_SENSOR,
                                   callback_group=cb)
-        # Só o ft_receiver publica: em force_source:=sim não há 6 eixos, e o
-        # run avisa que a guarda lateral está fora (_run_protocol).
-        self.create_subscription(WrenchStamped, '/ft_sensor/wrench',
-                                  self._cb_wrench, qos_force, callback_group=cb)
         self.create_subscription(JointState, '/joint_states',
                                   self._cb_joints, 50, callback_group=cb)
 
@@ -607,21 +595,12 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         self.create_timer(1.0, self._flush_learned, callback_group=cb)
 
     # Callbacks
-    # Excesso visto por uma amostra (ver _FORCE_LATCH_S) e força lateral.
-    _lc_over_ts = 0.0
-    _lateral_n = 0.0
-    _lateral_ts = 0.0
-    _lateral_over_ts = 0.0
-    _run_id = ''
+    _LC_MAX_PLAUSIBLE_N = 100.0
 
     def _cb_lc_force_net(self, msg: Float32) -> None:
-        """Recebe /load_cell/force_net — COM SINAL (+ compressão, − tração).
-
-        Só não-finito é descartado: uma leitura enorme é batida, não lixo, e
-        jogá-la fora deixava a guarda cega até o 'stale'.
-        """
+        """Recebe /load_cell/force_net — COM SINAL (+ compressão, − tração)."""
         val = float(msg.data)
-        if not math.isfinite(val):
+        if not math.isfinite(val) or abs(val) > self._LC_MAX_PLAUSIBLE_N:
             return
         now = time.monotonic()
         with self._lc_lock:
@@ -637,20 +616,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             self._lc_force_net = val
             self._lc_force_ts = now
             self._lc_force_seq += 1
-            if abs(val) > _FORCE_SAFE_LIMIT_N:
-                self._lc_over_ts = now
-
-    def _cb_wrench(self, msg: WrenchStamped) -> None:
-        """Fx/Fy tarados da FA7155 — a colisão que o Fz não vê."""
-        lat = math.hypot(msg.wrench.force.x, msg.wrench.force.y)
-        if not math.isfinite(lat):
-            return
-        now = time.monotonic()
-        with self._lc_lock:
-            self._lateral_n = lat
-            self._lateral_ts = now
-            if lat > _LATERAL_SAFE_LIMIT_N:
-                self._lateral_over_ts = now
 
     def _lc_rate_hz(self) -> float:
         """Taxa (Hz) da fonte que alimenta /load_cell/force_net.
@@ -695,6 +660,8 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 and math.isfinite(net)):
             return
         val = net + (raw - filt) * self._lc_raw_scale
+        if abs(val) > self._LC_MAX_PLAUSIBLE_N:
+            return
         now = time.monotonic()
         with self._lc_lock:
             dt = now - self._lc_raw_ts
@@ -745,21 +712,15 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             return [(t, v) for t, v in self._lc_raw_hist if t > t_mono]
 
     def _cb_joints(self, msg: JointState):
-        pos = dict(zip(msg.name, msg.position))
-        vals = [pos.get(j, math.nan) for j in _ARM_JOINTS]
-        # Mensagem sem o braço inteiro (a da mão) ou com NaN não é leitura.
-        if not all(math.isfinite(v) for v in vals):
-            return
+        idx = {n: i for i, n in enumerate(msg.name)}
         with self._q_lock:
-            self._current_q[:] = vals
+            for i, j in enumerate(_ARM_JOINTS):
+                if j in idx:
+                    self._current_q[i] = float(msg.position[idx[j]])
             self._q_ts = time.monotonic()
 
     def _cb_set_force(self, msg: Float32) -> None:
         """Atualiza o setpoint de força ON-THE-FLY (modo MANUAL/dinâmico)."""
-        if not math.isfinite(msg.data):
-            self.get_logger().error(
-                f'[MANUAL] setpoint não-finito ({msg.data}) recusado.')
-            return
         with self._params_lock:
             self._target_force_n = float(np.clip(
                 float(msg.data), _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
@@ -771,10 +732,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             self._stop_requested.set()
             self._pause_requested.clear()   # stop vence pausa
             self.get_logger().warn('[STOP] Parada solicitada.')
-        elif self._phase == 'FROZEN':
-            # Saída EXPLÍCITA do congelamento: só muda a fase, nada se move.
-            self.get_logger().warn('[STOP] FROZEN encerrado pelo operador.')
-            self._set_phase('IDLE')
 
     def _cb_freeze(self, msg: Empty) -> None:
         """FREEZE (parada dura): congela a posição atual IMEDIATAMENTE e aborta
@@ -1161,28 +1118,20 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         pose que já não é a de quando o comando foi emitido.
 
         `stamp` zerado = publisher antigo ou `ros2 topic pub` sem o campo:
-        aceita, como os demais campos novos. Fora dele, só passa o que estiver
-        a menos de _START_MAX_AGE_S do relógio do nó, nos dois sentidos.
+        aceita, como os demais campos novos. Stamp no futuro (relógios
+        diferentes) também passa — só o passado distante é recusado.
         """
-        now_s = self.get_clock().now().nanoseconds * 1e-9
-        if now_s <= 0.0:
-            # use_sim_time sem /clock: não há idade a medir.
-            self.get_logger().warn(
-                '/palpation/start ignorado: /clock ainda não chegou — '
-                'publique de novo com a simulação rodando.')
-            return True
         stamp = getattr(msg, 'stamp', None)
         if stamp is None:
             return False
         t_msg = float(stamp.sec) + float(stamp.nanosec) * 1e-9
         if t_msg <= 0.0:
             return False
-        age_s = now_s - t_msg
-        # Muito no FUTURO também é outra sessão: /clock reiniciado do zero.
-        if abs(age_s) <= _START_MAX_AGE_S:
+        age_s = self.get_clock().now().nanoseconds * 1e-9 - t_msg
+        if age_s <= _START_MAX_AGE_S:
             return False
         self.get_logger().warn(
-            f'/palpation/start ignorado: comando a {age_s:+.0f} s do relógio '
+            f'/palpation/start ignorado: comando de {age_s:.0f} s atrás '
             f'(teto {_START_MAX_AGE_S:.0f} s). É o latch TRANSIENT_LOCAL de '
             'uma sessão anterior, não um pedido novo — publique de novo pela '
             'GUI para rodar.')
@@ -1194,20 +1143,13 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         Devolve True se a thread arrancou — é o que diz ao _cb_start se o
         _busy fica marcado ou deve ser liberado.
         """
-        self._run_id = _run_id_from_msg(msg)
-        motivo = self._start_refusal(msg)
-        if motivo is not None:
-            self.get_logger().error(f'/palpation/start RECUSADO: {motivo}.')
-            self._set_phase('ABORTED')
-            return False
         with self._params_lock:
             self._target_depth_mm = float(msg.depth_mm)
             # Setpoint de força — saturado no máximo selecionável.
             self._target_force_n = float(np.clip(
                 float(msg.force_n), _CONTACT_ON_N, _FORCE_SETPOINT_MAX_N))
             self._target_slide_mm = float(msg.slide_dist_mm)
-            self._slide_speed_mms = min(float(msg.speed_mms),
-                                        _SLIDE_SPEED_MAX_MMS)
+            self._slide_speed_mms = float(msg.speed_mms)
             self._slide_returns = min(50, int(getattr(msg, 'slide_returns', 0)))
             # Campo novo (06/08/2026): mensagens antigas não o têm, e ausente
             # significa 0° — exatamente o comportamento anterior.
@@ -1263,7 +1205,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             _align = str(getattr(msg, 'probe_align', '') or '').upper().strip()
             self._align_from_msg = _align in ('ON', 'OFF', 'MANUAL')
             self._align_on = _align in ('ON', 'MANUAL')
-            self._align_msg = {}       # nada do run anterior sobrevive
             if self._align_from_msg:
                 self._align_msg = {
                     'points': int(getattr(msg, 'probe_align_points', 0) or 0),
@@ -1287,12 +1228,15 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 # limiar de contato e da rigidez de referência (crawl_v_ms) —
                 # e NÃO do setpoint, para o primeiro impacto ser o mesmo em
                 # qualquer ensaio.
-                v_max = min(max(1.0, float(msg.approach_speed_mms)),
-                            _APPROACH_SPEED_MAX_MMS)
+                v_max = max(1.0, float(msg.approach_speed_mms))
+                v_min = max(0.5, v_max * 0.2)
                 self.set_parameters([
                     rclpy.parameter.Parameter(
                         'approach_v_max_mms',
                         rclpy.parameter.Parameter.Type.DOUBLE, v_max),
+                    rclpy.parameter.Parameter(
+                        'approach_v_min_mms',
+                        rclpy.parameter.Parameter.Type.DOUBLE, v_min),
                 ])
             if msg.speed_factor_pct > 0.0:
                 self._speed_factor_pct = float(
@@ -1437,7 +1381,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             home_known = self._learned_contact_m is not None
         msg = PalpationStatus()
         msg.phase = self._phase
-        msg.run_id = self._run_id
         msg.cycle = int(self._cycle)
         msg.cycles_total = int(self._cycles_total)
         msg.target_depth_mm = depth_mm
@@ -1468,22 +1411,9 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             return self._lc_force_net
 
     def _force_over_limit(self, fz: float | None = None) -> bool:
-        """True se a MAGNITUDE da força cruzou a margem de segurança — em Fz
-        (leitura corrente ou qualquer amostra dos últimos _FORCE_LATCH_S) ou
-        na lateral."""
+        """True se a MAGNITUDE da força cruzou a margem de segurança."""
         v = self._fz_corrected() if fz is None else fz
-        now = time.monotonic()
-        with self._lc_lock:
-            fz_latch = now - self._lc_over_ts < _FORCE_LATCH_S
-            lat = self._lateral_n
-            lat_over = (now - self._lateral_over_ts < _FORCE_LATCH_S
-                        or (lat > _LATERAL_SAFE_LIMIT_N
-                            and now - self._lateral_ts < _FORCE_STALE_S))
-        if lat_over:
-            self.get_logger().error(
-                f'SEGURANÇA: força LATERAL de {lat:.1f} N (margem de '
-                f'{_LATERAL_SAFE_LIMIT_N:.0f} N).')
-        return fz_latch or lat_over or abs(v) > _FORCE_SAFE_LIMIT_N
+        return abs(v) > _FORCE_SAFE_LIMIT_N
 
     def _contact_confirm(self) -> tuple[bool, float]:
         """Confirma (ou desmente) o gatilho de contato com o braço JÁ PARADO."""
@@ -1831,11 +1761,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
 
         t_start = time.time()
         t_cross: float | None = None   # instante em que a força cruzou o alvo
-        # Sem orçamento de curso (HOLD/MANUAL) a fase começa onde a descida
-        # firmou o contato: o vigia de alvo retirado já nasce armado.
-        self._qs_ever_contact = budget_m is None
-        # Curso comandado sem resposta de força, e a força de referência dele.
-        stall_m, f_ref, sign_prev = 0.0, None, 0.0
+        self._qs_ever_contact = False
         deepened_m = 0.0
         fz_prev: float | None = None
         step_prev = 0.0
@@ -1856,14 +1782,8 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 self._stop_requested.clear()
                 self.get_logger().warn(f'[STOP] {phase} interrompido pelo usuário.')
                 return 'stop', 0.0
-            t_gate = time.time()
             if not self._pause_gate():
                 return 'stop', 0.0
-            # Tempo em pausa não é dwell nem timeout.
-            paused_s = time.time() - t_gate
-            t_start += paused_s
-            if t_cross is not None:
-                t_cross += paused_s
             if self._force_stale_abort(phase):
                 return 'stale', 0.0
             if dynamic:
@@ -1941,39 +1861,78 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             now = time.time()
             in_band = abs(err) <= tol_n
 
-            step_m, crossed, sign0 = qs_ramp_step(
-                err, tol_n, in_contact, t_cross is not None, sign0,
-                v_ramp * dt, self._k_est, dynamic)
-            sign_now = float(np.sign(step_m))
-            if crossed and t_cross is None:
+            # ── ETAPA B: a força já cruzou o alvo → defender o patamar ──
+            if t_cross is None and (in_band
+                                    or (sign0 != 0.0 and sign0 * err <= 0.0)):
                 t_cross = now
                 self.get_logger().info(
                     f'{phase}: alvo cruzado (fz={fz:.2f} N, alvo '
                     f'{target_f:.2f} ± {tol_n:.2f}) — defendendo '
                     f'{stable_s:.1f} s.')
             if t_cross is not None:
-                # A defesa mantém o relógio de stable_s correndo mesmo
-                # re-rampando, então "chegou ao fim" não garante "em banda
-                # AGORA". Devolver 'timeout' quando a última leitura está
-                # fora preserva o aviso "trate com ressalva" do chamador
-                # (escada/HOLD) sem reiniciar o relógio.
                 if not dynamic and now - t_cross >= stable_s:
-                    return ('ok' if in_band else 'timeout'), fz
-            elif not dynamic and now - t_start >= timeout_s:
-                return 'timeout', fz
+                    # A defesa mantém o relógio de stable_s correndo mesmo
+                    # re-rampando, então "chegou ao fim" não garante "em
+                    # banda AGORA". Devolver 'timeout' quando a última
+                    # leitura está fora preserva o aviso "trate com ressalva"
+                    # do chamador (escada/HOLD) sem reiniciar o relógio.
+                    return ('ok' if abs(err) <= tol_n else 'timeout'), fz
+                # Defesa DOS DOIS LADOS: a relaxação viscoelástica tira a
+                # força para baixo num degrau de carga e a RECUPERA para cima
+                # depois de um degrau de descarga — as duas precisam de
+                # correção. O passo continua limitado por _QS_NO_CROSS_FRAC·
+                # |err|/k_upper, que é minúsculo perto do alvo, então recuar
+                # aqui não larga o contato (o risco que a lei antiga tinha,
+                # com passo err/k_push grande). Relógio de stable_s NÃO
+                # reinicia.
+                if err > tol_n:
+                    sign_now = 1.0
+                elif err < -tol_n:
+                    sign_now = -1.0
+                else:
+                    sign_now = 0.0
+            else:
+                # ── ETAPA A: ainda não cruzou o alvo ──
+                if not dynamic and now - t_start >= timeout_s:
+                    return 'timeout', fz
+                if sign0 == 0.0:
+                    sign0 = 1.0 if err > 0.0 else -1.0
+                sign_now = (1.0 if err > 0.0 else -1.0) if dynamic else sign0
 
-            # ── avanço (ou recuo) sem resposta: o braço não está indo ──
-            if (f_ref is None or in_band or sign_now != sign_prev
-                    or (fz - f_ref) * sign_now >= _STALL_DF_N):
-                f_ref, stall_m, sign_prev = fz, 0.0, sign_now
-            if budget_m is None and stall_m >= _TARGET_LOST_FREE_M:
-                self.get_logger().error(
-                    f'SEGURANÇA [{phase}]: {stall_m*1e3:.2f} mm comandados e a '
-                    f'força não respondeu (fz={fz:+.2f} N, alvo '
-                    f'{target_f:.2f} N) — o braço pode não estar executando. '
-                    'Abortando antes de acumular curso.')
-                self._relieve_contact(approach_dir, floor_n=_CONTACT_ON_N)
-                return 'target_lost', fz
+            # ── passo de rampa a velocidade constante ──
+            if sign_now == 0.0:
+                step_m = 0.0
+            else:
+                # O passo é v·dt FIXO (velocidade constante). Dois clamps de
+                # SEGURANÇA — nenhum é ganho, só ENCURTAM o passo fixo:
+                #  (a) ΔF projetado ≤ _QS_RAMP_DF_CAP_N pela rigidez local. A
+                #      cota é CONSERVADORA até haver medida: `k_upper` vale
+                #      _K_MAX_NM enquanto nada foi percorrido, então o 1º tick
+                #      num contato de rigidez DESCONHECIDA projeta ≤
+                #      _QS_RAMP_DF_CAP_N mesmo que ele seja rígido; a cota do
+                #      "resultado nulo" em `k_upper` afrouxa sozinha conforme
+                #      o curso sem resposta cresce, então contato mole não
+                #      trava. Medida a rigidez, usa a EMA (`value`).
+                #  (b) NÃO-ULTRAPASSAGEM: o passo não cruza o alvo nem na pior
+                #      rigidez (`k_upper`). Perto do alvo (a) e (b) fazem a
+                #      aproximação virar geométrica POR BAIXO, sem overshoot
+                #      mesmo com K errada.
+                step_mag = v_ramp * dt
+                if in_contact:
+                    k_cap = (self._k_est.value if self._k_est.estimated
+                             else self._k_est.k_upper)
+                    step_mag = min(
+                        step_mag,
+                        _QS_RAMP_DF_CAP_N / max(k_cap, _K_MIN_NM),
+                        _QS_NO_CROSS_FRAC * abs(err)
+                        / max(self._k_est.k_upper, _K_MIN_NM))
+                else:
+                    # Fora do contato (re-aproximação após perda): passo curto,
+                    # senão reentrar num contato rígido a v·dt cheio bate —
+                    # o quique de ~10 N da bancada. O clamp em contato assume
+                    # no tick seguinte.
+                    step_mag = min(step_mag, _QS_FREE_STEP_MAX_M)
+                step_m = sign_now * step_mag
 
             if budget_m is not None and deepened_m + step_m > budget_m:
                 step_m = budget_m - deepened_m
@@ -1984,7 +1943,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             if q_new is not None:
                 q_cmd = q_new
                 deepened_m += step_m
-                stall_m += abs(step_m)
                 fz_prev, step_prev = fz, step_m
                 if not in_contact and step_m > 0.0:
                     # Avanço em busca de contato: é ESTE curso que o vigia de
@@ -2044,9 +2002,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         I6 = np.eye(6)
         v_lim = (self._speed_factor_pct / 100.0) * _MAX_JOINT_VEL_RAD_S
         for _ in range(max_ticks):
-            # FREEZE congela NO LUGAR: nem o alívio continua.
-            if (abs(self._fz_corrected()) < floor
-                    or self._freeze_requested.is_set()):
+            if abs(self._fz_corrected()) < floor:
                 break
             tw = np.zeros(6)
             tw[:3] = -approach_dir * _DEADBEAT_DX_MAX_M
@@ -2072,12 +2028,12 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
 
     # Movimento no espaço de juntas: interpola linearmente q_from → q_to
     # a velocidade máxima de home_speed_rad_s rad/s por junta.
-    def _joint_stream_to(self, q_target: np.ndarray) -> str:
+    def _joint_stream_to(self, q_target: np.ndarray) -> bool:
         q_from = self._q_now()
         delta = np.asarray(q_target, float) - q_from
         max_d = float(np.max(np.abs(delta)))
         if max_d < 0.001:
-            return 'done'
+            return True
         n_steps = max(1, int(math.ceil(max_d / (self._home_v_rad_s() * _CTRL_DT))))
         v_lim = (self._speed_factor_pct / 100.0) * _MAX_JOINT_VEL_RAD_S
         vel_peak = np.clip(delta / n_steps / _CTRL_DT, -v_lim, v_lim)
@@ -2085,11 +2041,9 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         # Evita o solavanco de arranque causado por velocidade constante desde t=0.
         ramp = min(max(1, n_steps // 5), 8)
         for i in range(1, n_steps + 1):
-            out = self._motion_guard('ROTAÇÃO')
-            if out is not None:
-                # Pausa no meio do giro: o resto do plano vale para uma pose
-                # que o hold já abandonou.
-                return 'stop' if out == 'paused' else out
+            if self._stop_requested.is_set():
+                self._stop_requested.clear()
+                return False
             alpha = i / n_steps
             q = np.clip(q_from + alpha * delta, JOINT_MIN, JOINT_MAX)
             if i <= ramp:
@@ -2101,9 +2055,177 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             step_vel = vel_peak * scale if i < n_steps else np.zeros(6)
             self._stream_q(q, _CTRL_DT, velocities=step_vel)
             time.sleep(_CTRL_DT)
-        out = self._wait_motion(
-            np.clip(q_target, JOINT_MIN, JOINT_MAX), 0.0, 'ROTAÇÃO')
-        return 'stop' if out == 'paused' else out
+        return True
+
+    def _cartesian_stream(self, direction: np.ndarray, total_m: float, *,
+                           v_const_ms: float | None = None,
+                           v_max_ms: float | None = None,
+                           v_min_ms: float | None = None,
+                           lock_ori: bool = False,
+                           lock_z: bool = False,
+                           lock_perp: bool = False,
+                           force_threshold_n: float | None = None,
+                           win: int = _CTRL_WIN) -> str:
+        """Streaming Jacobiano a 33 Hz, sem pré-planejamento. Retorna
+        'done' | 'force' | 'stop' | 'error'."""
+        d = np.asarray(direction, dtype=float).flatten()
+        nd = float(np.linalg.norm(d))
+        if nd < 1e-9 or total_m <= 0.0:
+            self.get_logger().error('_cartesian_stream: direção/distância inválida.')
+            return 'error'
+        d /= nd
+
+        constant = v_const_ms is not None
+        if not constant and (v_max_ms is None or v_min_ms is None):
+            self.get_logger().error(
+                '_cartesian_stream: forneça v_const_ms OU (v_max_ms, v_min_ms).')
+            return 'error'
+
+        I6 = np.eye(6)
+
+        # p_start mede o progresso real do TCP via FK, em vez de integrar
+        # passos comandados (que acumula erro do Jacobiano e do clipping).
+        T0 = forward_kinematics(self._q_now(), T_end=T_TOUCH_TOOL_ATTACH)
+        p_start = T0[:3, 3].copy()
+
+        R0: np.ndarray | None = None
+        z0: float | None = None
+        perp_dir: np.ndarray | None = None
+        p0_perp: float | None = None
+        if lock_ori:
+            R0 = T0[:3, :3].copy()
+        if lock_z:
+            z0 = float(T0[2, 3])
+        if lock_perp:
+            # Perpendicular a d no plano XY. Para d = [0,0,±1] a norma é zero
+            # e a correção é suprimida automaticamente.
+            perp = np.array([-d[1], d[0], 0.0])
+            pnorm = float(np.linalg.norm(perp))
+            if pnorm > 1e-9:
+                perp_dir = perp / pnorm
+                p0_perp = float(p_start @ perp_dir)
+
+        # Safety: timeout baseado em 10× o tempo nominal + margem de 30 s.
+        v_est = float(v_const_ms) if constant else float(v_max_ms)
+        v_est = max(1e-4, v_est)
+        _timeout_s = max(30.0, (total_m / v_est) * 10.0)
+        _t0 = time.time()
+        # Detecção de direção errada: > 5 mm na direção negativa por > 3 s.
+        _neg_ticks = 0
+        _NEG_MAX = int(3.0 / _CTRL_DT)
+        # Log diagnóstico a cada 1 s.
+        _log_every = max(1, int(1.0 / _CTRL_DT))
+        _tick = 0
+
+        self.get_logger().info(
+            f'_cartesian_stream: d={d.round(3)} total={total_m*1e3:.1f}mm '
+            f'v={v_est*1e3:.1f}mm/s p_start={p_start.round(4)} '
+            f'TCP_Z={T0[:3,2].round(3)}')
+
+        # Progresso real do TCP na direção d (metros, medido via FK a cada tick).
+        progress = 0.0
+
+        while progress < total_m:
+            if self._stop_requested.is_set():
+                self._stop_requested.clear()
+                return 'stop'
+
+            # Timeout global — evita loop eterno se o robô não se move.
+            if time.time() - _t0 > _timeout_s:
+                self.get_logger().error(
+                    f'_cartesian_stream: timeout {_timeout_s:.0f}s '
+                    f'(progress={progress*1e3:.1f}mm/{total_m*1e3:.1f}mm). Abortando.')
+                return 'error'
+
+            if force_threshold_n is not None:
+                if self._fz_corrected() >= force_threshold_n:
+                    return 'force'
+
+            q = self._q_now().copy()
+
+            # FK do tick atual — única chamada por iteração.
+            # Serve tanto para medir o progresso real quanto para as correções
+            # de orientação, Z e perpendicular.
+            T_cur = forward_kinematics(q, T_end=T_TOUCH_TOOL_ATTACH)
+            progress = float(np.dot(T_cur[:3, 3] - p_start, d))
+
+            # Detecção de direção errada: se TCP persistentemente se afasta
+            # de p_start na direção oposta a d, o Jacobiano provavelmente está
+            # sendo calculado numa configuração errada. Aborta para não bloquear.
+            if progress < -0.005:
+                _neg_ticks += 1
+                if _neg_ticks > _NEG_MAX:
+                    self.get_logger().error(
+                        f'_cartesian_stream: TCP na direção errada '
+                        f'(progress={progress*1e3:.1f}mm por >{3.0:.0f}s). '
+                        f'TCP_cur={T_cur[:3,3].round(4)} p_start={p_start.round(4)}. '
+                        'Abortando.')
+                    return 'error'
+            else:
+                _neg_ticks = 0
+
+            # Log periódico para diagnóstico.
+            if _tick % _log_every == 0:
+                self.get_logger().debug(
+                    f'  t={_tick*_CTRL_DT:.1f}s progress={progress*1e3:.2f}mm '
+                    f'TCP={T_cur[:3,3].round(4)}')
+            _tick += 1
+
+            # Perfil de velocidade usa o progresso FK (não passos acumulados).
+            u = max(0.0, min(1.0, progress / total_m))
+            if constant:
+                v = float(v_const_ms)
+            else:
+                v = float(v_min_ms) + (float(v_max_ms) - float(v_min_ms)) * (1.0 - u) ** 2
+            v = max(1e-4, v)
+            step = v * _CTRL_DT
+
+            # ── Batch de `win` waypoints (janela deslizante) ─────────────────
+            # Cada mensagem contém `win` pontos com timestamps cumulativos.
+            msg = JointTrajectory()
+            msg.joint_names = list(_ARM_JOINTS)
+            q_iter = q.copy()
+            T_iter = T_cur
+            v_lim = (self._speed_factor_pct / 100.0) * _MAX_JOINT_VEL_RAD_S
+            singular = False
+            for k in range(1, win + 1):
+                tw = np.zeros(6)
+                tw[:3] = d * step
+                if R0 is not None:
+                    tw[3:] = self._ori_twist(R0, T_iter)
+                if z0 is not None:
+                    tw[2] += _Z_CORR_GAIN * (z0 - float(T_iter[2, 3]))
+                if perp_dir is not None and p0_perp is not None:
+                    perp_err = p0_perp - float(T_iter[:3, 3] @ perp_dir)
+                    tw[:3] += _Z_CORR_GAIN * perp_err * perp_dir
+                J_k = jacobian(q_iter, T_end=T_TOUCH_TOOL_ATTACH)
+                try:
+                    dq_k = J_k.T @ np.linalg.solve(
+                        J_k @ J_k.T + _JAC_LAM**2 * I6, tw)
+                except np.linalg.LinAlgError:
+                    singular = True
+                    break
+                q_next = np.clip(q_iter + dq_k, JOINT_MIN, JOINT_MAX)
+                vel_k = np.clip((q_next - q_iter) / _CTRL_DT, -v_lim, v_lim)
+                pt = JointTrajectoryPoint()
+                pt.positions = [float(x) for x in q_next]
+                pt.velocities = [float(x) for x in vel_k]
+                t_k = k * _CTRL_DT
+                pt.time_from_start = Duration(
+                    sec=int(t_k), nanosec=int((t_k - int(t_k)) * 1e9))
+                msg.points.append(pt)
+                q_iter = q_next
+                if k < win:
+                    T_iter = forward_kinematics(q_iter, T_end=T_TOUCH_TOOL_ATTACH)
+            if singular:
+                self.get_logger().warn('Jacobiano singular — passo descartado.')
+                time.sleep(_CTRL_DT)
+                continue
+            if msg.points:
+                self._arm_traj_pub.publish(msg)
+            time.sleep(_CTRL_DT)
+
+        return 'done'
 
     def _cartesian_batch_to(self, direction: np.ndarray, total_m: float, *,
                               v_const_ms: float | None = None,
@@ -2211,23 +2333,37 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
 
         if not msg.points:
             return 'error'
-        # Plano truncado (singularidade) ou saturado num limite: o fim dele
-        # não é o alvo, e o trecho seguinte partiria de outro lugar.
-        falta_m = float(np.linalg.norm(
-            T0[:3, 3] + d * total_m - T_iter[:3, 3]))
-        if falta_m > max(_ARRIVE_TOL_M, 0.05 * total_m):
-            self.get_logger().error(
-                f'_cartesian_batch_to: o plano termina a {falta_m*1e3:.1f} mm '
-                'do alvo (limite de junta ou singularidade) — não enviado.')
-            return 'error'
 
         self._arm_traj_pub.publish(msg)
         self.get_logger().info(
             f'_cartesian_batch_to: {len(msg.points)} pts publicados '
             f'(duração {len(msg.points)*_CTRL_DT:.1f}s)')
 
-        return self._wait_motion(
-            q_iter, len(msg.points) * _CTRL_DT + 0.5, 'TRANSIT')
+        t_end = time.monotonic() + len(msg.points) * _CTRL_DT + 0.5
+        while time.monotonic() < t_end:
+            if self._stop_requested.is_set():
+                self._stop_requested.clear()
+                self._settle()
+                return 'stop'
+            if self._pause_requested.is_set():
+                # _pause_gate segura a posição, o que descarta o resto da
+                # trajetória: devolve 'paused' para quem chama replanejar.
+                if not self._pause_gate():
+                    return 'stop'
+                return 'paused'
+            if self._force_stale_abort('TRANSIT'):
+                self._settle()
+                return 'stale'
+            if self._force_over_limit():
+                self._settle()          # substitui o goal: PARA no lugar
+                self.get_logger().error(
+                    f'SEGURANÇA [TRANSIT]: força {self._fz_corrected():+.1f} N '
+                    f'além da margem de {_FORCE_SAFE_LIMIT_N:.0f} N durante um '
+                    'trânsito em ar livre — algo está no caminho. Trajetória '
+                    'interrompida no lugar.')
+                return 'force'
+            time.sleep(_CTRL_DT)
+        return 'done'
 
     # Mão COVVI
     def _send_hand_pose(self, primary_rad: dict[str, float],
@@ -2251,8 +2387,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         self._hand_pub.publish(msg)
 
     # HOME: trajectória batch (uma mensagem multi-ponto → JTC planeia S-curve)
-    def _joint_batch_to(self, q_target: np.ndarray,
-                        require_fresh: bool = True) -> bool:
+    def _joint_batch_to(self, q_target: np.ndarray) -> bool:
         """Leva as juntas a `q_target`, replanejando depois de cada pausa.
 
         Segurar posição durante a pausa substitui o goal do JTC, então o que
@@ -2262,7 +2397,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         seguinte começava de uma pose que ninguém escolheu.
         """
         for _ in range(self._LINEAR_REPLAN_MAX):
-            out = self._joint_batch_once(q_target, require_fresh)
+            out = self._joint_batch_once(q_target)
             if out != 'paused':
                 return out == 'done'
         self.get_logger().error(
@@ -2270,10 +2405,9 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             'o movimento articular — abortando.')
         return False
 
-    def _joint_batch_once(self, q_target: np.ndarray,
-                          require_fresh: bool = True) -> str:
+    def _joint_batch_once(self, q_target: np.ndarray) -> str:
         """Uma tentativa: envia uma única JointTrajectory com todos os
-        waypoints ao JTC. Retorna o mesmo que _wait_motion."""
+        waypoints ao JTC. Retorna 'done' | 'stop' | 'paused'."""
         q_from = self._q_now()
         delta = np.asarray(q_target, float) - q_from
         max_d = float(np.max(np.abs(delta)))
@@ -2306,15 +2440,23 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
 
         self._arm_traj_pub.publish(msg)
 
-        return self._wait_motion(
-            np.clip(q_target, JOINT_MIN, JOINT_MAX),
-            n_steps * _CTRL_DT + 0.3, 'HOME', require_fresh)
+        # Aguardar a execução, monitorizando stop e PAUSA a cada tick.
+        t_end = time.monotonic() + n_steps * _CTRL_DT + 0.3
+        while time.monotonic() < t_end:
+            if self._stop_requested.is_set():
+                self._stop_requested.clear()
+                self._settle()
+                return 'stop'
+            if self._pause_requested.is_set():
+                if not self._pause_gate():
+                    return 'stop'
+                return 'paused'
+            time.sleep(_CTRL_DT)
+        return 'done'
 
     # Fases
-    def _phase_goto_home(self, retreat: bool = False) -> bool:
-        """HOME — trajetória batch ao JTC (S-curve interna) a ≤ 0.3 rad/s.
-
-        `retreat`: é o recuo do fim do run, que a célula muda não impede."""
+    def _phase_goto_home(self) -> bool:
+        """HOME — trajectória batch ao JTC (S-curve interna) a ≤ 0.3 rad/s."""
         self._withdraw_along_attack()
         # O recuo consome o _stop_requested: sem isto a HOME sairia por cima
         # de um FREEZE recebido no meio dele.
@@ -2330,7 +2472,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         # Settle antes de mover — garante que não há lookahead residual.
         self._settle()
 
-        if not self._joint_batch_to(q_home, require_fresh=not retreat):
+        if not self._joint_batch_to(q_home):
             return False
 
         # Settle final para estabilizar antes do CONTACT.
@@ -2639,7 +2781,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         a rotação (67,7 mm até a face da ponteira, ver
         T_TOUCH_TOOL_ATTACH).
 
-        Retorna 'ok' | 'stop' | 'force' | 'stale' | 'error'.
+        Retorna 'ok' | 'stop' | 'error'.
         """
         p_now = self._tcp_now()
         q_target, ik_ok = inverse_kinematics(
@@ -2649,15 +2791,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             self.get_logger().error(
                 f'[{label}] a IK não convergiu para o eixo de ataque pedido '
                 '— abortando sem girar o punho.')
-            return 'error'
-        # O caminho até q_target é interpolado em JUNTAS: um salto grande
-        # significa outro ramo da IK, e o TCP varreria dezenas de cm no meio.
-        salto_deg = math.degrees(float(np.max(np.abs(q_target - self._q_now()))))
-        if salto_deg > _ATTACK_MAX_JOINT_JUMP_DEG:
-            self.get_logger().error(
-                f'[{label}] a solução da IK exige {salto_deg:.0f}° numa junta '
-                f'(teto {_ATTACK_MAX_JOINT_JUMP_DEG:.0f}°): é outro ramo, não '
-                'um giro de punho. Abortando sem mover.')
             return 'error'
         # A IK SATURA nos limites articulares em vez de falhar, então
         # convergência não é o mesmo que apontar para onde se pediu:
@@ -2671,9 +2804,8 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 'provável limite de junta nesta pose. Abortando sem girar '
                 'o punho.')
             return 'error'
-        out = self._joint_stream_to(q_target)
-        if out != 'done':
-            return out
+        if not self._joint_stream_to(q_target):
+            return 'stop'
         self._settle(ticks=_SETTLE_TICKS * 2)
         # E agora a pose ENTREGUE, que é outra coisa: a checagem acima olhou
         # a solução da IK, não o que o braço fez com ela.
@@ -3509,7 +3641,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 f'HOLD-QS: janela de medição fechou FORA da banda — '
                 f'fz={self._fz_corrected():.2f} N '
                 f'(alvo {target_f:.2f} ± {tol_n:.2f} N). Prosseguindo: '
-                'o SLIDING parte desta profundidade.')
+                'o deadbeat do SLIDING continua corrigindo.')
         else:
             self.get_logger().info(
                 f'HOLD-QS: medição concluída — '
@@ -4035,16 +4167,10 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 self.get_logger().warn('[STOP] FMOD interrompido pelo usuário.')
                 outcome = 'stop'
                 break
-            t_gate = time.monotonic()
             if not self._pause_gate():
                 # _pause_gate já dá halt ao pausar; aqui a saída é definitiva.
                 outcome = 'stop'
                 break
-            if time.monotonic() - t_gate >= _CTRL_DT:      # houve pausa
-                # A onda continua da fase em que parou, e o que a célula leu
-                # na pausa não é amostra dela.
-                lc_drained_at = time.monotonic()
-                t0_mono += lc_drained_at - t_gate
             if self._force_stale_abort('FMOD'):
                 outcome = 'stale'
                 break
@@ -5266,18 +5392,11 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
     def _retreat_and_home(self, final_phase: str) -> bool:
         """Término com SUCESSO: retorna DIRETO à home lentamente, sem RETRACT.
         Devolve True se um FREEZE interrompeu o retorno."""
-        if self._freeze_in_place():
-            return True
         self._unload_before_home()
-        home_ok = self._phase_goto_home(retreat=True)
+        self._phase_goto_home()
         if self._freeze_in_place():
             return True
-        if not home_ok:
-            self.get_logger().error(
-                '[HOME] retorno à home NÃO concluído — run encerrado como '
-                'ABORTED, com o braço parado onde está.')
-            self._settle()
-        self._set_phase(final_phase if home_ok else 'ABORTED')
+        self._set_phase(final_phase)
         return False
 
     def _abort_to_home(self) -> None:
@@ -5592,13 +5711,9 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
             self.get_logger().warn(f'[MATRIX] alívio falhou: {exc}')
         if self._matrix_origin is None:
             return
-        if self._freeze_requested.is_set():
-            return
         # STOP já foi consumido pelo chamador; o lift precisa rodar com o
         # evento limpo, senão ele aborta a si mesmo no primeiro tick.
         self._stop_requested.clear()
-        if self._freeze_requested.is_set():      # chegou entre os dois: refaz
-            self._stop_requested.set()
         out = self._lift_to_safe_z(label='LIFT-ABORT')
         if out != 'done':
             self.get_logger().warn(
@@ -5629,9 +5744,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
         dois foi. Era o bloco repetido em oito saídas desta rotina — um
         sítio novo que esquecesse o alívio deixaria o braço carregado.
         """
-        # FREEZE é "nenhum movimento a mais": nem alívio nem subida.
-        if self._freeze_in_place():
-            return
         self._matrix_relieve_and_lift()
         if out == 'stop':
             self._finalize_interrupt('ABORTED')
@@ -5842,11 +5954,6 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                 _tgt = float(self._target_force_n)
                 _tol_ovr = self._hold_tol_n
             self._cycles_total = repeats
-            if time.monotonic() - self._lateral_ts > _FORCE_STALE_S:
-                self.get_logger().warn(
-                    '[FORÇA] fonte sem 6 eixos (/ft_sensor/wrench mudo): só o '
-                    'Fz está vigiado neste run. É o esperado em '
-                    'force_source:=sim; na bancada, confira o ft_receiver.')
             # Uma vez por experimento: o setpoint pedido é distinguível do
             # limiar de contato? Só avisa — a decisão é do operador.
             _tol_run = (_tol_ovr if _tol_ovr is not None
@@ -5922,7 +6029,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                         'aumente o passo. Ensaio recusado.')
                     self._set_phase('ABORTED'); return
                 if not self._phase_goto_home():
-                    self._abort_in_place(); return
+                    self._finalize_interrupt('ABORTED'); return
                 if not self._calibrate_or_abort():
                     return
                 # Com escada, a descida vai ao PRIMEIRO PATAMAR, não ao
@@ -5979,10 +6086,10 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
 
                 if not self._phase_goto_home():
                     # FREEZE também chega aqui (ele seta _stop_requested para
-                    # quebrar os laços): sem passar pelo _freeze_in_place a
+                    # quebrar os laços): sem passar pelo _finalize_interrupt a
                     # fase saía ABORTED e o E-STOP não aparecia nem no status
                     # nem no CSV.
-                    self._abort_in_place(); return
+                    self._finalize_interrupt('ABORTED'); return
 
                 # A calibração mede o plano UMA vez por experimento: a peça
                 # não se move entre repetições, e refazê-la a cada ciclo
@@ -6036,7 +6143,7 @@ class TactileExplorer(AttackMixin, GuardsMixin, Node):
                     # RETRACT — o HOME já afasta da superfície ao subir, e o
                     # próximo ciclo refaz a re-aproximação a partir da home.
                     if not self._phase_goto_home():
-                        self._abort_in_place(); return
+                        self._finalize_interrupt('ABORTED'); return
                     # Stop pedido durante o retorno → não inicia o próximo.
                     if self._stop_requested.is_set():
                         self._stop_requested.clear()

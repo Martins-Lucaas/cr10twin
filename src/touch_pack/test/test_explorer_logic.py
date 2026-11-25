@@ -72,32 +72,25 @@ def _default_start(**overrides) -> PalpationStart:
 
 # ── HOLD: estabilização do setpoint ────────────────────────────────────
 
-def _no_relogio(n, relogio, monkeypatch, forca):
-    """Fase cronometrada em relógio virtual, com a célula renovando a leitura
-    a cada avanço — a duração medida não depende da carga da máquina."""
-    import touch_pack.tactile_explorer as te
-    monkeypatch.setattr(te, 'time', relogio)
-    relogio.passo = lambda: _feed_force(n, forca)
-    relogio.sleep(0.02)
-
-
-def test_hold_exits_when_force_stable(node, relogio, monkeypatch):
+def test_hold_exits_when_force_stable(node):
     # dwell_s=0: aqui testa-se o critério de estabilização, não a medição.
-    _no_relogio(node, relogio, monkeypatch, 2.0)
-    t0 = relogio.t
+    th = _keep_force_fresh(node, 2.0, 3.0)
+    t0 = time.time()
     out = node._phase_hold(timeout_s=5.0, dwell_s=0.0)
-    dt = relogio.t - t0
+    dt = time.time() - t0              # medir ANTES do join (thread dura 3 s)
+    th.join()
     assert out == 'ok'
     assert dt < 1.5                    # saiu pela estabilização, não timeout
 
 
-def test_hold_times_out_when_out_of_band(node, relogio, monkeypatch):
-    _no_relogio(node, relogio, monkeypatch, 0.5)  # fora de 2.0±0.15 N
-    t0 = relogio.t
+def test_hold_times_out_when_out_of_band(node):
+    th = _keep_force_fresh(node, 0.5, 2.0)   # fora da banda de 2.0±0.15 N
+    t0 = time.time()
     # dwell_s=0: a janela sob teste é a de CHEGADA (_QS_ARRIVE_S), e o
     # dwell default de 5 s só somaria tempo ao que se está cronometrando.
     out = node._phase_hold(timeout_s=0.8, dwell_s=0.0)
-    dt = relogio.t - t0
+    dt = time.time() - t0
+    th.join()
     assert out == 'ok'                 # timeout prossegue com aviso
     assert 0.7 < dt < 1.6
 
@@ -117,14 +110,12 @@ def test_descending_aborts_without_force_data(node):
     assert out == 'stale'
 
 
-def test_hold_aborts_when_force_freezes(node, relogio, monkeypatch):
-    import touch_pack.tactile_explorer as te
-    monkeypatch.setattr(te, 'time', relogio)
+def test_hold_aborts_when_force_freezes(node):
     _feed_force(node, 1.0)             # uma única leitura, depois congela
-    t0 = relogio.t
+    t0 = time.time()
     out = node._phase_hold(timeout_s=10.0)
     assert out == 'stale'
-    assert relogio.t - t0 < 1.5      # abortou em ~_FORCE_STALE_S
+    assert time.time() - t0 < 1.5      # abortou em ~_FORCE_STALE_S
 
 
 # ── Ciclos de repetição ────────────────────────────────────────────────

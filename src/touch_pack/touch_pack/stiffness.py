@@ -32,8 +32,7 @@ from .explorer_constants import (
     _DESCEND_CRAWL_V_MIN_MS, _DESCEND_TOUCH_V_MS, _FX_MIN_POINTS,
     _FX_MIN_SEG_DF_N, _FX_MIN_SPAN_N, _K_DEFAULT_NM, _K_EMA_ALPHA,
     _K_MAX_NM, _K_MIN_NM, _K_PAIR_MIN_DF_N, _K_PAIR_MIN_DX_M,
-    _QS_FREE_STEP_MAX_M, _QS_K_PUSH_MARGIN, _QS_NO_CROSS_FRAC,
-    _QS_RAMP_DF_CAP_N, _STREAM_HALT_LAT_S,
+    _QS_K_PUSH_MARGIN, _STREAM_HALT_LAT_S,
     _SLIDE_FC_DOWN_MAX_MS, _SLIDE_FC_UP_MAX_MS, _SLIDE_FC_DEPTH_MAX_M,
     _SLIDE_FC_LIFT_MAX_M
 )
@@ -115,57 +114,6 @@ def slide_force_step(d_m: float, err_n: float, ki_ms_per_n: float,
                _SLIDE_FC_DOWN_MAX_MS if in_contact else 0.0)
     return min(max(d_m + rate * dt_s, -_SLIDE_FC_LIFT_MAX_M),
                _SLIDE_FC_DEPTH_MAX_M)
-
-
-def qs_ramp_step(err: float, tol_n: float, in_contact: bool, crossed: bool,
-                 sign0: float, v_step_m: float, k_est,
-                 dynamic: bool = False) -> tuple[float, bool, float]:
-    """UM passo da rampa a velocidade constante do `_qs_regulate`.
-
-    `err` = alvo − força; `crossed`/`sign0` são o estado entre passos (etapa B
-    já começou; sentido da etapa A). Devolve (passo_m, crossed, sign0).
-    """
-    if not crossed and (abs(err) <= tol_n
-                        or (sign0 != 0.0 and sign0 * err <= 0.0)):
-        crossed = True
-    if crossed:
-        # Etapa B, defesa DOS DOIS LADOS: a relaxação viscoelástica tira a
-        # força para baixo num degrau de carga e a RECUPERA para cima depois
-        # de um de descarga. O recuo é limitado pela não-ultrapassagem,
-        # minúscula perto do alvo, então não larga o contato.
-        sign = 1.0 if err > tol_n else -1.0 if err < -tol_n else 0.0
-    else:
-        if sign0 == 0.0:
-            sign0 = 1.0 if err > 0.0 else -1.0
-        sign = (1.0 if err > 0.0 else -1.0) if dynamic else sign0
-    if sign == 0.0:
-        return 0.0, crossed, sign0
-    # O passo é v·dt FIXO (velocidade constante). Dois clamps de
-    # SEGURANÇA — nenhum é ganho, só ENCURTAM o passo fixo:
-    #  (a) ΔF projetado ≤ _QS_RAMP_DF_CAP_N pela rigidez local. A
-    #      cota é CONSERVADORA até haver medida: `k_upper` vale
-    #      _K_MAX_NM enquanto nada foi percorrido, então o 1º tick
-    #      num contato de rigidez DESCONHECIDA projeta ≤
-    #      _QS_RAMP_DF_CAP_N mesmo que ele seja rígido; a cota do
-    #      "resultado nulo" em `k_upper` afrouxa sozinha conforme
-    #      o curso sem resposta cresce, então contato mole não
-    #      trava. Medida a rigidez, usa a EMA (`value`).
-    #  (b) NÃO-ULTRAPASSAGEM: o passo não cruza o alvo nem na pior
-    #      rigidez (`k_upper`). Perto do alvo (a) e (b) fazem a
-    #      aproximação virar geométrica POR BAIXO, sem overshoot
-    #      mesmo com K errada.
-    step = v_step_m
-    if in_contact:
-        k_cap = k_est.value if k_est.estimated else k_est.k_upper
-        step = min(step,
-                   _QS_RAMP_DF_CAP_N / max(k_cap, _K_MIN_NM),
-                   _QS_NO_CROSS_FRAC * abs(err) / max(k_est.k_upper, _K_MIN_NM))
-    else:
-        # Fora do contato (re-aproximação após perda): passo curto, senão
-        # reentrar num contato rígido a v·dt cheio bate — o quique de ~10 N
-        # da bancada. O clamp em contato assume no tick seguinte.
-        step = min(step, _QS_FREE_STEP_MAX_M)
-    return sign * step, crossed, sign0
 
 
 def setpoint_resolvable(target_f: float, tol_n: float,

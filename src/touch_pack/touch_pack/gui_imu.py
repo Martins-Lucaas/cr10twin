@@ -103,7 +103,6 @@ class IMUMixin:
     _imu_mirror_on = False
     _imu_rec: TrackingRecorder | None = None
     _imu_wizard: ImuCalibWizard | None = None
-    _imu_acc_sid_cache: int | None = None
     _imu_live: set = set()
 
     # ── Construção ───────────────────────────────────────────────────
@@ -364,8 +363,6 @@ class IMUMixin:
         if TK_STALL_S > 0:
             threading.Thread(target=self._imu_watchdog, daemon=True,
                              name='imu-tk-watchdog').start()
-        # O `follow_acc` salvo não dispara trace: o cache nasce dele.
-        self._imu_cache_acc_sid()
 
     def _imu_watchdog(self) -> None:
         """Se o laço do Tk parar (GUI congelada), despeja a pilha de TODAS as
@@ -410,18 +407,14 @@ class IMUMixin:
                 rec.imu(sensor_id, msg, t)
 
     def _imu_acc_sid(self):
-        """ID do IMU cuja aceleração entra no alvo (o de orientação), ou None.
-
-        Lido na thread do ROS a cada mensagem: só o atributo, nunca a var Tk."""
-        return self._imu_acc_sid_cache
-
-    def _imu_cache_acc_sid(self) -> None:
-        cv = self._imu_cart_vars
+        """ID do IMU cuja aceleração entra no alvo (o de orientação), ou None."""
+        cv = getattr(self, '_imu_cart_vars', None)
+        if cv is None or not cv['follow_acc'].get():
+            return None
         try:
-            self._imu_acc_sid_cache = (
-                int(cv['ori_imu'].get()) if cv['follow_acc'].get() else None)
-        except (ValueError, tk.TclError):
-            self._imu_acc_sid_cache = None
+            return int(cv['ori_imu'].get())
+        except ValueError:
+            return None
 
     def _imu_fresh_q(self, sid, now: float):
         item = self._imu_latest.get(sid) if sid is not None else None
@@ -460,7 +453,6 @@ class IMUMixin:
             self.get_logger().warn(f'imu config not saved: {exc}')
 
     def _imu_on_cart_change(self) -> None:
-        self._imu_cache_acc_sid()
         self._imu_save_config()
         if self._imu_cart is not None:
             self._imu_cart_rezero()
@@ -544,8 +536,6 @@ class IMUMixin:
             return 'drag teach active'
         if self._exec_movement_id is not None:
             return 'motion running'
-        if self._imu_wizard is not None:
-            return 'calibration wizard open'
         return ''
 
     def _imu_start_pose_problem(self, q_deg: dict[str, float]) -> str:
@@ -703,14 +693,9 @@ class IMUMixin:
 
     # ── Gravação ─────────────────────────────────────────────────────
     def _imu_rec_open(self, q_deg: dict[str, float], locked: list[str]) -> None:
-        try:
-            cart = {k: v.get() for k, v in self._imu_cart_vars.items()}
-            cart['segments'] = {k: {'imu': i.get(), 'length_m': L.get()}
-                                for k, (i, L) in self._imu_seg_vars.items()}
-        except (tk.TclError, ValueError) as exc:
-            self._imu_rec_lbl.config(
-                text=f'Recording failed: invalid field ({exc})', fg=DANGER)
-            return
+        cart = {k: v.get() for k, v in self._imu_cart_vars.items()}
+        cart['segments'] = {k: {'imu': i.get(), 'length_m': L.get()}
+                            for k, (i, L) in self._imu_seg_vars.items()}
         meta = {
             'cartesian': cart, 'locked': locked,
             'start_q_deg': q_deg,
@@ -739,11 +724,6 @@ class IMUMixin:
         if rec is None:
             return ''
         meta = rec.close()
-        if meta['error']:
-            self._imu_rec_lbl.config(
-                text=f'Recording INCOMPLETE ({meta["error"]}) → {rec.path}',
-                fg=DANGER)
-            return f' Recording incomplete: {rec.path}'
         freezes = {sid: v['gaps_over_stale'] for sid, v in meta['imu_summary'].items()
                    if v['gaps_over_stale']}
         frz = (', '.join(f'IMU {k}: {n}×' for k, n in freezes.items())
@@ -866,8 +846,6 @@ class IMUMixin:
                          and self._imu_publish_if_changed(q_new_deg))
             if self._imu_rec is not None:
                 self._imu_rec_tick(now, used, live, published)
-                if self._imu_rec.error:
-                    self._imu_rec_close()
 
         self._imu_after = self.root.after(IMU_TICK_MS, self._imu_tick)
 
@@ -882,16 +860,11 @@ class IMUMixin:
                 self._imu_cart_lbl.config(
                     text='Learning gravity — hold the hand still…', fg=WARN)
                 return None
-            # Refaz o zero na volta: a mão andou (ou o filtro reiniciou)
-            # enquanto ninguém media.
-            st['ref'] = None
             self._imu_cart_lbl.config(text='A sensor in use went silent — frozen.', fg=WARN)
             return None
         if st['ref'] is None:
             self._imu_cart_rezero()
-            if st['ref'] is None:
-                return None
-            sample = st['ref']      # este tick só segura a pose
+            return None
         _o, _s, _a, scale, heading, f_ori, f_pos = self._imu_cart_spec()
         (R_ori0, p_h0), (R_ori, p_h) = st['ref'], sample
         dp = (p_h - p_h0) if f_pos else np.zeros(3)

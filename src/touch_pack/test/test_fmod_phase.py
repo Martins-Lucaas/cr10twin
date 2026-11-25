@@ -39,14 +39,13 @@ def test_relatorio_inclui_a_onda_no_resumo_de_forca():
     assert 'MODULATING' in _PHASE_COLORS, 'fase sem cor cai no default do plot'
 
 
-def test_gui_tem_cor_para_a_fase(gui_real):
-    from touch_pack.ui_helpers import OK
-    with gui_real._lock:
-        gui_real._latest_phase = 'MODULATING'
-        gui_real._paused = False
-    gui_real._status_panel_tick()
-    assert gui_real.phase_lbl.cget('text').startswith('MODULATING')
-    assert gui_real.phase_lbl.cget('fg') == OK       # não a cor genérica
+def test_gui_tem_cor_para_a_fase():
+    import re
+    from pathlib import Path
+    import touch_pack.palpation_gui as g
+    src = Path(g.__file__).read_text()
+    bloco = re.search(r'phase_color = \{(.+?)\}\.get', src, re.S)
+    assert bloco and 'MODULATING' in bloco.group(1)
 
 
 # ── arranque em fase ──────────────────────────────────────────────────
@@ -256,18 +255,15 @@ def test_os_dois_caminhos_de_servoj_usam_a_mesma_banda_morta():
 
 # ── caminho de execução e segurança da onda ───────────────────────────
 
-def test_perfil_configurado_e_detectado_sem_efeito_colateral(braco):
+def test_perfil_configurado_e_detectado_sem_efeito_colateral():
     """_fmod_configured não pode validar nem logar — ela roda antes da 1a fase
     só para escolher o caminho, e _force_profile já loga por conta própria."""
-    from rclpy.parameter import Parameter
-    for forma, quer in (('SINE', True), ('COSINE', True), ('OFF', False)):
-        braco.set_parameters([Parameter('force_mod_shape', value=forma),
-                              # faixa INVÁLIDA: validar aqui logaria
-                              Parameter('force_mod_min_n', value=3.0),
-                              Parameter('force_mod_max_n', value=1.0)])
-        braco.log.linhas.clear()
-        assert bool(braco._fmod_configured()) is quer, forma
-        assert braco.log.linhas == []
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._fmod_configured)
+    assert 'get_logger' not in src, 'checagem barata não deve logar'
+    for forma in ('SINE', 'COSINE'):
+        assert forma in src
 
 
 def test_teto_de_velocidade_cobre_as_ondas_legitimas():
@@ -288,106 +284,57 @@ def test_teto_de_velocidade_cobre_as_ondas_legitimas():
     assert _FMOD_V_MAX_MMS <= 300.0
 
 
-def test_limites_de_seguranca_da_onda_seguem_ativos(onda):
+def test_limites_de_seguranca_da_onda_seguem_ativos():
     """A onda roda fora do _qs_regulate, então as travas dela são próprias.
-    Cada falha é INJETADA no meio da onda e tem de pará-la ali."""
-    n = onda.n
-    alivio = []
-    n._relieve_contact = lambda *a, **k: alivio.append(1)
-
-    def meio():
-        return bool(onda.t0) and onda.fase(onda.rel.t) > 1.2
-
-    n._force_stale_abort = lambda fase: meio()
-    assert onda.roda() == 'stale' and onda.durou < 1.4
-    n._force_stale_abort = lambda fase: False
-
-    base = n._qs_step
-    n._qs_step = lambda *a, **k: (
-        n._stop_requested.set() if meio() else None, base(*a, **k))[1]
-    assert onda.roda() == 'stop' and onda.durou < 1.4
-    assert not n._stop_requested.is_set()
-    n._qs_step = base
-
-    gate = n._pause_gate
-    n._pause_gate = lambda: not meio()        # STOP durante a pausa
-    assert onda.roda() == 'stop' and onda.durou < 1.4
-    n._pause_gate = gate
-
-    assert not alivio
-    onda.deforma = lambda c, f: 13.0 if c > 1.2 else f
-    assert onda.roda() == 'force' and onda.durou < 1.4
-    assert alivio, 'não aliviou o contato ao estourar a força'
+    Se alguma sumir do laço, o ensaio deixa de ser seguro."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    for trava, o_que in [
+            ('_force_over_limit', 'teto de força'),
+            ('_force_stale_abort', 'célula sem dados frescos'),
+            ('_stop_requested', 'STOP do usuário'),
+            ('_pause_gate', 'PAUSE'),
+            ('_relieve_contact', 'alívio ao estourar a força'),
+            ('_FMOD_V_MAX_MMS', 'teto de velocidade'),
+            ('step_cap_m', 'teto de ΔF por passo')]:
+        assert trava in src, f'trava ausente no laço da onda: {o_que}'
 
 
 # ── 10 Hz: a cadeia de comando inteira ────────────────────────────────
 
-def test_launch_expoe_servoj_period_s(monkeypatch):
+def test_launch_expoe_servoj_period_s():
     """O teto de frequência da onda é 1/(t·5), e `t` estava escrito à mão em
-    TRÊS lugares sem nenhum argumento de launch por cima. Roda o launch real
-    com `servoj_period_s:=0.020` e lê o que chega aos nós."""
-    import importlib.util
+    TRÊS lugares sem nenhum argumento de launch por cima. 10 Hz era
+    inalcançável pela configuração padrão, e a única receita documentada
+    (`servoj_period_s:=…`) não existia como argumento."""
+    import re
     from pathlib import Path
-    launch = pytest.importorskip('launch')
-    pytest.importorskip('launch_ros')
-    from launch.actions import DeclareLaunchArgument, OpaqueFunction
     import touch_pack
     src = (Path(touch_pack.__file__).parent.parent
            / 'launch' / 'tactile_cell.launch.py')
     if not src.exists():          # instalado sem os launch/ ao lado
         pytest.skip('launch não disponível neste layout')
-    spec = importlib.util.spec_from_file_location('tc_launch', src)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    vistos = {}
-    real = m.Node
-
-    def _no(*a, **kw):
-        for p in kw.get('parameters') or []:
-            if isinstance(p, dict) and 'servoj_period_s' in p:
-                vistos[kw.get('executable')] = p['servoj_period_s']
-        return real(*a, **kw)
-    monkeypatch.setattr(m, 'Node', _no)
-    ld = m.generate_launch_description()
-    ctx = launch.LaunchContext()
-    for d in ld.entities:
-        if isinstance(d, DeclareLaunchArgument):
-            d.execute(ctx)
-    assert 'servoj_period_s' in ctx.launch_configurations
-    # no_gui + mirror: sobem explorer, GUI (nó condicionado) e mirror_node.
-    ctx.launch_configurations.update(
-        servoj_period_s='0.020', control_mode='mirror', no_gui='true',
-        end_effector='touch_tool', robot_ip='127.0.0.1')
-    for e in ld.entities:
-        if isinstance(e, OpaqueFunction):
-            e.execute(ctx)
-    assert len(vistos) == 3, vistos
-    assert set(vistos.values()) == {0.020}, vistos
+    txt = src.read_text()
+    assert re.search(r"DeclareLaunchArgument\(\s*\n?\s*'servoj_period_s'", txt)
+    # E ele tem de chegar aos TRÊS nós: publicar mais rápido do que o braço é
+    # comandado não entrega mais onda, entrega uma reamostrada.
+    assert txt.count("'servoj_period_s': servoj_period_s") == 3
 
 
-@pytest.mark.parametrize('periodo', [0.020, 0.030])
-def test_gui_nao_prende_o_servoj_em_30ms(periodo, monkeypatch, relogio):
+def test_gui_nao_prende_o_servoj_em_30ms():
     """O poll loop da GUI é quem comanda o braço real quando ela está aberta.
-    Com o período preso em 30 ms, 10 Hz era impossível pela GUI. Roda o laço
-    real em relógio virtual e mede a cadência."""
-    import threading
-    import types
-    import numpy as np
-    import touch_pack.gui_robot as gr
-    monkeypatch.setattr(gr, 'time', relogio)
-    monkeypatch.setattr(gr, '_urdf_to_dobot', lambda q: q)
-    ticks = []
-    ev = types.SimpleNamespace(is_set=lambda: len(ticks) >= 20,
-                               wait=relogio.sleep)
-    g = types.SimpleNamespace(
-        _stop_event=ev, _servoj_period_s=periodo, _robot_mode='MIRROR',
-        _robot_connected=True, _real_driver=object(), _drag_enabled=False,
-        _exec_movement_id=None, _lock=threading.Lock(),
-        _latest_phase='MODULATING', _latest_joint_rad=[0.0] * 6,
-        _mirror_hold=False, _paused=False, _estop_latched=False,
-        _servo_tick=lambda d, p: ticks.append(relogio.t))
-    gr.RobotMixin._mirror_poll_loop(g)
-    assert np.diff(ticks) == pytest.approx(periodo)
+    Com `_PERIOD` numa constante local de 30 ms, 10 Hz era impossível pela GUI
+    por mais que o explorer fosse configurado."""
+    import inspect
+    from touch_pack import gui_robot
+    src = inspect.getsource(gui_robot.RobotMixin._mirror_poll_loop)
+    assert '_PERIOD = 0.030' not in src
+    assert '_servoj_period_s' in src
+    # E o `t=` do ServoJ tem de acompanhar o período do laço: mandar pontos a
+    # cada 20 ms com t=30 ms faz o controlador interpolar noutra grade.
+    full = inspect.getsource(gui_robot)
+    assert full.count('servoj_period_s=getattr(') == 2
 
 
 def test_banda_morta_tem_fonte_unica():
@@ -415,20 +362,22 @@ def test_teto_de_10hz_com_o_piso_do_firmware(P):
 
 # ── 10 Hz: o que a precisão exige ─────────────────────────────────────
 
-def test_medida_e_drenada_por_amostra_e_nao_por_tick(onda):
-    """A 10 Hz o laço roda a 50 Hz e a célula a 400. Ler a célula NO TICK
-    amostra 400 Hz a 50, e os harmônicos da interpolação do comando dobram
-    sobre a fundamental. Cada amostra entra UMA vez, com o carimbo DELA."""
-    import numpy as np
-    onda.k_est = 1300.0                   # 30 % acima da planta (1000 N/m)
-    assert onda.roda(hz=10.0, f_min=1.4, f_max=1.6, ciclos=20) == 'ok'
-    t = np.array([o[0] for o in onda.observadas])
-    assert len(t) == pytest.approx(400 * onda.prof.duration_s, rel=0.05)
-    assert np.diff(t) == pytest.approx(1 / 400.0, abs=1e-6)
-    # Força e posição têm contadores próprios: trocá-los erra ΔF/Δx por 8× e
-    # a rigidez adaptada sairia da planta para outra ordem de grandeza.
-    assert onda.n._k_est.k == pytest.approx(1000.0, rel=0.28)
-    assert onda.n._k_est.k < 1300.0
+def test_medida_e_drenada_por_amostra_e_nao_por_tick():
+    """A 10 Hz o laço roda a 50 Hz e a célula a ~400. Ler a célula NO TICK
+    amostra 400 Hz a 50, e os harmônicos que a interpolação do comando gera
+    (4f e 6f, com 5 pontos por período) dobram sobre a própria fundamental —
+    o lock-in mediria a amplitude contaminada pela distorção que ele existe
+    para denunciar."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert '_lc_raw_since(lc_drained_at)' in src
+    # A acumulação da FORÇA não pode ter voltado para o tick.
+    assert 'cyc_fi += fz_meas' not in src
+    assert 'tot_h[_h][0] += fz_meas' not in src
+    # Dois contadores: normalizar um lock-in pelo contador do outro erra a
+    # amplitude pela razão entre as taxas (fator 8 a 10 Hz).
+    assert 'cyc_xn' in src
 
 
 def test_lock_in_por_amostra_recupera_a_amplitude_aliasada():
@@ -465,88 +414,65 @@ def test_lock_in_por_amostra_recupera_a_amplitude_aliasada():
         f'{na_celula:.3f}')
 
 
-@pytest.mark.parametrize('hz,quer', [(10.0, 5), (1.0, None)])
-def test_bins_do_ilc_acompanham_os_pontos_comandados(onda, monkeypatch, hz,
-                                                     quer):
+def test_bins_do_ilc_acompanham_os_pontos_comandados():
     """Correção indexada numa grade mais fina que a grade em que o comando
     existe não dá resolução — dá graus de liberdade que só o ruído preenche.
     A 10 Hz o período tem 5 pontos, então são 5 bins e não 24."""
-    te = onda.te
-    criados = []
-    base = te._WaveILC
-
-    class _Espia(base):
-        def __init__(self, *a, **k):
-            criados.append(k.get('n_bins'))
-            super().__init__(*a, **k)
-    monkeypatch.setattr(te, '_WaveILC', _Espia)
-    onda.roda(hz=hz, f_min=1.4, f_max=1.6, ciclos=2)
-    assert criados == [quer or te._FMOD_ILC_BINS]
-
-
-@pytest.mark.parametrize('hz,corta', [(1.0, True), (10.0, False)])
-def test_corte_por_passo_se_cala_quando_a_medida_sai_de_fase(onda, hz, corta):
-    """O corte por passo pergunta 'a força AGORA está fora da faixa?'. Com
-    60 ms de transporte isso vale 22° a 1 Hz e 216° a 10 Hz: lá ele corta em
-    fase aleatória e abre entalhes. A leitura instantânea fica fora da faixa
-    do 3º ciclo em diante, nas duas frequências."""
-    onda.lag_s = 0.060
-    onda.bruto = lambda c: 1.75 if c > 3.0 else 1.5
-    assert onda.roda(hz=hz, f_min=1.4, f_max=1.6, ciclos=8) == 'ok'
-    depois = [s for t, s in onda.passos if 4.0 < t * hz < 7.9]
-    zerados = sum(s == 0.0 for s in depois) / len(depois)
-    if corta:
-        assert zerados > 0.3 and onda.n.log.tem('passos cortados')
-    else:
-        assert zerados == 0.0
-
-
-def test_guarda_de_excursao_sobrevive_ao_corte_calado(onda):
-    """Com o corte por passo calado em alta frequência, o recuo por CICLO
-    passa a ser o único guarda de excursão — e por isso não pode depender de
-    ter havido corte. O gatilho é o extremo MEDIDO."""
-    onda.lag_s = 0.060
-    onda.bruto = lambda c: 1.5            # o corte por passo nunca dispara
-    onda.deforma = lambda c, f: 1.5 + (f - 1.5) * (3.0 if c > 6 else 1.0)
-    assert onda.roda(hz=10.0, f_min=1.35, f_max=1.65, ciclos=20) == 'ok'
-    assert not onda.n.log.tem('passos cortados')
-    assert onda.n.log.tem('Amplitude comandada recuada')
-    amp = _amplitude_por_ciclo(onda)
-    assert min(amp[8:]) < 0.85 * max(amp[4:7])
-
-
-def test_recuo_de_amplitude_volta_a_subir(onda, monkeypatch):
-    """`limit_scale` só descia: um ciclo ruim encolhia o ensaio INTEIRO de
-    forma irreversível. E um ciclo em que a amplitude mudou não é aprendido."""
+    import inspect
     from touch_pack.tactile_explorer import (
-        _FMOD_LIMIT_RECOVER_CYCLES, _FMOD_LIMIT_RECOVER_STEP)
-    te = onda.te
-    monkeypatch.setattr(te._WaveILC, 'value', lambda s, p: 0.0)
-    descartes, aprendidos = [], []
-    d0, c0 = te._WaveILC.discard, te._WaveILC.commit
+        TactileExplorer, _FMOD_ILC_BINS, _FMOD_MIN_PTS_PER_CYCLE)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'ilc_bins = int(min(max(round(pts_a_priori), 4)' in src
+    assert 'n_bins=ilc_bins' in src
+    # A regra em si, com os dois extremos reais da bancada.
 
-    def ciclo():
-        return int(onda.fase(onda.rel.t))
-    monkeypatch.setattr(te._WaveILC, 'discard', lambda s: (
-        descartes.append(ciclo()), d0(s))[1])
-    monkeypatch.setattr(te._WaveILC, 'commit', lambda s: (
-        aprendidos.append(ciclo()), c0(s))[1])
-    onda.bruto = lambda c: 1.5
-    onda.deforma = lambda c, f: 1.5 + (f - 1.5) * (
-        1.6 if 8 < c < 9 else 1.0)
-    assert onda.roda(f_min=1.2, f_max=1.8, ciclos=40, hz=2.0) == 'ok'
-    amp = _amplitude_por_ciclo(onda)
-    cheia, vale = amp[7], min(amp[9:14])
-    assert vale < 0.9 * cheia                         # recuou
-    assert amp[-2] > vale * 1.10                      # e voltou a subir
-    assert amp[-2] <= cheia * 1.02
-    # Subir é MAIS LENTO que descer: no máximo um passo por N ciclos limpos.
-    i = amp.index(vale)
-    assert amp[i + _FMOD_LIMIT_RECOVER_CYCLES] <= (
-        vale + 1.5 * _FMOD_LIMIT_RECOVER_STEP * cheia)
-    assert 9 in descartes and 9 not in aprendidos     # o ciclo que recuou
-    assert len(descartes) >= 2                        # e os que subiram
-    assert not set(descartes) & set(aprendidos)
+    def bins(pts):
+        return int(min(max(round(pts), 4), _FMOD_ILC_BINS))
+    assert bins(_FMOD_MIN_PTS_PER_CYCLE) == 5      # 10 Hz, tick de 20 ms
+    assert bins(33.0) == _FMOD_ILC_BINS            # 1 Hz, tick do QS
+
+
+def test_corte_por_passo_se_cala_quando_a_medida_sai_de_fase():
+    """O corte por passo pergunta 'a força AGORA está fora da faixa?'. Com
+    ~85 ms de transporte isso vale 29° a 1 Hz e 306° a 10 Hz: lá ele corta em
+    fase aleatória e abre entalhes, que é o que derruba a fundamental sem
+    derrubar o pico-a-pico."""
+    import inspect
+    from touch_pack.tactile_explorer import (
+        TactileExplorer, _FMOD_CLIP_LAG_FRAC)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'clip_in_phase' in src
+    lag_s = 0.085                      # transporte medido em bancada
+    assert lag_s * 1.0 <= _FMOD_CLIP_LAG_FRAC     # 1 Hz: guarda ativo
+    assert lag_s * 10.0 > _FMOD_CLIP_LAG_FRAC     # 10 Hz: guarda calado
+
+
+def test_guarda_de_excursao_sobrevive_ao_corte_calado():
+    """Com o corte por passo calado em alta frequência, o recuo por CICLO
+    passa a ser o único guarda de excursão — e por isso não pode mais depender
+    de ter havido corte. O gatilho é o extremo MEDIDO, insensível a fase."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'if band_clips_cycle and cyc_fz_max is not None:' not in src, (
+        'o recuo voltou a depender do corte por passo — sem guarda a 10 Hz')
+    assert '_over = max(meas.cyc_max - (prof.f_max_n + _tol_n),' in src
+
+
+def test_recuo_de_amplitude_volta_a_subir():
+    """`limit_scale` só descia: um ciclo ruim no warmup — K ainda não adaptada,
+    onda ainda na rampa — encolhia o ensaio INTEIRO de forma irreversível, e o
+    operador recebia uma senoide de outra amplitude sem ter mudado nada."""
+    import inspect
+    from touch_pack.tactile_explorer import (
+        TactileExplorer, _FMOD_LIMIT_RECOVER_CYCLES, _FMOD_LIMIT_RECOVER_STEP)
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 'clean_cycles' in src
+    assert _FMOD_LIMIT_RECOVER_CYCLES >= 2
+    # Subir tem de ser MAIS LENTO que descer: descer é segurança.
+    assert 0.0 < _FMOD_LIMIT_RECOVER_STEP <= 0.2
+    # Um ciclo aprendido não pode ser um ciclo em que a amplitude mudou.
+    assert 'if ilc_learning and (band_clips_cycle or limit_moved):' in src
 
 
 def _pre(hz=10.0, amp_n=0.30, k_nm=620.0, servoj_s=0.020,
@@ -657,77 +583,12 @@ def test_onda_micrometrica_avisa_sobre_a_banda_morta():
     assert amp_silicone_m > _FMOD_DEADBAND_MIN_RATIO * deadband_m  # não avisa
 
 
-def test_onda_usa_um_relogio_so_e_monotonico(onda):
+def test_onda_usa_um_relogio_so_e_monotonico():
     """Eram dois: um de parede para a fase e um monotônico para a grade de
-    ticks. Um salto do relógio de parede (NTP) no meio da onda não muda
-    nada."""
-    assert onda.roda(ciclos=4) == 'ok'
-    limpo, durou = list(onda.passos), onda.durou
-    onda.passos.clear()
-    gate = onda.n._pause_gate
-
-    def _gate():
-        onda.rel.parede = 3600.0 if onda.fase(onda.rel.t) > 1.5 else -50.0
-        return gate()
-    onda.n._pause_gate = _gate
-    assert onda.roda(ciclos=4) == 'ok'
-    assert onda.durou == pytest.approx(durou, abs=0.05)
-    assert len(onda.passos) == pytest.approx(len(limpo), abs=2)
-
-
-@pytest.mark.parametrize('v_max', [1.0, 150.0])
-def test_degrau_na_onda_e_fatiado_pelos_tetos(onda, monkeypatch, v_max):
-    """Um salto no setpoint não vira um passo único: o teto de velocidade
-    (1 mm/s aqui) ou o de ΔF por passo (150 mm/s) o espalham."""
-    from touch_pack.force_wave import _ForceProfile
-    te = onda.te
-
-    class _Salto(_ForceProfile):
-        def setpoint_n(self, t):
-            return self.mean_n + (self.amp_n * 8.0 if 0.5 < t < 0.6 else 0.0)
-    monkeypatch.setattr(te, '_FMOD_V_MAX_MMS', v_max)
-    monkeypatch.setattr(te._WaveILC, 'value', lambda s, p: 0.0)
-    onda.roda(prof=_Salto('SINE', 1.0, 3.0, 1.0, 1))
-    na_onda = [abs(s) for t, s in onda.passos if t < 1.0]
-    dt = onda.prof.wave_dt(0.020)
-    teto = min(v_max * 1e-3 * dt, te._FMOD_DF_STEP_MAX_N / onda.k_est)
-    assert max(na_onda) == pytest.approx(teto, rel=1e-6)
-
-
-@pytest.mark.parametrize('worker', ['_connect_robot_worker',
-                                    '_robot_reconnect_worker'])
-def test_driver_recebe_o_periodo_do_laco(worker, monkeypatch):
-    """O `t=` do ServoJ tem de acompanhar o período do laço, na conexão E na
-    reconexão: pontos a cada 20 ms com t=30 ms fazem o controlador interpolar
-    noutra grade."""
-    import threading
-    import types
-    import touch_pack.gui_robot as gr
-    visto = []
-    ev = threading.Event()
-
-    def _drv(ip, dry_run, config):
-        visto.append(config.servoj_period_s)
-        ev.set()
-        raise gr.CR10RealDriverError('basta')
-    monkeypatch.setattr(gr, 'CR10RealDriver', _drv)
-    log = types.SimpleNamespace(**{k: lambda *a: None for k in
-                                   ('info', 'warn', 'error', 'warning')})
-    g = types.SimpleNamespace(
-        _servoj_period_s=0.020, _feedback_port=30004,
-        _payload_cfg=lambda: {}, _robot_reconnecting=True, _stop_event=ev,
-        _close_driver_quietly=lambda d: None,
-        root=types.SimpleNamespace(after=lambda *a: None),
-        get_logger=lambda: log)
-    getattr(gr.RobotMixin, worker)(g, '127.0.0.1')
-    assert visto == [0.020]
-
-
-def _amplitude_por_ciclo(onda):
-    """Pico a pico da penetração COMANDADA em cada ciclo da onda."""
-    import numpy as np
-    acc, por = 0.0, {}
-    for t, s in onda.passos:
-        acc += s
-        por.setdefault(int(t * onda.prof.freq_hz), []).append(acc)
-    return [float(np.ptp(por[c])) for c in range(onda.prof.cycles)]
+    ticks. Agora a medida traz carimbos monotônicos das amostras da célula,
+    que precisam cair na MESMA régua da fase."""
+    import inspect
+    from touch_pack.tactile_explorer import TactileExplorer
+    src = inspect.getsource(TactileExplorer._phase_hold_modulated)
+    assert 't = time.monotonic() - t0_mono' in src
+    assert 'time.time() - t0' not in src

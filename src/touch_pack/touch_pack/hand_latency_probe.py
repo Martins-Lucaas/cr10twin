@@ -368,7 +368,7 @@ class HandLatencyProbe(Node):
             fig, ax = plt.subplots(figsize=(9, 4.2))
             ax.plot(t, sim_deg, label='Gêmeo digital (sim)', lw=1.6)
             ax.plot(t, real_deg, label='Mão física (real)', lw=1.6, alpha=0.85)
-            ax.plot(t - shift, real_deg, '--', lw=1.0, alpha=0.6,
+            ax.plot(t + shift, real_deg, '--', lw=1.0, alpha=0.6,
                     label=f'Real deslocado ({res["latency_ms"]:.0f} ms)')
             ax.set_xlabel('Tempo (s)')
             ax.set_ylabel(f'{jn} (°)')

@@ -3,20 +3,11 @@ import os
 import sys
 
 import numpy as np
+import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-# Sem importorskip aqui: com o plugin launch_testing (ROS sourced), um skip em
-# nível de módulo zera a coleta da sessão INTEIRA, não só deste arquivo.
-try:
-    import pandas as pd
-    import palp_char as PC  # noqa: E402
-except ModuleNotFoundError as exc:
-    if (exc.name or '').split('.')[0] not in ('pandas', 'scipy'):
-        raise
-    pd = PC = None
-
-pytestmark = pytest.mark.skipif(PC is None, reason='sem pandas/scipy')
+import palp_char as PC  # noqa: E402
 
 
 def _run(K=10.0, f_tex=12.0, v=5.0):

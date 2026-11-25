@@ -21,8 +21,6 @@ import pathlib
 import sys
 import threading
 
-import time
-
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -91,8 +89,6 @@ class _Recv:
                     'builtin_interfaces.msg', fromlist=['Time']).Time()})()})()
 
     _CAPTURE_WIN_N = FtReceiverNode._CAPTURE_WIN_N
-    _TARE_MAX_AGE_S = FtReceiverNode._TARE_MAX_AGE_S
-    _forget_window = FtReceiverNode._forget_window
     _TARE_STABLE_N = FtReceiverNode._TARE_STABLE_N
     _AUTOZERO_BAND_N = FtReceiverNode._AUTOZERO_BAND_N
     _AUTOZERO_RATE = FtReceiverNode._AUTOZERO_RATE
@@ -120,7 +116,6 @@ def _enche(recv, fz=0.0, n=None):
     n = n or recv._CAPTURE_WIN_N
     for _ in range(n):
         recv._buf.append(_linha(fz))
-    recv._rate_win.append(time.perf_counter())
 
 
 # ── Deriva da janela ──────────────────────────────────────────────────
@@ -194,7 +189,6 @@ def test_tare_request_reports_the_drift_when_it_refuses():
     recv = _Recv()
     for i in range(recv._CAPTURE_WIN_N):
         recv._buf.append(_linha(float(i) * 0.01))
-    recv._rate_win.append(time.perf_counter())
     recv._on_tare_request(None)
     campos = recv._tare_result_pub.msgs[-1].data.split(';')
     assert campos[:2] == ['err', 'drifting']

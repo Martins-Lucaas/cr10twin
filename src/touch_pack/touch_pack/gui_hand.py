@@ -455,10 +455,6 @@ class HandMixin:
         """Callback Tk: re-spawn da mão após o delay de reset da caixa ECI."""
         if not self._hand_should_be_alive:
             return
-        # O operador já reconectou: _connect_real_hand é TOGGLE, e desligaria
-        # a mão com o que ela estiver segurando.
-        if self._hand_proc is not None and self._hand_proc.poll() is None:
-            return
         self._set_status('Automatic hand-driver re-spawn…', WARN)
         self._connect_real_hand()
     def _send_hand_poweroff_blocking(self, timeout_s: float) -> None:

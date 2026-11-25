@@ -27,14 +27,13 @@ from typing import Any
 # NameError e engoliria o erro real da conexão.
 try:
     from .real_driver import (
-        CR10FeedbackTimeout, CR10RealDriver, CR10RealDriverConfig,
-        CR10RealDriverError,
+        CR10RealDriver, CR10RealDriverConfig, CR10RealDriverError,
     )
     _REAL_DRIVER_OK = True
 except Exception:  # pragma: no cover
     CR10RealDriver: Any = None
     CR10RealDriverConfig: Any = None
-    CR10RealDriverError = CR10FeedbackTimeout = Exception
+    CR10RealDriverError = Exception
     _REAL_DRIVER_OK = False
 
 # `urdf_to_dobot` vem do mesmo import opcional do driver: converter a pose só
@@ -53,13 +52,11 @@ import threading
 import time
 import tkinter as tk
 from .constants import (
-    ARM_JOINTS, ROBOT_CONFIG_FILE, SERVOJ_DEADBAND_RAD, SERVO_SYNC_TOL_RAD,
-    SYNC_FEEDBACK_GRACE_S, mirror_step_error,
+    ARM_JOINTS, ROBOT_CONFIG_FILE, SERVOJ_DEADBAND_RAD,  # noqa: F401
 )
 from .gui_constants import ARM_LIMITS_DEG
 from .ui_helpers import (
     BTN_NEUTRAL,
-    call_bounded,
     DANGER,
     OK,
     PRIMARY,
@@ -69,7 +66,7 @@ from .ui_helpers import (
     _shade,
 )
 from builtin_interfaces.msg import Duration
-from std_msgs.msg import Empty, String
+from std_msgs.msg import Empty
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 
@@ -86,23 +83,9 @@ log = logging.getLogger('touch_pack.palpation_gui')   # mesmo canal do host
 # de por uma definição.
 
 
-_NAO_CHEGOU = ('EmergencyStop(1) did not reach the controller '
-               '(no dashboard session)')
-
-
 class RobotMixin:
     """gui_robot.py — o CR10 real: conexão, heartbeat, modo MIRROR e E-STOP."""
 
-    # Último valor válido do slider Speed, lido fora da thread do Tk.
-    _speed_factor_pct = SPEED_FACTOR_DEFAULT
-
-    def _cache_speed_factor(self) -> None:
-        try:
-            self._speed_factor_pct = int(max(
-                SPEED_FACTOR_MIN,
-                min(SPEED_FACTOR_MAX, self.speed_factor_var.get())))
-        except (ValueError, tk.TclError):
-            pass              # campo no meio da digitação
     # Mirror MovJ (MIRROR mode — braço real segue os sliders)
     def _mirror_movj_debounced(self, positions_rad: list[float]) -> None:
         """Agenda MovJ ao braço real com debounce de 80 ms."""
@@ -120,8 +103,12 @@ class RobotMixin:
             q_dobot_rad = _urdf_to_dobot(
                 np.array(positions_rad, dtype=np.float64))
             q_dobot_deg = [math.degrees(float(v)) for v in q_dobot_rad]
-            # Thread do Timer: o valor em cache, nunca a var Tk.
-            speed_pct = self._speed_factor_pct
+            try:
+                speed_pct = int(max(SPEED_FACTOR_MIN,
+                                    min(SPEED_FACTOR_MAX,
+                                        self.speed_factor_var.get())))
+            except (ValueError, tk.TclError):
+                speed_pct = SPEED_FACTOR_DEFAULT
             with self._real_lock:
                 drv = self._real_driver
                 if (drv is None or not self._robot_connected
@@ -242,97 +229,38 @@ class RobotMixin:
             with self._lock:
                 phase = self._latest_phase
             if phase in ('IDLE', 'DONE', 'ABORTED'):
-                self._servo_synced, self._sync_fail_t = False, None
                 self._mirror_follow_tick()
                 continue
             positions = self._latest_joint_rad
             if positions is None:
                 continue
-            # FROZEN, E-STOP travado ou falha latente: nenhum comando sai.
-            if (phase == 'FROZEN' or self._mirror_hold or self._paused
-                    or getattr(self, '_estop_latched', False)):
-                self._sync_fail_t = None
-                continue
+            q_new = np.asarray(positions, dtype=np.float64)
+            last = self._mirror_last_target
+            if last is not None and \
+                    np.max(np.abs(q_new - last)) < SERVOJ_DEADBAND_RAD:
+                continue   # braço estacionário — sem ServoJ redundante
             # Captura referência local: evita corrida com connect/disconnect sem
             # segurar _real_lock no caminho quente (servo_j usa _dash_lock interno).
             drv = self._real_driver
             if drv is None or not self._robot_connected:
                 continue
-            self._servo_tick(drv, positions)
+            try:
+                try:
+                    drv.servo_j_urdf(positions)
+                except CR10RealDriverError:
+                    drv.prepare_servoj()
+                    drv.servo_j_urdf(positions)
+                self._last_robot_cmd_t = time.monotonic()
+                if self._drag_enabled:
+                    self._drag_enabled = False
+                    self.root.after(0, self._update_drag_btn_auto, False)
+            except CR10RealDriverError as exc:
+                self.get_logger().warning(f'ServoJ falhou: {exc}')
+                continue
+            self._mirror_last_target = q_new
             # REMOVIDO 17/09/2026: GetAngle() a cada ~10 s só para logar,
             # tomando o `_dash_lock` DENTRO do laço de ServoJ. O mesmo dado
             # chega de graça pela 30004, sem custar uma janela de comando.
-    # Falha de ServoJ com a palpação ativa: nada mais é comandado até o
-    # operador soltar o E-STOP. `_servo_synced` = a pose real já foi conferida
-    # contra a do simulador desde que esta fase ativa começou.
-    _mirror_hold = False
-    _servo_synced = False
-    _latest_joint_ts = math.inf     # até a 1ª /joint_states
-    _servo_sent_t = 0.0
-    _sync_fail_t = None
-
-    def _servo_tick(self, drv, positions) -> None:
-        """Um ponto de ServoJ; qualquer falha trava o espelho."""
-        q_new = np.asarray(positions, dtype=np.float64)
-        agora = time.monotonic()
-        # Sem ponto anterior DESTA fase quem confere é o sincronismo abaixo.
-        ult = self._mirror_last_target if self._servo_synced else None
-        erro = mirror_step_error(
-            0.0 if ult is None else float(np.max(np.abs(q_new - ult))),
-            max(agora - self._servo_sent_t,
-                getattr(self, '_servoj_period_s', 0.030)),
-            agora - self._latest_joint_ts)
-        if erro:
-            self._mirror_fault(erro)
-            return
-        try:
-            if not self._servo_synced:
-                dif = float(np.max(np.abs(
-                    drv.read_joints_urdf_latest() - q_new)))
-                if dif > SERVO_SYNC_TOL_RAD:
-                    raise CR10RealDriverError(
-                        f'sim e braço real divergem {math.degrees(dif):.1f}° '
-                        '— ServoJ não iniciado')
-                self._servo_synced, self._sync_fail_t = True, None
-            last = self._mirror_last_target
-            if last is not None and \
-                    np.max(np.abs(q_new - last)) < SERVOJ_DEADBAND_RAD:
-                return   # braço estacionário — sem ServoJ redundante
-            drv.servo_j_urdf(positions)
-        except CR10FeedbackTimeout as exc:
-            # Só vem do sincronismo: nada foi mandado. Um pacote perdido não
-            # é falha, meio segundo mudo é.
-            if self._sync_fail_t is None:
-                self._sync_fail_t = agora
-            if agora - self._sync_fail_t >= SYNC_FEEDBACK_GRACE_S:
-                self._mirror_fault(str(exc))
-            return
-        except CR10RealDriverError as exc:
-            self._mirror_fault(str(exc))
-            return
-        self._servo_sent_t = agora
-        self._last_robot_cmd_t = time.monotonic()
-        if self._drag_enabled:
-            self._drag_enabled = False
-            self.root.after(0, self._update_drag_btn_auto, False)
-        self._mirror_last_target = q_new
-
-    def _mirror_fault(self, motivo: str) -> None:
-        """ServoJ recusado ou mudo (colisão, alarme, rede): NÃO limpa o erro
-        nem reenvia — o Gazebo seguiu andando, e o ponto seguinte seria um
-        salto. Congela o explorer e trava como um E-STOP."""
-        self._mirror_hold = True
-        self._freeze_pub.publish(Empty())
-        self.get_logger().error(f'[MIRROR] {motivo} — espelho TRAVADO.')
-        self.root.after(0, self._mirror_fault_ui, motivo)
-
-    def _mirror_fault_ui(self, motivo: str) -> None:
-        if not getattr(self, '_estop_latched', False):
-            self._estop_engage()
-        self._set_status(
-            f'Mirror stopped: {motivo}. Check the arm, then press RECONECTAR.',
-            DANGER)
-
     def _mirror_follow_tick(self) -> None:
         """Espelha o feedback do braço real → Gazebo durante um MovJ de jog."""
         now = time.monotonic()
@@ -450,15 +378,6 @@ class RobotMixin:
             return
         if self._robot_connecting:
             return
-        # Um driver por vez: a reconexão em curso também abre sockets. O
-        # clique a cancela; conectar de novo espera o worker sair.
-        thr = self._robot_reconnect_thread
-        if self._robot_reconnecting or (thr is not None and thr.is_alive()):
-            self._robot_reconnecting = False
-            self._set_status(
-                'Automatic reconnection cancelled — press Connect again in a '
-                'moment.', WARN)
-            return
         # Conexão em background — evita congelar a GUI durante os ~5 s de
         # handshake TCP + sequência ClearError/EnableRobot/SpeedFactor.
         self._robot_connecting = True
@@ -482,8 +401,6 @@ class RobotMixin:
     def _payload_cfg(self) -> dict:
         """Carga da ferramenta montada, no formato do CR10RealDriverConfig."""
         return {
-            'touch_tool': getattr(self, '_end_effector', 'touch_tool')
-            == 'touch_tool',
             'payload_kg': getattr(self, '_param_payload_kg', 0.5),
             'payload_cog_m': (
                 0.0, 0.0,
@@ -561,7 +478,6 @@ class RobotMixin:
         self._robot_connecting = False
         self._robot_reconnecting = False
         self._real_driver = drv
-        self._servo_synced, self._sync_fail_t = False, None
         self._robot_connected = True
         # Ponto ÚNICO em que um driver novo entra em serviço — e portanto o
         # único lugar onde a trava de E-STOP pode ser reimposta nele. Sem
@@ -615,7 +531,7 @@ class RobotMixin:
         self._set_status(
             f'CR10 connected at {ip} '
             f'(SpeedFactor={sf}%){mode_note}.', color)
-        # O wrench do CR10 NÃO é publicado: quem entrega
+        # O wrench do CR10 (read_tcp_force) NÃO é publicado: quem entrega
         # /ft_sensor/wrench é o ft_receiver, com a FA7155.
         if self._robot_mode == 'MIRROR':
             self._set_status(
@@ -814,13 +730,6 @@ class RobotMixin:
         derruba os recursos dependentes e dispara reconexão automática."""
         if self._robot_reconnecting or not self._robot_connected:
             return
-        # No meio de uma palpação a conexão perdida é um E-STOP: o simulador
-        # seguiu andando, e a reconexão não pode retomar dali sozinha.
-        if (self._robot_mode == 'MIRROR' and self._latest_phase
-                not in ('IDLE', 'DONE', 'ABORTED')):
-            self._mirror_hold = True
-            if not getattr(self, '_estop_latched', False):
-                self._estop_engage()
         self._robot_reconnecting = True
         self._robot_connected = False
         # Drag não pode continuar ativo sem conexão — reset estado e botão.
@@ -846,12 +755,6 @@ class RobotMixin:
         # Heartbeat acabou de sair (return após dispatch). Não precisa
         # parar de novo — apenas dispara o worker.
         self._spawn_robot_reconnect()
-    def _finish_robot_reconnect(self, ip: str, drv, mode_raw: str) -> None:
-        """Entrega da reconexão — só se ninguém cancelou nem conectou antes."""
-        if not self._robot_reconnecting or self._real_driver is not None:
-            self._close_driver_quietly(drv)
-            return
-        self._finish_robot_connect(ip, drv, mode_raw)
     def _spawn_robot_reconnect(self) -> None:
         """Inicia worker que tenta reconectar com backoff exponencial."""
         thr = self._robot_reconnect_thread
@@ -879,7 +782,6 @@ class RobotMixin:
                     ip=ip,
                     servoj_period_s=getattr(
                         self, '_servoj_period_s', 0.030),
-                    feedback_port=getattr(self, '_feedback_port', 30004),
                     **self._payload_cfg())
                 drv = CR10RealDriver(ip=ip, dry_run=False, config=cfg)
                 drv.connect()
@@ -899,7 +801,7 @@ class RobotMixin:
                 time.sleep(1.5)
                 mode_raw = drv.robot_mode() or ''
                 self.root.after(
-                    0, lambda d=drv, m=mode_raw: self._finish_robot_reconnect(
+                    0, lambda d=drv, m=mode_raw: self._finish_robot_connect(
                         ip, d, m))
                 return
             except CR10RealDriverError as exc:
@@ -976,10 +878,6 @@ class RobotMixin:
         self._estop_engage()
     def _estop_engage(self) -> None:
         """Primeiro toque: pressiona a chave e congela tudo."""
-        # 0. Nada pendente sobrevive: nem o Loop de Poses nem o start à espera
-        #    do pré-home, que voltariam a mover ao soltar a trava.
-        self._exec_stop.set()
-        self._prehome_cancel.set()
         # 1. FREEZE do tactile_explorer FSM: congela NO LUGAR, sem tentar ir à
         #    HOME (o STOP normal recuaria à home, arrastando a ferramenta sobre
         #    a superfície se a pose estiver comprometida). Sem isso o explorer
@@ -1008,21 +906,18 @@ class RobotMixin:
         #    anunciava "robot disabled and alarmed". Chamar sempre também arma
         #    a trava local do driver, que é o que impede o streaming de
         #    recomeçar quando a conexão voltar.
-        hw_ok: bool | None = False
+        hw_ok = False
         hw_err = 'no driver object — nothing was sent to the controller'
-        drv = self._real_driver
-        if drv is not None:
-            # Com a rede ruim a confirmação leva segundos: o Tk espera pouco e
-            # o resultado chega depois pelo `after`.
-            def _tarde(ok, erro):
-                if self._estop_latched and self._real_driver is drv:
-                    self._estop_announce(bool(ok), erro or _NAO_CHEGOU)
-            pronto, ok, erro = call_bounded(
-                self.root, drv.emergency_stop, _tarde)
-            hw_ok = bool(ok) if pronto else None
-            if erro:
-                self.get_logger().error(f'E-STOP real falhou: {erro}')
-            hw_err = erro or _NAO_CHEGOU
+        if self._real_driver is not None:
+            try:
+                hw_ok = self._real_driver.emergency_stop()
+                if not hw_ok:
+                    hw_err = ('EmergencyStop(1) did not reach the controller '
+                              '(no dashboard session)')
+            except CR10RealDriverError as exc:
+                hw_ok = False
+                hw_err = str(exc)
+                self.get_logger().error(f'E-STOP real falhou: {exc}')
         elif self._robot_mode != 'MIRROR':
             # Sem braço real configurado não há hardware a alarmar, e dizer
             # que houve seria pior que não dizer nada.
@@ -1043,15 +938,6 @@ class RobotMixin:
         # bloqueia o Start e o que o driver já usa para recusar movimento.
         self._estop_latched = True
         self._refresh_estop_button()
-        if hw_ok is None:
-            self._set_status(
-                'E-STOP: waiting for the controller to confirm. Motion is '
-                'blocked in software; use the physical E-Stop if the arm is '
-                'still moving.', DANGER)
-        else:
-            RobotMixin._estop_announce(self, hw_ok, hw_err)
-
-    def _estop_announce(self, hw_ok: bool, hw_err: str) -> None:
         if hw_ok:
             self._set_status(
                 'E-STOP ENGAGED — robot disabled and alarmed. Press E-STOP '
@@ -1074,11 +960,6 @@ class RobotMixin:
         espera o modo 5. Um E-Stop que "soltou" sem reabilitar deixaria a GUI
         anunciando pronto com o braço ainda em alarme.
         """
-        if self._robot_reconnecting:
-            self._set_status(
-                'CR10 reconnecting — wait for the connection before releasing '
-                'the E-STOP.', WARN)
-            return
         if self._real_driver is not None and self._robot_connected:
             try:
                 self._real_driver.release_emergency_stop()
@@ -1090,11 +971,6 @@ class RobotMixin:
                 self._refresh_estop_button()
                 return
         self._estop_latched = False
-        self._mirror_hold = False
-        self._servo_synced, self._sync_fail_t = False, None
-        # Saída explícita do FROZEN: o explorer volta a IDLE sem mover nada.
-        if self._latest_phase == 'FROZEN':
-            self._stop_pub.publish(String(data='stop'))
         self._estop_released_at = time.monotonic()
         self._refresh_estop_button()
         self._set_status(

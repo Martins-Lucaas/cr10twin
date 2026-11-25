@@ -19,7 +19,6 @@ Uso:
     python3 ft_probe.py --port /dev/ttyUSB0
     python3 ft_probe.py --list             # portas seriais visíveis
     python3 ft_probe.py --raw              # hexdump, sem interpretar
-    python3 ft_probe.py --mode stream      # célula que emite sozinha
     python3 ft_probe.py --zero             # tara na partida (1 s parado)
 
 Rota do FLANGE (RS485 pela porta 60000 do controlador, sem conversor USB):
@@ -46,11 +45,7 @@ from serial.tools import list_ports                             # noqa: E402
 
 from touch_pack.constants import (                              # noqa: E402
     FT_AXES, FT_NOMINAL_RATE_HZ, FT_SERIAL_BAUD, FT_TCP_HOST, FT_TCP_PORT,
-    FT_MODE_CHOICES, FT_MODE_POLLED, FT_MODBUS_DATA_ADDR,
-    FT_MODBUS_DATA_REGS, FT_MODBUS_SLAVE_ID, FT_USB_VIDS,
-)
-from touch_pack.ft_modbus import (                              # noqa: E402
-    FUNC_READ_HOLDING, FtDevice, FtModbusClient, ModbusError, build_read,
+    FT_USB_VIDS,
 )
 from touch_pack.ft_serial import (                              # noqa: E402
     FtFrameParser, detect_ft_serial_port,
@@ -99,9 +94,6 @@ class _SockReader:
         del self._buf[:n]
         return out
 
-    def write(self, data: bytes) -> None:
-        self._s.sendall(data)
-
     def close(self) -> None:
         self._s.close()
 
@@ -120,17 +112,13 @@ def cmd_list() -> int:
     return 0
 
 
-def cmd_raw(ser, poll: bool = False) -> int:   # serial.Serial ou _SockReader
+def cmd_raw(ser) -> int:   # serial.Serial ou _SockReader
     """Hexdump do que chega. Linha vazia por segundo = nada na linha:
     célula sem 24 V, A/B trocados ou GND sem referência comum."""
     print('[raw] hexdump — Ctrl+C para sair')
     last = time.monotonic()
     total = 0
-    req = build_read(FT_MODBUS_SLAVE_ID, FUNC_READ_HOLDING,
-                     FT_MODBUS_DATA_ADDR, FT_MODBUS_DATA_REGS)
     while True:
-        if poll:
-            ser.write(req)      # em polled ela só fala se perguntada
         data = ser.read(1)
         if data:
             waiting = getattr(ser, 'in_waiting', 0)
@@ -149,21 +137,7 @@ def cmd_raw(ser, poll: bool = False) -> int:   # serial.Serial ou _SockReader
             total = 0
 
 
-def _polled_frames(ser):
-    """Lê um quadro por consulta (o modo do exemplar da bancada)."""
-    dev = FtDevice(FtModbusClient(
-        ser.write, lambda n: ser.read(1) + ser.read(ser.in_waiting)))
-
-    def ler():
-        try:
-            return [dev.read_wrench()]
-        except ModbusError:
-            return []
-    return ler
-
-
-def cmd_stream(ser, zero: bool, poll: bool = False) -> int:   # idem cmd_raw
-    ler = _polled_frames(ser) if poll else None
+def cmd_stream(ser, zero: bool) -> int:   # idem cmd_raw
     parser = FtFrameParser()
     tare = [0.0] * len(FT_AXES)
     zero_buf: list[tuple] = []
@@ -178,9 +152,8 @@ def cmd_stream(ser, zero: bool, poll: bool = False) -> int:   # idem cmd_raw
     peak = [0.0] * len(FT_AXES)
     print('[ft] Ctrl+C para sair. Aperte a ponteira e veja qual canal se move.')
     while True:
-        data = b'' if poll else ser.read(1)
-        frames = ler() if poll else []
-        if not data and not frames:
+        data = ser.read(1)
+        if not data:
             if getattr(ser, 'eof', False):
                 print('[ft] o controlador FECHOU a conexão da 60000. '
                       'Reconecte (a 485 do flange pode precisar de '
@@ -191,11 +164,10 @@ def cmd_stream(ser, zero: bool, poll: bool = False) -> int:   # idem cmd_raw
                 last_print = now
                 print('[ft] 1 s sem quadro — confira 24 V, A/B e GND.')
             continue
-        if not poll:
-            waiting = getattr(ser, 'in_waiting', 0)
-            if waiting:
-                data += ser.read(waiting)
-            frames = parser.feed(data)
+        waiting = getattr(ser, 'in_waiting', 0)
+        if waiting:
+            data += ser.read(waiting)
+        frames = parser.feed(data)
         if not frames:
             continue
         n_rate += len(frames)
@@ -237,8 +209,6 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--port', default=None, help='porta serial do conversor')
     ap.add_argument('--baud', type=int, default=FT_SERIAL_BAUD)
-    ap.add_argument('--mode', choices=FT_MODE_CHOICES, default=FT_MODE_POLLED,
-                    help='polled (default, o do exemplar) pergunta; stream escuta')
     ap.add_argument('--list', action='store_true', help='lista as portas e sai')
     ap.add_argument('--raw', action='store_true', help='hexdump sem interpretar')
     ap.add_argument('--zero', action='store_true', help='tara na partida')
@@ -290,15 +260,12 @@ def main() -> int:
             return 1
         print(f'[ft] {port} @ {args.baud}')
         try:
-            ser = serial.Serial(port, args.baud, timeout=0.2,
-                                exclusive=True)  # o receiver pode estar no ar
+            ser = serial.Serial(port, args.baud, timeout=0.2)
         except Exception as exc:
             print(f'Falha ao abrir {port}: {exc}')
             return 1
     try:
-        poll = args.mode == FT_MODE_POLLED
-        return (cmd_raw(ser, poll) if args.raw
-                else cmd_stream(ser, args.zero, poll))
+        return cmd_raw(ser) if args.raw else cmd_stream(ser, args.zero)
     except KeyboardInterrupt:
         return 0
     finally:

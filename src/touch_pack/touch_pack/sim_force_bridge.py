@@ -110,7 +110,7 @@ class SimForceBridge(Node):
 
 def main(args=None) -> None:
     from .pack_lock import acquire_or_exit
-    acquire_or_exit('touch_pack')   # publica força de mentira em tópico de controle
+    acquire_or_exit('touch_pack')
     rclpy.init(args=args)
     node = SimForceBridge()
     try:

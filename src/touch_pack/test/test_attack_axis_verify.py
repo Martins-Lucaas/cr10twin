@@ -83,7 +83,7 @@ def test_rotacao_aceita_pela_ik_mas_nao_entregue_pelo_braco_aborta(node):
     t = math.radians(12.0)
     attack = np.array([math.sin(t), 0.0, -math.cos(t)])
     # _joint_stream_to "executa" sem que _q_now mude: braço parado.
-    node._joint_stream_to = lambda q: 'done'
+    node._joint_stream_to = lambda q: True
     assert node._rotate_to_attack(attack, label='TESTE') == 'error'
 
 
@@ -92,7 +92,7 @@ def test_reaplicacao_apos_a_home_tambem_confere(node):
     buraco, mesma conferência (é o MESMO _rotate_to_attack)."""
     t = math.radians(12.0)
     node._attack_dir = np.array([math.sin(t), 0.0, -math.cos(t)])
-    node._joint_stream_to = lambda q: 'done'
+    node._joint_stream_to = lambda q: True
     assert node._reapply_attack_orientation() is False
 
 
