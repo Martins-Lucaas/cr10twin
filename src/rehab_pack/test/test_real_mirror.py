@@ -2,7 +2,6 @@
 import fcntl
 import importlib.util
 import pathlib
-import sys
 import threading
 import time
 
@@ -222,11 +221,10 @@ def _launch_setup():
     return mod.launch_setup
 
 
-@pytest.mark.parametrize('sem_modulo', [False, True])
-def test_trava_recusa_antes_de_subir_qualquer_coisa(monkeypatch, tmp_path, sem_modulo):
+def test_trava_recusa_antes_de_subir_qualquer_coisa(monkeypatch, tmp_path):
     pytest.importorskip('launch')
     from rehab_pack import gui_bridge, rehab_gui
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
 
     def nao(*a, **k):
         raise AssertionError('subiu com o touch_pack aberto')
@@ -234,15 +232,12 @@ def test_trava_recusa_antes_de_subir_qualquer_coisa(monkeypatch, tmp_path, sem_m
     monkeypatch.setattr(pack_lock, '_held', {})
     monkeypatch.setattr(rclpy, 'init', nao)
     monkeypatch.setattr(gui_bridge, 'GuiBridge', nao)
-    if sem_modulo:
-        monkeypatch.setitem(sys.modules, 'touch_pack.pack_lock', None)
-    sai, sobe = (ImportError, ImportError) if sem_modulo else (SystemExit, pack_lock.PackLockError)
     with open(tmp_path / 'touch_pack.lock', 'a') as f:
         fcntl.flock(f, fcntl.LOCK_SH)
         for main in (real_mirror.main, rehab_gui.main):
-            with pytest.raises(sai):
+            with pytest.raises(SystemExit):
                 main()
-        with pytest.raises(sobe):
+        with pytest.raises(pack_lock.PackLockError):
             _launch_setup()(None)
 
 

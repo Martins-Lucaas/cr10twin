@@ -129,7 +129,7 @@ class Cheio:
 def logger(tmp_path, monkeypatch):
     """Roda o corpo do teste dentro do main() do registrador."""
     rclpy = pytest.importorskip('rclpy')
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
     monkeypatch.setattr(pack_lock, 'acquire_or_exit', lambda p: None)
     monkeypatch.setenv('REHAB_PACK_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(sl, 'info_codigo', lambda: {})

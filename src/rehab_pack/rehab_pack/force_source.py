@@ -230,8 +230,8 @@ class ForceSource(Node):
 
 
 def main():
-    # trava touch_pack × rehab_pack; sem touch_pack o import falha e o nó não sobe
-    from touch_pack.pack_lock import acquire_or_exit
+    # trava touch_pack × rehab_pack
+    from .pack_lock import acquire_or_exit
     acquire_or_exit('rehab_pack')
     rclpy.init()
     node = ForceSource()

@@ -2,7 +2,7 @@
 
 Reabilitação de membro superior com o CR10. O voluntário segura um **mastro**
 (`cad/Joystick.step`) preso à célula FA7155 e guia o robô por **admitância**
-cartesiana. O driver do CR10 é cópia própria (`real_driver.py`); usa do `touch_pack` a trava, a cinemática e o `ft_receiver`.
+cartesiana. O driver do CR10 é cópia própria (`real_driver.py`); não depende do `touch_pack` (a trava, a conversão de juntas e o driver da FA7155 também são próprios).
 
 Padrão: CR10 simulado (Gazebo Classic) e força da **célula FA7155 real**. Sem célula o
 braço simulado ainda se move pelas juntas (aba 5), mas a admitância não habilita. O
@@ -88,29 +88,29 @@ Serviços: `/rehab/ft/tare`, `/rehab/admittance/enable`, `/rehab/estop`,
 `/rehab/admittance/reset`, `/rehab/home`. Nomes de todos os tópicos, serviços e
 colunas: `rehab_pack/constants.py` (o contrato).
 
-## Robô e célula reais (mesmo sistema do touch_pack)
+## Robô e célula reais
 
 **Estado: implementado e testado em simulação, NUNCA testado com o CR10 nem a
 FA7155 de verdade.** Faça o primeiro ensaio sem pessoa, com a mão no E-Stop físico.
 
 ```bash
-# célula FA7155 (nó ft_receiver do touch_pack) + CR10 espelhado, como no touch_pack
+# célula FA7155 (nó rehab_ft_receiver) + CR10 espelhado, como no touch_pack
 ros2 launch rehab_pack joystick_cell.launch.py control_mode:=mirror force_source:=real \
     robot_ip:=192.168.5.2 ft_port:=/dev/ttyUSB0
 ```
 
-- **Célula:** `force_source:=real` sobe o `ft_receiver` do `touch_pack` com os
-  mesmos argumentos (`ft_port`, `ft_mode` = polled, `ft_baud` = 1 Mbps,
+- **Célula:** `force_source:=real` sobe o `rehab_ft_receiver` com os
+  argumentos (`ft_port`, `ft_mode` = polled, `ft_baud` = 1 Mbps,
   `ft_autozero`, `ft_filter`; aqui ambos nascem `false`: o auto-zero come força fraca
   sustentada e o One-Euro atrasa a malha ~80 ms). Ele é o único dono da porta serial e publica
   `/ft_sensor/wrench`; o `rehab_force_source` o tara e o leva ao frame do mundo.
 - **Robô:** o `rehab_mirror` sobe sempre; no cabeçalho do painel: IP, Conectar e modo
   SIM_ONLY/MIRROR, como no touch_pack. `control_mode:=mirror` não conecta ao subir: use Conectar. Ele usa o
-  `CR10RealDriver` do `touch_pack` (TCP 29999, feedback 30004). O IP vem de
-  `robot_ip`, senão de `~/.config/touch_pack/robot.json` (o mesmo da GUI do
-  touch_pack), senão 192.168.5.2. O braço simulado manda ServoJ a 33 Hz ao real.
+  `CR10RealDriver` próprio (TCP 29999, feedback 30004). O IP vem de
+  `robot_ip`, senão de `~/.config/rehab_pack/robot.json` (o último IP
+  conectado), senão 192.168.5.2. O braço simulado manda ServoJ a 33 Hz ao real.
   Em MIRROR e PARADO, o `rehab_mirror` leva o simulado até a pose do real; só arma
-  abaixo de 3°. O rehab só lê o `robot.json`, nunca o altera.
+  abaixo de 3°. O `robot.json` do touch_pack não é lido nem alterado.
 - **Sem hardware:** `robot_ip:=sim` usa um robô real simulado (segue o ServoJ),
   para ensaiar o fluxo todo.
 
@@ -143,7 +143,7 @@ aborta e recusa Habilitar e jog.
 
 **Pré-voo (somente leitura):** `ros2 run rehab_pack rehab_preflight --robot-ip 192.168.5.2 --ft-port /dev/ttyUSB0`
 confere, sem enviar nada ao robô: se o `install` é o do `src` (não uma cópia
-antiga), o driver e os executáveis do `touch_pack`, se o PC está na sub-rede do robô,
+antiga), os drivers do CR10 e da FA7155, se o PC está na sub-rede do robô,
 se as portas 29999/30004 respondem, o grupo `dialout`, o `pyserial` e o conversor
 USB-RS485 da FA7155. Termina com código 1 se houver FALHA.
 

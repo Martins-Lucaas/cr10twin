@@ -166,7 +166,7 @@ def test_logger_no_ar_grava_a_config_da_celula(tmp_path, monkeypatch):
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
     from rehab_pack import session_logger as sl
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
     monkeypatch.setattr(pack_lock, 'acquire_or_exit', lambda p: None)
     monkeypatch.setenv('REHAB_PACK_DATA_DIR', str(tmp_path))
     init, metas = rclpy.init, []

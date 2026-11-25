@@ -87,8 +87,7 @@ def test_publica_o_sinal_e_o_giro_que_usa(source, sinal, giro, monkeypatch):
 def test_main_toma_a_trava_antes_do_ros_e_falha_fechado(mod, monkeypatch):
     rclpy = pytest.importorskip('rclpy')
     import importlib
-    import sys
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
     m = importlib.import_module(f'rehab_pack.{mod}')
     monkeypatch.setattr(rclpy, 'init', lambda *a, **k: pytest.fail('rclpy.init sem a trava'))
     pedidos = []
@@ -100,6 +99,3 @@ def test_main_toma_a_trava_antes_do_ros_e_falha_fechado(mod, monkeypatch):
     with pytest.raises(SystemExit):
         m.main()
     assert pedidos == ['rehab_pack']
-    monkeypatch.setitem(sys.modules, 'touch_pack.pack_lock', None)   # sem touch_pack
-    with pytest.raises(ImportError):
-        m.main()

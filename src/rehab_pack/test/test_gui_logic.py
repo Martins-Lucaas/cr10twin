@@ -254,7 +254,7 @@ def test_7_sigterm_fecha_como_sigint_e_tenta_de_novo_se_recusado(monkeypatch, si
     import os
     import signal
     from rehab_pack import gui_bridge, rehab_gui
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
     antes = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
     fila = []
 

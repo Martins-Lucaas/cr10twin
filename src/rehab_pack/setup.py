@@ -8,7 +8,7 @@ package_name = 'rehab_pack'
 setup(
     name=package_name,
     version='0.1.0',
-    packages=[package_name],
+    packages=[package_name, package_name + '.ft'],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -31,6 +31,7 @@ setup(
         'rehab_admittance = rehab_pack.admittance_node:main',
         'rehab_force_source = rehab_pack.force_source:main',
         'rehab_logger = rehab_pack.session_logger:main',
+        'rehab_ft_receiver = rehab_pack.ft.receiver_node:main',
         'rehab_gui = rehab_pack.rehab_gui:main',
         'rehab_mirror = rehab_pack.real_mirror:main',
         'rehab_preflight = rehab_pack.preflight:main',

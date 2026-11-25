@@ -22,7 +22,7 @@ from .real_link import robot_ip as resolve_ip
 
 DASHBOARD_PORT = 29999
 FEEDBACK_PORT = 30004
-# VIDs aceitos pelo ft_receiver do touch_pack: CH340, CP210x, FTDI, PL2303
+# VIDs aceitos pelo ft_receiver: CH340, CP210x, FTDI, PL2303
 FT_VIDS = (0x1A86, 0x10C4, 0x0403, 0x067B)
 
 
@@ -90,7 +90,7 @@ def install_is_stale() -> str | None:
 
 def touch_pack_open() -> bool:
     """Alguém segura a trava do touch_pack? Só testa e solta (não toma a do rehab)."""
-    from touch_pack.pack_lock import _dir
+    from .pack_lock import _dir
     try:
         with open(os.path.join(_dir(), 'touch_pack.lock')) as f:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -121,16 +121,13 @@ def run_checks(ip_param: str = '', ft_port: str = '') -> list[tuple[str, str, st
     except Exception as exc:
         add('FALHA', 'driver do CR10 (rehab_pack.real_driver)', str(exc))
     try:
-        out = subprocess.run(['ros2', 'pkg', 'executables', 'touch_pack'],
-                             capture_output=True, text=True, timeout=15).stdout
-        for exe in ('ft_receiver',):
-            add('OK' if exe in out else 'FALHA', f'executável touch_pack/{exe}',
-                'encontrado' if exe in out else 'não encontrado: colcon build do touch_pack?')
-    except (OSError, subprocess.SubprocessError) as exc:
-        add('AVISO', 'executáveis do touch_pack', f'não consegui listar ({exc})')
+        from .ft import receiver_node  # noqa: F401
+        add('OK', 'driver da FA7155 (rehab_pack.ft)', 'importável')
+    except Exception as exc:
+        add('FALHA', 'driver da FA7155 (rehab_pack.ft)', str(exc))
 
     ip = resolve_ip(ip_param)
-    origem = 'argumento' if ip_param else 'robot.json do touch_pack ou padrão'
+    origem = 'argumento' if ip_param else 'robot.json ou padrão'
     add('OK', 'IP do CR10', f'{ip} ({origem})')
     locais = local_ipv4()
     mesmo = same_subnet(ip, locais)

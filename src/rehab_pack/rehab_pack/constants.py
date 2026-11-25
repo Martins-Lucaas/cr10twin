@@ -144,6 +144,7 @@ WRENCH_COLUMNS = ('t_s', 'fx_n', 'fy_n', 'fz_n', 'tx_nm', 'ty_nm', 'tz_nm',
 EVENTS_COLUMNS = ('t_s', 'tipo', 'detalhe')
 
 
+ROBOT_FILE = os.path.expanduser('~/.config/rehab_pack/robot.json')
 HOME_FILE = os.path.expanduser('~/.config/rehab_pack/home_pose.json')
 
 
@@ -160,7 +161,7 @@ def home_q() -> list:
 
 
 def save_home(q_rad) -> None:
-    """Grava em graus, como o home_pose.json do touch_pack (outra ferramenta, outro arquivo)."""
+    """Grava em graus."""
     os.makedirs(os.path.dirname(HOME_FILE), exist_ok=True)
     with open(HOME_FILE, 'w') as fh:
         json.dump({j: round(math.degrees(v), 4) for j, v in zip(ARM_JOINTS, q_rad)},

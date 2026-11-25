@@ -1,11 +1,10 @@
 """Ligação ao CR10 real, sem ROS (testável com driver falso).
 
 Mesmo sistema do touch_pack: `CR10RealDriver` (TCP 29999, feedback 30004),
-IP em ~/.config/touch_pack/robot.json, conexão só a pedido e espelhamento
+IP em ~/.config/rehab_pack/robot.json, conexão só a pedido e espelhamento
 sim → real por ServoJ a 33 Hz a partir de /joint_states. O protocolo do robô
 mora em `real_driver` (cópia própria do rehab): o import é adiado para o
-momento de conectar, então estas funções (e o nó de admitância) não exigem o
-touch_pack.
+momento de conectar.
 
 Decisão de segurança (`real_ok`): o ServoJ só corre com o robô conectado, sem
 E-Stop e com sim e real em sincronia; o nó de admitância recusa habilitar, e
@@ -20,6 +19,7 @@ import time
 
 import numpy as np
 
+from . import constants as C
 from .constants import (ARM_PUBS, GRIP_MASS_KG, HOME_Q_RAD, JOG_MAX_DEG_S, JS_STALE_S, PLATE_MASS_KG,
                         REAL_STATUS_STALE_S, ROBOT_MODES_OK, SERVO_STEP_SLACK, SIM_ROBOT_IP,
                         SYNC_TOL_RUN_RAD, SYNC_TOL_START_RAD, T_ARM_CMD)
@@ -85,21 +85,30 @@ def real_ok(status: dict | None, age_s: float,
 
 
 def robot_ip(param: str, config_file: str | None = None) -> str:
-    """IP do parâmetro; senão o do robot.json do touch_pack; senão o padrão."""
+    """IP do parâmetro; senão o do robot.json do rehab_pack; senão o padrão."""
     ip = (param or '').strip()
     if ip:
         return ip
     if config_file is None:
-        try:
-            from touch_pack.constants import ROBOT_CONFIG_FILE as config_file
-        except Exception:
-            config_file = os.path.expanduser('~/.config/touch_pack/robot.json')
+        config_file = C.ROBOT_FILE
     try:
         with open(config_file) as fh:
             ip = str(json.load(fh).get('robot_ip', '')).strip()
     except (OSError, ValueError, AttributeError):
         ip = ''
     return ip or DEFAULT_IP
+
+
+def save_robot_ip(ip: str) -> None:
+    """Guarda o IP informado na tela; falha de disco não impede a conexão."""
+    if ip == SIM_ROBOT_IP:
+        return
+    try:
+        os.makedirs(os.path.dirname(C.ROBOT_FILE), exist_ok=True)
+        with open(C.ROBOT_FILE, 'w') as fh:
+            json.dump({'robot_ip': ip}, fh)
+    except OSError:
+        pass
 
 
 class SimulatedDriver:

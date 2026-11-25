@@ -172,7 +172,7 @@ def link(robo):
 
 
 def test_bancada_conecta_habilita_e_le_as_juntas(link, robo):
-    from touch_pack.kinematics import urdf_to_dobot
+    from rehab_pack.joint_convention import urdf_to_dobot
     q = link.read_q()
     assert q is not None, link.last_error
     assert np.allclose(np.degrees(urdf_to_dobot(q)), robo.q, atol=0.05)

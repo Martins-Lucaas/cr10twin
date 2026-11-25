@@ -268,7 +268,7 @@ class RehabGui:
         row = tk.Frame(hdr, bg=H)
         row.pack(fill='x', padx=18, pady=(0, 10))
         tk.Label(row, text='IP do CR10', bg=H, fg=th.HEADER_FG, font=th.FONT).pack(side='left')
-        self.var_ip = tk.StringVar()     # o rehab_mirror informa: robot_ip do launch ou o padrão do touch_pack
+        self.var_ip = tk.StringVar()     # o rehab_mirror informa: robot_ip do launch ou o robot.json
         ttk.Entry(row, textvariable=self.var_ip, width=15).pack(side='left', padx=th.PAD)
         self.btn_real = self._btn(row, 'Conectar', self.toggle_real)
         self.btn_real.pack(side='left')
@@ -1596,7 +1596,7 @@ class RehabGui:
 
 
 def main(argv=None):
-    from touch_pack.pack_lock import acquire_or_exit   # sem o touch_pack: recusa
+    from .pack_lock import acquire_or_exit
     acquire_or_exit('rehab_pack')
     from .gui_bridge import GuiBridge
     br = GuiBridge()

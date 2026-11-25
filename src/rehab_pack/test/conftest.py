@@ -4,7 +4,10 @@ import tempfile
 
 import pytest
 
+from rehab_pack import constants
+
 os.environ['CR10_PACK_LOCK_DIR'] = tempfile.mkdtemp(prefix='cr10_lock_test_')
+constants.ROBOT_FILE = os.path.join(os.environ['CR10_PACK_LOCK_DIR'], 'cfg', 'robot.json')
 
 
 @pytest.hookimpl(hookwrapper=True)

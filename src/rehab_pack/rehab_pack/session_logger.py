@@ -239,8 +239,8 @@ def ler_ft_config(texto):
 
 
 def main(args=None):
-    # trava touch_pack × rehab_pack; sem touch_pack o import falha e o nó não sobe
-    from touch_pack.pack_lock import acquire_or_exit
+    # trava touch_pack × rehab_pack
+    from .pack_lock import acquire_or_exit
     acquire_or_exit('rehab_pack')
     import rclpy
     from rclpy.clock import Clock, ClockType

@@ -31,7 +31,7 @@ Observações:
       de envio (recomendado 30 ms / 33 Hz).
     - Use `dry_run=True` para validar o pipeline sem hardware — todos os
       sends apenas vão para o log.
-    - O conversor URDF↔DOBOT está em `kinematics.urdf_to_dobot` / `dobot_to_urdf`
+    - O conversor URDF↔DOBOT está em `joint_convention.urdf_to_dobot` / `dobot_to_urdf`
       (offsets das juntas 2 e 4 = ±π/2). NUNCA passe q_urdf direto: use
       `drv.servo_j_urdf(q_urdf)` ou converta antes.
 """
@@ -54,7 +54,7 @@ import numpy as np
 
 # Sem fallback: sem a conversão o driver mandaria ângulos URDF como se fossem
 # DOBOT (J1 de sinal trocado, J2/J4 com 90° a menos) em silêncio.
-from touch_pack.kinematics import urdf_to_dobot, dobot_to_urdf
+from .joint_convention import urdf_to_dobot, dobot_to_urdf
 
 log = logging.getLogger('rehab_pack.real_driver')
 
@@ -122,11 +122,6 @@ class CR10RealDriverConfig:
     acc_j: int = 100
     acc_l: int = 100
     cp_ratio: int = 0                # 0 = para em cada ponto (padrão)
-    # Índice do sistema de coordenadas de ferramenta escrito com o resultado
-    # da calibração de pivô (tcp_calib). 0 é o flange e não pode ser alterado.
-    tool_index: int = 1
-    # False com outra ferramenta no flange (mão): o TCP medido é da ponteira.
-    touch_tool: bool = True
     servoj_period_s: float = 0.030   # 33 Hz recomendado
     # [20,100]; 50 é o default do firmware (era 20 aqui até 17/09/2026). Os 20
     # supunham pontos chegando regulares — verdade no cabo, falsa no Wi-Fi, e
@@ -921,40 +916,6 @@ class CR10RealDriver:
                 log.warning('[DASH] %s → %s', cmd, dash_error_text(resp))
             else:
                 log.info('[DASH] %s → %s', cmd, resp)
-        self.apply_tool_offset()
-
-    def apply_tool_offset(self) -> None:
-        """Escreve o TCP calibrado no Tool(index) do controlador e o seleciona.
-
-        Só afeta MovL/RelMovL*/leitura de pose do CONTROLADOR — a IK do pacote
-        usa o mesmo número por outro caminho (kinematics.T_TOUCH_TOOL_ATTACH,
-        que o tcp_calib também corrige). Sem calibração salva não faz nada:
-        mexer no Tool do controlador sem ter medido seria trocar um número
-        errado por outro.
-        """
-        if not self.cfg.touch_tool:
-            return
-        from touch_pack.tcp_calib import load_offset_mm
-        off = load_offset_mm()
-        if off is None:
-            log.info('[DASH] sem tcp_calib.json — Tool() do controlador intacto')
-            return
-        x, y, z = off
-        idx = self.cfg.tool_index
-        # type=1 grava globalmente: o valor sobrevive à saída do modo TCP/IP,
-        # que é o que se espera de uma calibração de ferramenta.
-        for cmd in (f'SetTool({idx},{{{x:.3f},{y:.3f},{z:.3f},0,0,0}},1)',
-                    f'Tool({idx})'):
-            try:
-                resp = self._send_dash(cmd)
-            except CR10RealDriverError as exc:
-                log.warning('[DASH] %s não enviado: %s', cmd.split('(')[0], exc)
-                return
-            if resp and not resp.startswith('0'):
-                log.warning('[DASH] %s → %s', cmd, dash_error_text(resp))
-                return
-        log.info('[DASH] TCP calibrado (%.2f, %.2f, %.2f) mm → Tool(%d)',
-                 x, y, z, idx)
 
     def brake(self, axis_id: int, released: bool) -> None:
         """Solta (True) ou trava (False) o freio de UMA junta.

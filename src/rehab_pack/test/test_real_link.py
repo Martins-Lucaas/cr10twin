@@ -48,7 +48,7 @@ def test_robot_ip_prioridade(tmp_path):
     cfg = tmp_path / 'robot.json'
     cfg.write_text(json.dumps({'robot_ip': '10.0.0.7'}))
     assert robot_ip('192.168.1.9', str(cfg)) == '192.168.1.9'      # parâmetro vence
-    assert robot_ip('', str(cfg)) == '10.0.0.7'                    # robot.json do touch_pack
+    assert robot_ip('', str(cfg)) == '10.0.0.7'                    # robot.json
     assert robot_ip('  ', str(tmp_path / 'nao_existe.json')) == '192.168.5.2'
     (tmp_path / 'ruim.json').write_text('{ nao e json')
     assert robot_ip('', str(tmp_path / 'ruim.json')) == '192.168.5.2'
@@ -168,7 +168,7 @@ def test_tolerancia_depende_de_estar_movendo():
     assert l.tolerance(True) == SYNC_TOL_RUN_RAD
 
 
-def test_assinante_de_forca_aceita_o_qos_do_ft_receiver_do_touch_pack():
+def test_assinante_de_forca_aceita_o_qos_do_ft_receiver():
     """Regressão: com QoS confiável a FA7155 real não entregava nada."""
     pytest.importorskip('rclpy')
     from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
@@ -199,12 +199,25 @@ def test_queda_de_driver_antigo_nao_derruba_a_conexao_nova():
     assert l.connected
 
 
-def test_rehab_nunca_escreve_no_robot_json_do_touch_pack():
-    import pathlib
+def test_ip_salvo_fica_no_arquivo_do_rehab(monkeypatch, tmp_path):
     from rehab_pack import real_link as rl
-    for f in pathlib.Path(rl.__file__).parent.glob('*.py'):
-        assert 'ROBOT_CONFIG_FILE' not in f.read_text() or f.name == 'real_link.py'
-    assert not hasattr(rl, 'save_robot_ip')
+    f = tmp_path / 'x' / 'robot.json'
+    monkeypatch.setattr(rl.C, 'ROBOT_FILE', str(f))
+    rl.save_robot_ip('sim')
+    assert not f.exists()
+    rl.save_robot_ip('10.0.0.8')
+    assert robot_ip('') == '10.0.0.8'
+
+
+def test_rehab_nao_usa_nada_do_touch_pack():
+    import pathlib
+    import re
+    raiz = pathlib.Path(__file__).parents[1]
+    proibido = re.compile(r"(from|import) touch_pack|package='touch_pack'|/touch_pack/|>touch_pack(_msgs)?<")
+    for f in [*raiz.glob('rehab_pack/**/*.py'), *raiz.glob('launch/*.py'),
+              *raiz.glob('scripts/*.py'), *raiz.glob('test/*.py'), raiz / 'package.xml']:
+        if f.name != pathlib.Path(__file__).name:
+            assert not proibido.search(f.read_text(encoding='utf-8')), f
 
 
 def test_payload_bate_com_o_urdf():

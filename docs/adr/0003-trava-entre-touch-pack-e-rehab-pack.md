@@ -2,11 +2,12 @@
 
 Os dois packs usam o mesmo CR10, a mesma FA7155 e o mesmo
 `/cr10_group_controller/joint_trajectory`. Com um aberto, o outro não inicia
-controle algum: `touch_pack/pack_lock.py` (flock, máquina toda, inclusive entre
+controle algum: cada pack tem o seu `pack_lock.py`, sem importar o outro; só a pasta
+das travas é comum (flock, máquina toda, inclusive entre
 `ROS_DOMAIN_ID`s; o kernel solta a trava quando o processo morre).
 
-- O launch e o `main()` dos nós de controle tomam a trava. `ft_receiver` não:
-  é usado pelos dois packs. A porta serial é aberta com `exclusive=True`.
+- O launch e o `main()` dos nós de controle tomam a trava. `ft_receiver` não
+  (cada pack tem o seu). A porta serial é aberta com `exclusive=True`.
 - Os produtores do mesmo comando em `hand_pack` e `grasp_ml_pack` tomam a trava do
   `touch_pack`: convivem com ele, não com o rehab.
 - Fora da trava (outra máquina, `ros2 topic pub`): o rehab conta os publicadores do

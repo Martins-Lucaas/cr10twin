@@ -11,7 +11,7 @@ do touch_pack), mas ligado ao estado da admitância.
     recusar o enable e para abortar se a condição se perder;
   • sem hardware: robot_ip:=sim usa um robô real simulado.
 
-Parâmetros: robot_ip ('' → ~/.config/touch_pack/robot.json → 192.168.5.2),
+Parâmetros: robot_ip ('' → ~/.config/rehab_pack/robot.json → 192.168.5.2),
 servoj_period_s (0,030).
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ from .constants import (ARM_JOINTS, FEEDBACK_TIMEOUT_MAX, JS_STALE_S, RAMP_S, RE
                         T_JOINT_STATES, T_REAL_STATUS, T_STATE, T_TICK,
                         TICK_STALE_S)
 from .real_link import (RealLink, StepTooLarge, arm_intruders, is_feedback_timeout,
-                        robot_ip, sync_error_rad)
+                        robot_ip, save_robot_ip, sync_error_rad)
 
 ACTIVE = STATES[1]      # ATIVO
 ABORTED = STATES[4]     # ABORTADO
@@ -177,6 +177,7 @@ class RealMirror(Node):
                                                        log=self.get_logger().info)
                 self.link.parada = velho.parada      # vale até confirmar a conexão
                 self.link.rearmar = velho.rearmar and velho.ip == ip
+                save_robot_ip(ip)
                 self.want = True
                 self.wake.set()
                 res.success, res.message = True, f'conectando em {ip}'
@@ -373,7 +374,7 @@ class RealMirror(Node):
 
 
 def main():
-    from touch_pack.pack_lock import acquire_or_exit   # sem o touch_pack: recusa
+    from .pack_lock import acquire_or_exit
     acquire_or_exit('rehab_pack')
     rclpy.init()
     node = RealMirror()

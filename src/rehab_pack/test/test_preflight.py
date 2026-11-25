@@ -74,8 +74,7 @@ def test_install_is_stale_detecta_copia(monkeypatch):
 
 def test_trava_do_touch_pack_vira_falha_e_nao_fica_segurada(monkeypatch, tmp_path):
     import fcntl
-    import sys
-    from touch_pack import pack_lock
+    from rehab_pack import pack_lock
     monkeypatch.setenv('CR10_PACK_LOCK_DIR', str(tmp_path))
     monkeypatch.setattr(pf, 'check_tcp', lambda ip, p, timeout=2.0: (False, 'sem rota'))
 
@@ -90,5 +89,3 @@ def test_trava_do_touch_pack_vira_falha_e_nao_fica_segurada(monkeypatch, tmp_pat
     pack_lock.acquire('touch_pack')         # o pré-voo não segurou nenhuma das duas
     for f in pack_lock._held.values():
         f.close()
-    monkeypatch.setitem(sys.modules, 'touch_pack.pack_lock', None)
-    assert nivel() == 'FALHA'

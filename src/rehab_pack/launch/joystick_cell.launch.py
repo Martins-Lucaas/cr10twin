@@ -26,14 +26,9 @@ _TRUE = ('1', 'true', 'yes')
 
 
 def _ft_defaults():
-    """Modo e baud da FA7155 do touch_pack (a unidade da bancada só responde
-    a poll 0x03 a 1 Mbps). Se o touch_pack não estiver instalado, os mesmos
-    valores escritos aqui."""
-    try:
-        from touch_pack.constants import FT_MODE_POLLED, FT_SERIAL_BAUD
-        return FT_MODE_POLLED, str(FT_SERIAL_BAUD)
-    except Exception:
-        return 'polled', '1000000'
+    """Modo e baud da FA7155 (a da bancada só responde a poll 0x03 a 1 Mbps)."""
+    from rehab_pack.ft.constants import FT_MODE_POLLED, FT_SERIAL_BAUD
+    return FT_MODE_POLLED, str(FT_SERIAL_BAUD)
 
 
 def _flag(context, name: str) -> bool:
@@ -42,7 +37,7 @@ def _flag(context, name: str) -> bool:
 
 def launch_setup(context, *args, **kwargs):
     # levanta antes de criar qualquer ação: com o touch_pack aberto nada sobe
-    from touch_pack.pack_lock import acquire
+    from rehab_pack.pack_lock import acquire
     acquire('rehab_pack')
     sim_ft = _flag(context, 'sim_ft')
     gui = _flag(context, 'gui')
@@ -110,10 +105,10 @@ def launch_setup(context, *args, **kwargs):
                       'real_sign': ft_sign,
                       'real_yaw_deg': ft_yaw}])]
     if source == 'real':
-        # Mesmo nó e mesmos argumentos do touch_pack: o ft_receiver é o único
+        # O ft_receiver é o único
         # dono da porta serial da FA7155 e publica /ft_sensor/wrench.
         nodes.append(Node(
-            package='touch_pack', executable='ft_receiver',
+            package='rehab_pack', executable='rehab_ft_receiver',
             parameters=[{
                 'ft_serial_port': LaunchConfiguration('ft_port').perform(context).strip(),
                 'ft_mode': LaunchConfiguration('ft_mode').perform(context).strip().lower(),
@@ -155,8 +150,8 @@ def generate_launch_description():
                         'segue o simulado, como no touch_pack).'),
         DeclareLaunchArgument(
             'robot_ip', default_value='',
-            description="IP do CR10. Vazio = ~/.config/touch_pack/robot.json "
-                        "(o mesmo da GUI do touch_pack), senão 192.168.5.2. "
+            description="IP do CR10. Vazio = ~/.config/rehab_pack/robot.json "
+                        "(último IP conectado), senão 192.168.5.2. "
                         "'sim' = robô real simulado, para ensaiar sem hardware."),
         DeclareLaunchArgument(
             'ft_port', default_value='',
